@@ -36,8 +36,28 @@ os.chmod(env_file, 0o600)
   fi
 }
 
+check_prerequisites() {
+  local frontend_dir="${REPO_ROOT}/../Frontend"
+  local aiml_dir="${REPO_ROOT}/../AI-ML"
+
+  if [[ ! -d "${frontend_dir}" || ! -f "${frontend_dir}/package.json" || ! -f "${frontend_dir}/package-lock.json" ]]; then
+    echo "Error: Sibling Frontend checkout missing or incomplete at ${frontend_dir}." >&2
+    echo "Expected directory with package.json and package-lock.json." >&2
+    echo "Clone or check out the Frontend repository alongside Backend before starting the local stack." >&2
+    exit 1
+  fi
+
+  if [[ ! -d "${aiml_dir}" || ! -f "${aiml_dir}/pyproject.toml" || ! -f "${aiml_dir}/app/worker.py" ]]; then
+    echo "Error: Sibling AI-ML checkout missing or incomplete at ${aiml_dir}." >&2
+    echo "Expected directory with pyproject.toml and app/worker.py." >&2
+    echo "Clone or check out the AI-ML repository alongside Backend before starting the local stack." >&2
+    exit 1
+  fi
+}
+
 case "${1:-}" in
   up)
+    check_prerequisites
     generate_env_local
     docker compose --env-file .env.local up --build --wait --wait-timeout 180
     ;;

@@ -15,6 +15,7 @@ class Settings(BaseSettings):
         "postgresql+asyncpg://virtujudge_backend:virtujudge_backend@localhost:5432/virtujudge"
     )
     redis_url: str = "redis://localhost:6379/0"
+    redis_cache_url: str = "redis://localhost:6379/1"
     object_storage_endpoint: str = "http://localhost:9000"
     object_storage_bucket: str = "virtujudge"
     object_storage_access_key: SecretStr | None = None

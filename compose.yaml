@@ -11,6 +11,7 @@ services:
       APP_ENV: development
       DATABASE_URL: postgresql+asyncpg://virtujudge_backend:${BACKEND_DB_PASSWORD}@postgres:5432/virtujudge
       REDIS_URL: redis://redis:6379/0
+      REDIS_CACHE_URL: redis://redis:6379/1
       OBJECT_STORAGE_ENDPOINT: http://minio:9000
       OBJECT_STORAGE_BUCKET: virtujudge
       OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER}
@@ -76,6 +77,54 @@ services:
       - minio_data:/data
     healthcheck:
       test: ["CMD-SHELL", "curl -f http://127.0.0.1:9000/minio/health/live || exit 1"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+      start_period: 5s
+
+  frontend:
+    build:
+      context: ../Frontend
+      dockerfile: ../Backend/docker/frontend/Dockerfile
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      NEXT_PUBLIC_API_BASE_URL: ${NEXT_PUBLIC_API_BASE_URL:-http://localhost:8000/api/v1}
+      NEXT_PUBLIC_MOCK_API: ${NEXT_PUBLIC_MOCK_API:-true}
+    depends_on:
+      backend:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:3000').then((r) => process.exit(r.status < 400 ? 0 : 1)).catch(() => process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  ai-worker:
+    build:
+      context: ../AI-ML
+      dockerfile: ../Backend/docker/ai-worker/Dockerfile
+      additional_contexts:
+        local_stack: ./local_stack
+    environment:
+      APP_ENV: development
+      DATABASE_URL: postgresql+asyncpg://virtujudge_ai:${AI_DB_PASSWORD}@postgres:5432/virtujudge
+      REDIS_URL: redis://redis:6379/0
+      REDIS_CACHE_URL: redis://redis:6379/1
+      OBJECT_STORAGE_ENDPOINT: http://minio:9000
+      OBJECT_STORAGE_BUCKET: virtujudge
+      OBJECT_STORAGE_ACCESS_KEY: ${MINIO_ROOT_USER}
+      OBJECT_STORAGE_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-m", "local_stack.health"]
       interval: 5s
       timeout: 5s
       retries: 5
