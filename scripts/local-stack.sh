@@ -60,6 +60,7 @@ case "${1:-}" in
     check_prerequisites
     generate_env_local
     docker compose --env-file .env.local up --build --wait --wait-timeout 180
+    docker compose --env-file .env.local exec -T backend python -m local_stack.smoke storage
     ;;
   down)
     if [[ -f "${ENV_LOCAL}" ]]; then
@@ -75,8 +76,32 @@ case "${1:-}" in
       docker compose ps
     fi
     ;;
+  smoke)
+    target="${2:-all}"
+    if [[ -f "${ENV_LOCAL}" ]]; then
+      COMPOSE_CMD=(docker compose --env-file "${ENV_LOCAL}")
+    else
+      COMPOSE_CMD=(docker compose)
+    fi
+    case "${target}" in
+      backend)
+        "${COMPOSE_CMD[@]}" exec -T backend python -m local_stack.smoke backend
+        ;;
+      ai)
+        "${COMPOSE_CMD[@]}" exec -T ai-worker python -m local_stack.smoke ai
+        ;;
+      all)
+        "${COMPOSE_CMD[@]}" exec -T backend python -m local_stack.smoke backend
+        "${COMPOSE_CMD[@]}" exec -T ai-worker python -m local_stack.smoke ai
+        ;;
+      *)
+        echo "Usage: $0 smoke [backend|ai|all]" >&2
+        exit 1
+        ;;
+    esac
+    ;;
   *)
-    echo "Usage: $0 {up|down|status}" >&2
+    echo "Usage: $0 {up|down|status|smoke}" >&2
     exit 1
     ;;
 esac
