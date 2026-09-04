@@ -48,9 +48,6 @@ def run_smoke(recipient: str, send: bool, settings: Settings | None = None) -> N
 def main(argv: list[str] | None = None, settings: Settings | None = None) -> int:
     parser = argparse.ArgumentParser(description="VirtuJudge Gmail smoke test")
     parser.add_argument("--recipient", help="Recipient email address")
-    parser.add_argument(
-        "positional_recipient", nargs="?", help="Recipient email address (positional)"
-    )
     parser.add_argument("--send", action="store_true", help="Explicit confirmation to send mail")
 
     args = parser.parse_args(argv)
