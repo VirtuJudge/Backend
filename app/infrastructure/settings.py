@@ -28,3 +28,5 @@ class Settings(BaseSettings):
     gmail_smtp_username: str | None = None
     gmail_smtp_password: SecretStr | None = None
     gmail_from_address: str | None = None
+    gmail_smtp_timeout_seconds: float = 10.0
+    gmail_smoke_allowlist: str | None = None
