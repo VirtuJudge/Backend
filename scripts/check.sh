@@ -4,5 +4,5 @@ set -euo pipefail
 bash scripts/validate-repository.sh
 uv run ruff check .
 uv run ruff format --check .
-uv run mypy app migrations tests
+uv run mypy app migrations tests local_stack
 uv run pytest
