@@ -4,23 +4,26 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, 
 
 from app.api.dependencies.auth import get_current_user
 from app.api.dependencies.services import get_team_service
+from app.api.dependencies.teamAuthorization import get_team_member, get_team_owner
 from app.api.schemas.team import (
     TeamMembershipPage,
     TeamMembershipResponse,
+    TeamOwnerRequest,
     TeamPage,
     TeamRequest,
     TeamResponse,
 )
 from app.application.services.teamService import (
     IdempotencyConflict,
-    TeamForbidden,
+    TeamMemberNotFound,
     TeamNameConflict,
-    TeamNotFound,
+    TeamOwnerCannotBeRemoved,
     TeamPreconditionFailed,
     TeamService,
     team_etag,
 )
 from app.domain.team import Team
+from app.domain.team_member import TeamMember
 from app.domain.user import User
 
 router = APIRouter()
@@ -71,15 +74,10 @@ async def create_team(
 async def get_team(
     team_id: UUID,
     response: Response,
-    current_user: User = Depends(get_current_user),
+    _membership: TeamMember = Depends(get_team_member),
     service: TeamService = Depends(get_team_service),
 ) -> TeamResponse:
-    try:
-        team = await service.get_authorized(team_id, current_user.id)
-    except TeamNotFound as error:
-        raise HTTPException(status_code=404, detail="team_not_found") from error
-    except TeamForbidden as error:
-        raise HTTPException(status_code=403, detail="team_forbidden") from error
+    team = await service.get(team_id)
     response.headers["ETag"] = f'"{team_etag(team)}"'
     return team_response(team)
 
@@ -89,14 +87,12 @@ async def update_team(
     team_id: UUID,
     request: TeamRequest,
     response: Response,
-    current_user: User = Depends(get_current_user),
+    _owner: TeamMember = Depends(get_team_owner),
     service: TeamService = Depends(get_team_service),
     if_match: str | None = Header(default=None),
 ) -> TeamResponse:
     try:
-        team = await service.update_name(team_id, current_user.id, request.name, if_match)
-    except TeamForbidden as error:
-        raise HTTPException(status_code=403, detail="team_forbidden") from error
+        team = await service.update_name(team_id, request.name, if_match)
     except TeamPreconditionFailed as error:
         raise HTTPException(status_code=412, detail="team_precondition_failed") from error
     except TeamNameConflict as error:
@@ -105,20 +101,37 @@ async def update_team(
     return team_response(team)
 
 
+@router.patch(
+    "/teams/{team_id}/owner",
+    response_model=TeamMembershipResponse,
+    tags=["teams"],
+)
+async def transfer_team_ownership(
+    team_id: UUID,
+    request: TeamOwnerRequest,
+    _owner: TeamMember = Depends(get_team_owner),
+    service: TeamService = Depends(get_team_service),
+) -> TeamMembershipResponse:
+    try:
+        membership = await service.transfer_ownership(
+            team_id,
+            _owner.user_id,
+            request.user_id,
+        )
+    except TeamMemberNotFound as error:
+        raise HTTPException(status_code=404, detail="team_member_not_found") from error
+    return TeamMembershipResponse.model_validate(membership, from_attributes=True)
+
+
 @router.get("/teams/{team_id}/members", response_model=TeamMembershipPage, tags=["teams"])
 async def list_team_members(
     team_id: UUID,
-    current_user: User = Depends(get_current_user),
+    _membership: TeamMember = Depends(get_team_member),
     service: TeamService = Depends(get_team_service),
     cursor: UUID | None = Query(default=None),
     limit: int = Query(default=50, ge=1, le=100),
 ) -> TeamMembershipPage:
-    try:
-        members, next_cursor = await service.members(team_id, current_user.id, cursor, limit)
-    except TeamForbidden as error:
-        raise HTTPException(status_code=403, detail="team_forbidden") from error
-    except TeamNotFound as error:
-        raise HTTPException(status_code=403, detail="team_forbidden") from error
+    members, next_cursor = await service.members(team_id, cursor, limit)
     return TeamMembershipPage(
         items=[
             TeamMembershipResponse.model_validate(member, from_attributes=True)
@@ -136,11 +149,14 @@ async def list_team_members(
 async def delete_team_member(
     team_id: UUID,
     user_id: UUID,
-    current_user: User = Depends(get_current_user),
+    _owner: TeamMember = Depends(get_team_owner),
     service: TeamService = Depends(get_team_service),
 ) -> Response:
     try:
-        await service.remove_member(team_id, current_user.id, user_id)
-    except (TeamForbidden, TeamNotFound) as error:
-        raise HTTPException(status_code=403, detail="team_forbidden") from error
+        await service.remove_member(team_id, user_id)
+    except TeamOwnerCannotBeRemoved as error:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="cannot_remove_owner_until_ownership_is_transferred",
+        ) from error
     return Response(status_code=status.HTTP_204_NO_CONTENT)

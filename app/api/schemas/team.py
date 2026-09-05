@@ -8,6 +8,10 @@ class TeamRequest(BaseModel):
     name: str = Field(min_length=1, max_length=100)
 
 
+class TeamOwnerRequest(BaseModel):
+    user_id: UUID
+
+
 class TeamResponse(BaseModel):
     id: UUID
     name: str

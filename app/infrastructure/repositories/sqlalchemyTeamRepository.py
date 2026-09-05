@@ -132,11 +132,15 @@ class SqlAlchemyTeamRepository(TeamRepository):
         return self._team(model) if model is not None else None
 
     async def is_member(self, team_id: UUID, user_id: UUID) -> bool:
-        stmt = select(TeamMemberModel.id).where(
+        return await self.get_membership(team_id, user_id) is not None
+
+    async def get_membership(self, team_id: UUID, user_id: UUID) -> TeamMember | None:
+        stmt = select(TeamMemberModel).where(
             TeamMemberModel.team_id == team_id,
             TeamMemberModel.user_id == user_id,
         )
-        return await self.session.scalar(stmt) is not None
+        model = await self.session.scalar(stmt)
+        return self._member(model) if model is not None else None
 
     async def list_members(
         self, team_id: UUID, cursor: UUID | None = None, limit: int = 50
@@ -160,7 +164,47 @@ class SqlAlchemyTeamRepository(TeamRepository):
                 delete(TeamMemberModel).where(
                     TeamMemberModel.team_id == team_id,
                     TeamMemberModel.user_id == user_id,
+                    TeamMemberModel.role != "owner",
                 )
             ),
         )
         return bool(result.rowcount and result.rowcount > 0)
+
+    async def transfer_ownership(
+        self,
+        team_id: UUID,
+        current_owner_id: UUID,
+        new_owner_id: UUID,
+    ) -> bool:
+        if current_owner_id == new_owner_id:
+            return True
+        promoted = cast(
+            CursorResult[Any],
+            await self.session.execute(
+                update(TeamMemberModel)
+                .where(
+                    TeamMemberModel.team_id == team_id,
+                    TeamMemberModel.user_id == new_owner_id,
+                    TeamMemberModel.role == "member",
+                )
+                .values(role="owner")
+            ),
+        )
+        if promoted.rowcount != 1:
+            return False
+        demoted = cast(
+            CursorResult[Any],
+            await self.session.execute(
+                update(TeamMemberModel)
+                .where(
+                    TeamMemberModel.team_id == team_id,
+                    TeamMemberModel.user_id == current_owner_id,
+                    TeamMemberModel.role == "owner",
+                )
+                .values(role="member")
+            ),
+        )
+        if demoted.rowcount != 1:
+            raise RuntimeError("ownership transfer could not demote the current owner")
+        await self.session.flush()
+        return True

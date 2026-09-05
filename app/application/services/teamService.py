@@ -29,6 +29,14 @@ class IdempotencyConflict(Exception):
     pass
 
 
+class TeamMemberNotFound(Exception):
+    pass
+
+
+class TeamOwnerCannotBeRemoved(Exception):
+    pass
+
+
 def team_etag(team: Team) -> str:
     value = f"{team.id}:{team.version}"
     return sha256(value.encode()).hexdigest()
@@ -72,18 +80,19 @@ class TeamService:
             )
         return created
 
-    async def get_authorized(self, team_id: UUID, user_id: UUID) -> Team:
+    async def get_membership(self, team_id: UUID, user_id: UUID) -> TeamMember | None:
+        return await self.repository.get_membership(team_id, user_id)
+
+    async def get(self, team_id: UUID) -> Team:
         team = await self.repository.get_by_id(team_id)
         if team is None:
             raise TeamNotFound
-        if not await self.repository.is_member(team_id, user_id):
-            raise TeamForbidden
         return team
 
     async def update_name(
-        self, team_id: UUID, user_id: UUID, name: str, if_match: str | None
+        self, team_id: UUID, name: str, if_match: str | None
     ) -> Team:
-        team = await self.get_authorized(team_id, user_id)
+        team = await self.get(team_id)
         if if_match is None or if_match.strip('"') != team_etag(team):
             raise TeamPreconditionFailed
         conflict = await self.repository.get_by_name(name)
@@ -95,11 +104,30 @@ class TeamService:
         return updated
 
     async def members(
-        self, team_id: UUID, user_id: UUID, cursor: UUID | None, limit: int
+        self, team_id: UUID, cursor: UUID | None, limit: int
     ) -> tuple[builtins.list[TeamMember], UUID | None]:
-        await self.get_authorized(team_id, user_id)
         return await self.repository.list_members(team_id, cursor, limit)
 
-    async def remove_member(self, team_id: UUID, user_id: UUID, member_id: UUID) -> bool:
-        await self.get_authorized(team_id, user_id)
+    async def remove_member(self, team_id: UUID, member_id: UUID) -> bool:
+        membership = await self.repository.get_membership(team_id, member_id)
+        if membership is not None and membership.role == "owner":
+            raise TeamOwnerCannotBeRemoved
         return await self.repository.delete_member(team_id, member_id)
+
+    async def transfer_ownership(
+        self,
+        team_id: UUID,
+        current_owner_id: UUID,
+        new_owner_id: UUID,
+    ) -> TeamMember:
+        transferred = await self.repository.transfer_ownership(
+            team_id,
+            current_owner_id,
+            new_owner_id,
+        )
+        if not transferred:
+            raise TeamMemberNotFound
+        membership = await self.repository.get_membership(team_id, new_owner_id)
+        if membership is None:
+            raise TeamMemberNotFound
+        return membership
