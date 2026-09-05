@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import uuid4
 
 from app.application.interfaces.userRepository import UserRepository
@@ -6,7 +6,6 @@ from app.domain.user import User
 
 
 class UserService:
-
     def __init__(self, repository: UserRepository):
         self.repository = repository
 
@@ -30,7 +29,7 @@ class UserService:
             issuer=issuer,
             subject=subject,
             email=email,
-            created_at=datetime.now(timezone.utc),
+            created_at=datetime.now(UTC),
         )
 
         return await self.repository.create(user)

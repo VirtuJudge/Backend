@@ -4,18 +4,15 @@ from app.domain.user import User
 
 
 class UserRepository(ABC):
-
     @abstractmethod
     async def get_by_identity(
         self,
         issuer: str,
         subject: str,
-    ) -> User | None:
-        ...
+    ) -> User | None: ...
 
     @abstractmethod
     async def create(
         self,
         user: User,
-    ) -> User:
-        ...
+    ) -> User: ...

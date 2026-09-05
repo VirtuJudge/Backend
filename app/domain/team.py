@@ -4,8 +4,8 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from uuid import UUID
 
-from .team_member import TeamMember
 from .project import Project
+from .team_member import TeamMember
 
 
 @dataclass

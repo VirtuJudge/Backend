@@ -13,7 +13,6 @@ from app.infrastructure.persistence.configurations.projectErasureRequest import 
 
 
 class SqlAlchemyProjectRepository(ProjectRepository):
-
     def __init__(self, session: AsyncSession):
         self.session = session
 

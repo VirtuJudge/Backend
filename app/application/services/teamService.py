@@ -3,9 +3,9 @@ from hashlib import sha256
 from uuid import UUID, uuid4
 
 from app.application.interfaces.teamRepository import TeamRepository
+from app.domain.idempotency import TeamCreationIdempotency
 from app.domain.team import Team
 from app.domain.team_member import TeamMember
-from app.domain.idempotency import TeamCreationIdempotency
 
 
 class TeamNotFound(Exception):
@@ -34,7 +34,6 @@ def team_etag(team: Team) -> str:
 
 
 class TeamService:
-
     def __init__(self, repository: TeamRepository):
         self.repository = repository
 

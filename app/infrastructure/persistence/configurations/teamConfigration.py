@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
 from sqlalchemy import DateTime, String
@@ -6,11 +7,12 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.database import Base
-from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from app.infrastructure.persistence.configurations.projectConfigration import ProjectModel
-    from app.infrastructure.persistence.configurations.teamMemberCongfigration import TeamMemberModel
+    from app.infrastructure.persistence.configurations.teamMemberCongfigration import (
+        TeamMemberModel,
+    )
 
 
 class TeamModel(Base):

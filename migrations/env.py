@@ -4,9 +4,9 @@ from alembic import context
 from sqlalchemy import pool
 from sqlalchemy.engine import Connection, engine_from_config, make_url
 
+import app.infrastructure.persistence.configurations  # noqa: F401
 from app.infrastructure.database import metadata
 from app.infrastructure.settings import Settings
-import app.infrastructure.persistence.configurations  # noqa: F401
 
 config = context.config
 

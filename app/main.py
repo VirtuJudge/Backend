@@ -12,7 +12,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     engine = create_database_engine(resolved_settings)
     application.state.session_factory = async_sessionmaker(engine, expire_on_commit=False)
     for router in routers:
-        application.include_router(router, prefix="/api/v1")
+        application.include_router(router)
     return application
 
 

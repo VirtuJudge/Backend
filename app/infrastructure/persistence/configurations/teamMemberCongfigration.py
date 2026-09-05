@@ -12,9 +12,10 @@ from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.database import Base
+
 if TYPE_CHECKING:
-    from app.infrastructure.persistence.configurations.userConfigration import UserModel
     from app.infrastructure.persistence.configurations.teamConfigration import TeamModel
+    from app.infrastructure.persistence.configurations.userConfigration import UserModel
 
 
 class TeamMemberModel(Base):

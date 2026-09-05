@@ -29,7 +29,6 @@ def project_etag(project: Project) -> str:
 
 
 class ProjectService:
-
     def __init__(self, repository: ProjectRepository, teams: TeamRepository):
         self.repository = repository
         self.teams = teams

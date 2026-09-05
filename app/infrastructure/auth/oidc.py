@@ -3,7 +3,6 @@ from jwt import PyJWKClient
 
 
 class OIDCTokenVerifier:
-
     def __init__(
         self,
         issuer: str,

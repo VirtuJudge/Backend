@@ -6,7 +6,6 @@ from app.domain.project import Project
 
 
 class ProjectRepository(ABC):
-
     @abstractmethod
     async def list_for_team(
         self,
@@ -14,16 +13,13 @@ class ProjectRepository(ABC):
         cursor: UUID | None = None,
         search: str | None = None,
         limit: int = 50,
-    ) -> tuple[list[Project], UUID | None]:
-        ...
+    ) -> tuple[list[Project], UUID | None]: ...
 
     @abstractmethod
-    async def get_by_id(self, project_id: UUID) -> Project | None:
-        ...
+    async def get_by_id(self, project_id: UUID) -> Project | None: ...
 
     @abstractmethod
-    async def create(self, project: Project) -> Project:
-        ...
+    async def create(self, project: Project) -> Project: ...
 
     @abstractmethod
     async def update(
@@ -33,8 +29,7 @@ class ProjectRepository(ABC):
         description: str | None,
         description_provided: bool,
         expected_version: int,
-    ) -> Project | None:
-        ...
+    ) -> Project | None: ...
 
     @abstractmethod
     async def get_erasure_request(
@@ -42,9 +37,7 @@ class ProjectRepository(ABC):
         project_id: UUID,
         requested_by: UUID,
         key: str,
-    ) -> ErasureRequest | None:
-        ...
+    ) -> ErasureRequest | None: ...
 
     @abstractmethod
-    async def create_erasure_request(self, request: ErasureRequest, key: str) -> ErasureRequest:
-        ...
+    async def create_erasure_request(self, request: ErasureRequest, key: str) -> ErasureRequest: ...

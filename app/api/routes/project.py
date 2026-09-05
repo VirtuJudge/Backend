@@ -49,9 +49,7 @@ async def list_projects(
     limit: int = Query(default=50, ge=1, le=100),
 ) -> ProjectPage:
     try:
-        projects, next_cursor = await service.list(
-            team_id, current_user.id, cursor, search, limit
-        )
+        projects, next_cursor = await service.list(team_id, current_user.id, cursor, search, limit)
     except ProjectForbidden as error:
         raise HTTPException(status_code=403, detail="team_forbidden") from error
     return ProjectPage(
@@ -73,9 +71,7 @@ async def create_project(
     service: ProjectService = Depends(get_project_service),
 ) -> ProjectResponse:
     try:
-        project = await service.create(
-            team_id, current_user.id, request.name, request.description
-        )
+        project = await service.create(team_id, current_user.id, request.name, request.description)
     except ProjectForbidden as error:
         raise HTTPException(status_code=403, detail="team_forbidden") from error
     return project_response(project)

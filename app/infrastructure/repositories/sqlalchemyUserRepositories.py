@@ -1,6 +1,5 @@
-from sqlalchemy import select,insert
+from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
-
 
 from app.application.interfaces.userRepository import UserRepository
 from app.domain.user import User
@@ -8,7 +7,6 @@ from app.infrastructure.persistence.configurations.userConfigration import UserM
 
 
 class SqlAlchemyUserRepository(UserRepository):
-
     def __init__(self, session: AsyncSession):
         self.session = session
 

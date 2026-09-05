@@ -1,5 +1,5 @@
-from app.infrastructure.settings import Settings
 from app.infrastructure.auth.oidc import OIDCTokenVerifier
+from app.infrastructure.settings import Settings
 
 settings = Settings()
 
