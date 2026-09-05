@@ -1,9 +1,9 @@
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
-from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.dependencies.auth import get_current_user
+from app.api.dependencies.services import get_team_service
 from app.api.schemas.team import (
     TeamMembershipPage,
     TeamMembershipResponse,
@@ -21,14 +21,8 @@ from app.application.services.teamService import (
     team_etag,
 )
 from app.domain.user import User
-from app.infrastructure.database import get_session
-from app.infrastructure.repositories.sqlalchemyTeamRepository import SqlAlchemyTeamRepository
 
 router = APIRouter()
-
-
-def get_team_service(session: AsyncSession = Depends(get_session)) -> TeamService:
-    return TeamService(SqlAlchemyTeamRepository(session))
 
 
 def team_response(team) -> TeamResponse:

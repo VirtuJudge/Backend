@@ -1,8 +1,16 @@
 from fastapi import FastAPI
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.routes import routers
+from app.application.services.projectService import ProjectService
+from app.application.services.teamService import TeamService
+from app.application.services.userService import UserService
+from app.infrastructure.auth.provider import logto_verifier
 from app.infrastructure.database import create_database_engine
+from app.infrastructure.database import get_session as infrastructure_get_session
+from app.infrastructure.repositories.sqlalchemyProjectRepository import SqlAlchemyProjectRepository
+from app.infrastructure.repositories.sqlalchemyTeamRepository import SqlAlchemyTeamRepository
+from app.infrastructure.repositories.sqlalchemyUserRepositories import SqlAlchemyUserRepository
 from app.infrastructure.settings import Settings
 
 
@@ -11,9 +19,29 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application = FastAPI(title=resolved_settings.app_name)
     engine = create_database_engine(resolved_settings)
     application.state.session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    application.state.session_dependency = infrastructure_get_session
+    application.state.token_verifier = logto_verifier
+    application.state.user_service_factory = user_service_factory
+    application.state.team_service_factory = team_service_factory
+    application.state.project_service_factory = project_service_factory
     for router in routers:
         application.include_router(router)
     return application
+
+
+def user_service_factory(session: AsyncSession) -> UserService:
+    return UserService(SqlAlchemyUserRepository(session))
+
+
+def team_service_factory(session: AsyncSession) -> TeamService:
+    return TeamService(SqlAlchemyTeamRepository(session))
+
+
+def project_service_factory(session: AsyncSession) -> ProjectService:
+    return ProjectService(
+        SqlAlchemyProjectRepository(session),
+        SqlAlchemyTeamRepository(session),
+    )
 
 
 app = create_app()
