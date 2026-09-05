@@ -89,9 +89,7 @@ class TeamService:
             raise TeamNotFound
         return team
 
-    async def update_name(
-        self, team_id: UUID, name: str, if_match: str | None
-    ) -> Team:
+    async def update_name(self, team_id: UUID, name: str, if_match: str | None) -> Team:
         team = await self.get(team_id)
         if if_match is None or if_match.strip('"') != team_etag(team):
             raise TeamPreconditionFailed
