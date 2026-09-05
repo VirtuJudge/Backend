@@ -1,4 +1,4 @@
-from sqlalchemy import select
+from sqlalchemy import select,insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 
@@ -40,7 +40,7 @@ class SqlAlchemyUserRepository(UserRepository):
 
     async def create(self, user: User) -> User:
 
-        stmt = UserModel.__table__.insert().values(
+        stmt = insert(UserModel).values(
             id=user.id,
             issuer=user.issuer,
             subject=user.subject,
