@@ -1,9 +1,14 @@
-from sqlalchemy import MetaData
+from sqlalchemy.orm import DeclarativeBase
 from sqlalchemy.ext.asyncio import AsyncEngine, create_async_engine
 
 from app.infrastructure.settings import Settings
 
-metadata = MetaData()
+
+class Base(DeclarativeBase):
+    pass
+
+
+metadata = Base.metadata
 
 
 def create_database_engine(settings: Settings) -> AsyncEngine:
