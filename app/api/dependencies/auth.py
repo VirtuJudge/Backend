@@ -1,6 +1,7 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-import app.infrastructure.auth.oidc as oidc_verifier
+from httpx import request
+import app.infrastructure.auth.provider as logto_verifier
 from app.application.services.userService import UserService
 
 security = HTTPBearer()
@@ -11,8 +12,9 @@ async def get_current_user(
 ):
     token = credentials.credentials
 
+    verifier = request.app.state.oidc_verifier
     try:
-        claims = oidc_verifier.verify(token)
+        claims = verifier.verify(token)
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
