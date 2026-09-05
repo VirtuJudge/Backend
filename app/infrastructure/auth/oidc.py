@@ -1,3 +1,5 @@
+from typing import Any
+
 import jwt
 from jwt import PyJWKClient
 
@@ -13,7 +15,7 @@ class OIDCTokenVerifier:
         self.audience = audience
         self.jwks_client = PyJWKClient(jwks_url)
 
-    def verify(self, token: str) -> dict:
+    def verify(self, token: str) -> dict[str, Any]:
         signing_key = self.jwks_client.get_signing_key_from_jwt(token)
 
         return jwt.decode(

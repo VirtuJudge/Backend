@@ -41,12 +41,21 @@ class ProjectService:
             raise ProjectForbidden
         return project
 
-    async def list(self, team_id, user_id, cursor, search, limit):
+    async def list(
+        self,
+        team_id: UUID,
+        user_id: UUID,
+        cursor: UUID | None,
+        search: str | None,
+        limit: int,
+    ) -> tuple[list[Project], UUID | None]:
         if not await self.teams.is_member(team_id, user_id):
             raise ProjectForbidden
         return await self.repository.list_for_team(team_id, cursor, search, limit)
 
-    async def create(self, team_id, user_id, name, description):
+    async def create(
+        self, team_id: UUID, user_id: UUID, name: str, description: str | None
+    ) -> Project:
         if not await self.teams.is_member(team_id, user_id):
             raise ProjectForbidden
         return await self.repository.create(
@@ -59,18 +68,18 @@ class ProjectService:
             )
         )
 
-    async def get(self, project_id, user_id):
+    async def get(self, project_id: UUID, user_id: UUID) -> Project:
         return await self._authorized(project_id, user_id)
 
     async def update(
         self,
-        project_id,
-        user_id,
-        name,
-        description,
-        description_provided,
-        if_match,
-    ):
+        project_id: UUID,
+        user_id: UUID,
+        name: str | None,
+        description: str | None,
+        description_provided: bool,
+        if_match: str | None,
+    ) -> Project:
         project = await self._authorized(project_id, user_id)
         if if_match is None or if_match.strip('"') != project_etag(project):
             raise ProjectPreconditionFailed
@@ -85,7 +94,9 @@ class ProjectService:
             raise ProjectPreconditionFailed
         return updated
 
-    async def request_erasure(self, project_id, user_id, confirmation, key):
+    async def request_erasure(
+        self, project_id: UUID, user_id: UUID, confirmation: str, key: str
+    ) -> ErasureRequest:
         project = await self._authorized(project_id, user_id)
         if confirmation != project.name:
             raise ProjectConfirmationRequired

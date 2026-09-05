@@ -1,3 +1,4 @@
+import builtins
 from datetime import UTC, datetime
 from hashlib import sha256
 from uuid import UUID, uuid4
@@ -37,7 +38,9 @@ class TeamService:
     def __init__(self, repository: TeamRepository):
         self.repository = repository
 
-    async def list(self, user_id: UUID, cursor: UUID | None, limit: int):
+    async def list(
+        self, user_id: UUID, cursor: UUID | None, limit: int
+    ) -> tuple[builtins.list[Team], UUID | None]:
         return await self.repository.list_for_user(user_id, cursor, limit)
 
     async def create(self, user_id: UUID, name: str, idempotency_key: str | None = None) -> Team:
@@ -77,7 +80,9 @@ class TeamService:
             raise TeamForbidden
         return team
 
-    async def update_name(self, team_id: UUID, user_id: UUID, name: str, if_match: str | None):
+    async def update_name(
+        self, team_id: UUID, user_id: UUID, name: str, if_match: str | None
+    ) -> Team:
         team = await self.get_authorized(team_id, user_id)
         if if_match is None or if_match.strip('"') != team_etag(team):
             raise TeamPreconditionFailed
@@ -89,10 +94,12 @@ class TeamService:
             raise TeamPreconditionFailed
         return updated
 
-    async def members(self, team_id: UUID, user_id: UUID, cursor: UUID | None, limit: int):
+    async def members(
+        self, team_id: UUID, user_id: UUID, cursor: UUID | None, limit: int
+    ) -> tuple[builtins.list[TeamMember], UUID | None]:
         await self.get_authorized(team_id, user_id)
         return await self.repository.list_members(team_id, cursor, limit)
 
-    async def remove_member(self, team_id: UUID, user_id: UUID, member_id: UUID):
+    async def remove_member(self, team_id: UUID, user_id: UUID, member_id: UUID) -> bool:
         await self.get_authorized(team_id, user_id)
         return await self.repository.delete_member(team_id, member_id)

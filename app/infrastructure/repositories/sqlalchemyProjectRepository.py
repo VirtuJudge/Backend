@@ -1,6 +1,8 @@
+from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy import select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.interfaces.projectRepository import ProjectRepository
@@ -36,7 +38,13 @@ class SqlAlchemyProjectRepository(ProjectRepository):
             created_at=model.created_at,
         )
 
-    async def list_for_team(self, team_id, cursor=None, search=None, limit=50):
+    async def list_for_team(
+        self,
+        team_id: UUID,
+        cursor: UUID | None = None,
+        search: str | None = None,
+        limit: int = 50,
+    ) -> tuple[list[Project], UUID | None]:
         stmt = (
             select(ProjectModel)
             .where(ProjectModel.team_id == team_id)
@@ -71,21 +79,24 @@ class SqlAlchemyProjectRepository(ProjectRepository):
 
     async def update(
         self,
-        project_id,
-        name,
-        description,
-        description_provided,
-        expected_version,
-    ):
-        values = {"version": expected_version + 1}
+        project_id: UUID,
+        name: str | None,
+        description: str | None,
+        description_provided: bool,
+        expected_version: int,
+    ) -> Project | None:
+        values: dict[str, object] = {"version": expected_version + 1}
         if name is not None:
             values["name"] = name
         if description_provided:
             values["description"] = description
-        result = await self.session.execute(
-            update(ProjectModel)
-            .where(ProjectModel.id == project_id, ProjectModel.version == expected_version)
-            .values(**values)
+        result = cast(
+            CursorResult[Any],
+            await self.session.execute(
+                update(ProjectModel)
+                .where(ProjectModel.id == project_id, ProjectModel.version == expected_version)
+                .values(**values)
+            ),
         )
         if result.rowcount != 1:
             return None
@@ -93,7 +104,9 @@ class SqlAlchemyProjectRepository(ProjectRepository):
         model = await self.session.get(ProjectModel, project_id)
         return self._project(model) if model is not None else None
 
-    async def get_erasure_request(self, project_id, requested_by, key):
+    async def get_erasure_request(
+        self, project_id: UUID, requested_by: UUID, key: str
+    ) -> ErasureRequest | None:
         model = await self.session.scalar(
             select(ProjectErasureRequestModel).where(
                 ProjectErasureRequestModel.project_id == project_id,
@@ -103,7 +116,7 @@ class SqlAlchemyProjectRepository(ProjectRepository):
         )
         return self._erasure(model) if model is not None else None
 
-    async def create_erasure_request(self, request, key):
+    async def create_erasure_request(self, request: ErasureRequest, key: str) -> ErasureRequest:
         self.session.add(
             ProjectErasureRequestModel(
                 id=request.id,

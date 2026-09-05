@@ -20,12 +20,13 @@ from app.application.services.teamService import (
     TeamService,
     team_etag,
 )
+from app.domain.team import Team
 from app.domain.user import User
 
 router = APIRouter()
 
 
-def team_response(team) -> TeamResponse:
+def team_response(team: Team) -> TeamResponse:
     return TeamResponse(id=team.id, name=team.name, created_at=team.created_at)
 
 
@@ -51,10 +52,10 @@ async def list_teams(
 )
 async def create_team(
     request: TeamRequest,
+    response: Response,
     current_user: User = Depends(get_current_user),
     service: TeamService = Depends(get_team_service),
     idempotency_key: str | None = Header(default=None, min_length=1, max_length=255),
-    response: Response = None,
 ) -> TeamResponse:
     try:
         team = await service.create(current_user.id, request.name, idempotency_key)
@@ -69,9 +70,9 @@ async def create_team(
 @router.get("/teams/{team_id}", response_model=TeamResponse, tags=["teams"])
 async def get_team(
     team_id: UUID,
+    response: Response,
     current_user: User = Depends(get_current_user),
     service: TeamService = Depends(get_team_service),
-    response: Response = None,
 ) -> TeamResponse:
     try:
         team = await service.get_authorized(team_id, current_user.id)
@@ -87,10 +88,10 @@ async def get_team(
 async def update_team(
     team_id: UUID,
     request: TeamRequest,
+    response: Response,
     current_user: User = Depends(get_current_user),
     service: TeamService = Depends(get_team_service),
     if_match: str | None = Header(default=None),
-    response: Response = None,
 ) -> TeamResponse:
     try:
         team = await service.update_name(team_id, current_user.id, request.name, if_match)

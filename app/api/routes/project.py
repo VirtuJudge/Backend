@@ -70,9 +70,9 @@ async def create_project(
 @router.get("/projects/{project_id}", response_model=ProjectResponse, tags=["projects"])
 async def get_project(
     project_id: UUID,
+    response: Response,
     current_user: User = Depends(get_current_user),
     service: ProjectService = Depends(get_project_service),
-    response: Response = None,
 ) -> ProjectResponse:
     try:
         project = await service.get(project_id, current_user.id)
@@ -88,10 +88,10 @@ async def get_project(
 async def update_project(
     project_id: UUID,
     request: ProjectUpdateRequest,
+    response: Response,
     current_user: User = Depends(get_current_user),
     service: ProjectService = Depends(get_project_service),
     if_match: str | None = Header(default=None),
-    response: Response = None,
 ) -> ProjectResponse:
     try:
         project = await service.update(

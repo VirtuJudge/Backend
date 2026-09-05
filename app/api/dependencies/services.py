@@ -1,5 +1,5 @@
 from collections.abc import AsyncIterator
-from typing import Any
+from typing import Any, cast
 
 from fastapi import Depends, Request
 
@@ -17,18 +17,18 @@ def get_user_service(
     request: Request,
     session: Any = Depends(get_session),
 ) -> UserService:
-    return request.app.state.user_service_factory(session)
+    return cast(UserService, request.app.state.user_service_factory(session))
 
 
 def get_team_service(
     request: Request,
     session: Any = Depends(get_session),
 ) -> TeamService:
-    return request.app.state.team_service_factory(session)
+    return cast(TeamService, request.app.state.team_service_factory(session))
 
 
 def get_project_service(
     request: Request,
     session: Any = Depends(get_session),
 ) -> ProjectService:
-    return request.app.state.project_service_factory(session)
+    return cast(ProjectService, request.app.state.project_service_factory(session))

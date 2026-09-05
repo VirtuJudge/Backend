@@ -1,6 +1,8 @@
+from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy import delete, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.interfaces.teamRepository import TeamRepository
@@ -37,7 +39,9 @@ class SqlAlchemyTeamRepository(TeamRepository):
             joined_at=model.joined_at,
         )
 
-    async def list_for_user(self, user_id: UUID, cursor: UUID | None = None, limit: int = 50):
+    async def list_for_user(
+        self, user_id: UUID, cursor: UUID | None = None, limit: int = 50
+    ) -> tuple[list[Team], UUID | None]:
         stmt = (
             select(TeamModel)
             .join(TeamMemberModel)
@@ -80,7 +84,9 @@ class SqlAlchemyTeamRepository(TeamRepository):
         await self.session.flush()
         return team
 
-    async def get_creation_idempotency(self, user_id: UUID, key: str):
+    async def get_creation_idempotency(
+        self, user_id: UUID, key: str
+    ) -> TeamCreationIdempotency | None:
         model = await self.session.get(TeamCreationIdempotencyModel, (user_id, key))
         if model is None:
             return None
@@ -108,13 +114,16 @@ class SqlAlchemyTeamRepository(TeamRepository):
         name: str,
         expected_version: int,
     ) -> Team | None:
-        result = await self.session.execute(
-            update(TeamModel)
-            .where(
-                TeamModel.id == team_id,
-                TeamModel.version == expected_version,
-            )
-            .values(name=name, version=expected_version + 1)
+        result = cast(
+            CursorResult[Any],
+            await self.session.execute(
+                update(TeamModel)
+                .where(
+                    TeamModel.id == team_id,
+                    TeamModel.version == expected_version,
+                )
+                .values(name=name, version=expected_version + 1)
+            ),
         )
         if result.rowcount != 1:
             return None
@@ -129,7 +138,9 @@ class SqlAlchemyTeamRepository(TeamRepository):
         )
         return await self.session.scalar(stmt) is not None
 
-    async def list_members(self, team_id: UUID, cursor: UUID | None = None, limit: int = 50):
+    async def list_members(
+        self, team_id: UUID, cursor: UUID | None = None, limit: int = 50
+    ) -> tuple[list[TeamMember], UUID | None]:
         stmt = (
             select(TeamMemberModel)
             .where(TeamMemberModel.team_id == team_id)
@@ -143,10 +154,13 @@ class SqlAlchemyTeamRepository(TeamRepository):
         return [self._member(row) for row in rows], next_cursor
 
     async def delete_member(self, team_id: UUID, user_id: UUID) -> bool:
-        result = await self.session.execute(
-            delete(TeamMemberModel).where(
-                TeamMemberModel.team_id == team_id,
-                TeamMemberModel.user_id == user_id,
-            )
+        result = cast(
+            CursorResult[Any],
+            await self.session.execute(
+                delete(TeamMemberModel).where(
+                    TeamMemberModel.team_id == team_id,
+                    TeamMemberModel.user_id == user_id,
+                )
+            ),
         )
-        return result.rowcount > 0
+        return bool(result.rowcount and result.rowcount > 0)
