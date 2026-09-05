@@ -12,9 +12,8 @@ async def get_current_user(
 ):
     token = credentials.credentials
 
-    verifier = request.app.state.oidc_verifier
     try:
-        claims = verifier.verify(token)
+        claims = logto_verifier.verify(token)
     except Exception:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
