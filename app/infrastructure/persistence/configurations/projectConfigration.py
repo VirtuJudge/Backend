@@ -1,12 +1,13 @@
 from datetime import datetime
+from typing import TYPE_CHECKING
 from uuid import UUID, uuid4
 
-from alembic.environment import TYPE_CHECKING
 from sqlalchemy import DateTime, ForeignKey, String, Text
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.database import Base
+
 if TYPE_CHECKING:
     from app.infrastructure.persistence.configurations.teamConfigration import TeamModel
 
@@ -40,6 +41,8 @@ class ProjectModel(Base):
         DateTime(timezone=True),
         nullable=False,
     )
+
+    version: Mapped[int] = mapped_column(nullable=False, default=1)
 
     team: Mapped["TeamModel"] = relationship(
         back_populates="projects",

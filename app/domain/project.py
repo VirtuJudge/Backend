@@ -12,3 +12,4 @@ class Project:
     name: str
     description: str | None
     created_at: datetime
+    version: int = 1

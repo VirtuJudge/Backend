@@ -5,6 +5,9 @@ from app.infrastructure.persistence.configurations.teamMemberCongfigration impor
 from app.infrastructure.persistence.configurations.teamCreationIdempotency import (
 	TeamCreationIdempotencyModel,
 )
+from app.infrastructure.persistence.configurations.projectErasureRequest import (
+	ProjectErasureRequestModel,
+)
 
 __all__ = [
 	"UserModel",
@@ -12,4 +15,5 @@ __all__ = [
 	"ProjectModel",
 	"TeamMemberModel",
 	"TeamCreationIdempotencyModel",
+	"ProjectErasureRequestModel",
 ]

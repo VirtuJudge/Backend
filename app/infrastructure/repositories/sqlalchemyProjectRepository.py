@@ -1,0 +1,118 @@
+from uuid import UUID
+
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.application.interfaces.projectRepository import ProjectRepository
+from app.domain.erasure_request import ErasureRequest
+from app.domain.project import Project
+from app.infrastructure.persistence.configurations.projectConfigration import ProjectModel
+from app.infrastructure.persistence.configurations.projectErasureRequest import (
+    ProjectErasureRequestModel,
+)
+
+
+class SqlAlchemyProjectRepository(ProjectRepository):
+
+    def __init__(self, session: AsyncSession):
+        self.session = session
+
+    @staticmethod
+    def _project(model: ProjectModel) -> Project:
+        return Project(
+            id=model.id,
+            team_id=model.team_id,
+            name=model.name,
+            description=model.description,
+            created_at=model.created_at,
+            version=model.version,
+        )
+
+    @staticmethod
+    def _erasure(model: ProjectErasureRequestModel) -> ErasureRequest:
+        return ErasureRequest(
+            id=model.id,
+            project_id=model.project_id,
+            requested_by=model.requested_by,
+            created_at=model.created_at,
+        )
+
+    async def list_for_team(self, team_id, cursor=None, search=None, limit=50):
+        stmt = (
+            select(ProjectModel)
+            .where(ProjectModel.team_id == team_id)
+            .order_by(ProjectModel.id)
+            .limit(limit + 1)
+        )
+        if cursor is not None:
+            stmt = stmt.where(ProjectModel.id > cursor)
+        if search:
+            stmt = stmt.where(ProjectModel.name.ilike(f"%{search}%"))
+        rows = list((await self.session.scalars(stmt)).all())
+        next_cursor = rows.pop().id if len(rows) > limit else None
+        return [self._project(row) for row in rows], next_cursor
+
+    async def get_by_id(self, project_id: UUID) -> Project | None:
+        model = await self.session.get(ProjectModel, project_id)
+        return self._project(model) if model is not None else None
+
+    async def create(self, project: Project) -> Project:
+        self.session.add(
+            ProjectModel(
+                id=project.id,
+                team_id=project.team_id,
+                name=project.name,
+                description=project.description,
+                created_at=project.created_at,
+                version=project.version,
+            )
+        )
+        await self.session.flush()
+        return project
+
+    async def update(
+        self,
+        project_id,
+        name,
+        description,
+        description_provided,
+        expected_version,
+    ):
+        values = {"version": expected_version + 1}
+        if name is not None:
+            values["name"] = name
+        if description_provided:
+            values["description"] = description
+        result = await self.session.execute(
+            update(ProjectModel)
+            .where(ProjectModel.id == project_id, ProjectModel.version == expected_version)
+            .values(**values)
+        )
+        if result.rowcount != 1:
+            return None
+        await self.session.flush()
+        model = await self.session.get(ProjectModel, project_id)
+        return self._project(model) if model is not None else None
+
+    async def get_erasure_request(self, project_id, requested_by, key):
+        model = await self.session.scalar(
+            select(ProjectErasureRequestModel).where(
+                ProjectErasureRequestModel.project_id == project_id,
+                ProjectErasureRequestModel.requested_by == requested_by,
+                ProjectErasureRequestModel.idempotency_key == key,
+            )
+        )
+        return self._erasure(model) if model is not None else None
+
+    async def create_erasure_request(self, request, key):
+        self.session.add(
+            ProjectErasureRequestModel(
+                id=request.id,
+                project_id=request.project_id,
+                requested_by=request.requested_by,
+                idempotency_key=key,
+                created_at=request.created_at,
+            )
+        )
+        await self.session.flush()
+        return request
