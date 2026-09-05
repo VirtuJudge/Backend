@@ -14,9 +14,15 @@ async def get_current_user(
     user_service: UserService = Depends(get_user_service),
 ) -> User:
     token = credentials.credentials
+    verifier = request.app.state.token_verifier
+    if verifier is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication provider is not configured",
+        )
 
     try:
-        claims = request.app.state.token_verifier.verify(token)
+        claims = verifier.verify(token)
     except Exception as error:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,

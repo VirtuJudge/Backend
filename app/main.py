@@ -5,7 +5,7 @@ from app.api.routes import routers
 from app.application.services.projectService import ProjectService
 from app.application.services.teamService import TeamService
 from app.application.services.userService import UserService
-from app.infrastructure.auth.provider import logto_verifier
+from app.infrastructure.auth.provider import create_token_verifier
 from app.infrastructure.database import create_database_engine
 from app.infrastructure.database import get_session as infrastructure_get_session
 from app.infrastructure.repositories.sqlalchemyProjectRepository import SqlAlchemyProjectRepository
@@ -20,7 +20,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     engine = create_database_engine(resolved_settings)
     application.state.session_factory = async_sessionmaker(engine, expire_on_commit=False)
     application.state.session_dependency = infrastructure_get_session
-    application.state.token_verifier = logto_verifier
+    application.state.token_verifier = create_token_verifier(resolved_settings)
     application.state.user_service_factory = user_service_factory
     application.state.team_service_factory = team_service_factory
     application.state.project_service_factory = project_service_factory
