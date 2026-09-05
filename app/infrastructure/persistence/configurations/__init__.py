@@ -2,5 +2,14 @@ from app.infrastructure.persistence.configurations.userConfigration import UserM
 from app.infrastructure.persistence.configurations.teamConfigration import TeamModel
 from app.infrastructure.persistence.configurations.projectConfigration import ProjectModel
 from app.infrastructure.persistence.configurations.teamMemberCongfigration import TeamMemberModel
+from app.infrastructure.persistence.configurations.teamCreationIdempotency import (
+	TeamCreationIdempotencyModel,
+)
 
-__all__ = ["UserModel", "TeamModel", "ProjectModel", "TeamMemberModel"]
+__all__ = [
+	"UserModel",
+	"TeamModel",
+	"ProjectModel",
+	"TeamMemberModel",
+	"TeamCreationIdempotencyModel",
+]

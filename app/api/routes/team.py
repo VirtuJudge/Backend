@@ -13,6 +13,7 @@ from app.api.schemas.team import (
 )
 from app.application.services.teamService import (
 	TeamForbidden,
+	IdempotencyConflict,
 	TeamNameConflict,
 	TeamNotFound,
 	TeamPreconditionFailed,
@@ -50,11 +51,16 @@ async def create_team(
 	request: TeamRequest,
 	current_user: User = Depends(get_current_user),
 	service: TeamService = Depends(get_team_service),
+	idempotency_key: str | None = Header(default=None, min_length=1, max_length=255),
+	response: Response = None,
 ) -> TeamResponse:
 	try:
-		team = await service.create(current_user.id, request.name)
+		team = await service.create(current_user.id, request.name, idempotency_key)
 	except TeamNameConflict as error:
 		raise HTTPException(status_code=409, detail="team_name_conflict") from error
+	except IdempotencyConflict as error:
+		raise HTTPException(status_code=409, detail="idempotency_key_reused") from error
+	response.headers["ETag"] = f'"{team_etag(team)}"'
 	return team_response(team)
 
 
@@ -63,6 +69,7 @@ async def get_team(
 	team_id: UUID,
 	current_user: User = Depends(get_current_user),
 	service: TeamService = Depends(get_team_service),
+	response: Response = None,
 ) -> TeamResponse:
 	try:
 		team = await service.get_authorized(team_id, current_user.id)
@@ -70,6 +77,7 @@ async def get_team(
 		raise HTTPException(status_code=404, detail="team_not_found") from error
 	except TeamForbidden as error:
 		raise HTTPException(status_code=403, detail="team_forbidden") from error
+	response.headers["ETag"] = f'"{team_etag(team)}"'
 	return team_response(team)
 
 
@@ -80,6 +88,7 @@ async def update_team(
 	current_user: User = Depends(get_current_user),
 	service: TeamService = Depends(get_team_service),
 	if_match: str | None = Header(default=None),
+	response: Response = None,
 ) -> TeamResponse:
 	try:
 		team = await service.update_name(team_id, current_user.id, request.name, if_match)
@@ -89,6 +98,7 @@ async def update_team(
 		raise HTTPException(status_code=412, detail="team_precondition_failed") from error
 	except TeamNameConflict as error:
 		raise HTTPException(status_code=409, detail="team_name_conflict") from error
+	response.headers["ETag"] = f'"{team_etag(team)}"'
 	return team_response(team)
 
 

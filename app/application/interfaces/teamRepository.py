@@ -3,6 +3,7 @@ from uuid import UUID
 
 from app.domain.team import Team
 from app.domain.team_member import TeamMember
+from app.domain.idempotency import TeamCreationIdempotency
 
 
 class TeamRepository(ABC):
@@ -29,7 +30,27 @@ class TeamRepository(ABC):
 		...
 
 	@abstractmethod
-	async def update_name(self, team_id: UUID, name: str) -> Team | None:
+	async def get_creation_idempotency(
+		self,
+		user_id: UUID,
+		key: str,
+	) -> TeamCreationIdempotency | None:
+		...
+
+	@abstractmethod
+	async def save_creation_idempotency(
+		self,
+		record: TeamCreationIdempotency,
+	) -> None:
+		...
+
+	@abstractmethod
+	async def update_name(
+		self,
+		team_id: UUID,
+		name: str,
+		expected_version: int,
+	) -> Team | None:
 		...
 
 	@abstractmethod

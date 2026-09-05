@@ -13,5 +13,6 @@ class Team:
     id: UUID
     name: str
     created_at: datetime
+    version: int = 1
     members: list[TeamMember] = field(default_factory=list)
     projects: list[Project] = field(default_factory=list)

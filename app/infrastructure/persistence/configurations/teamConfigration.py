@@ -32,6 +32,11 @@ class TeamModel(Base):
         nullable=False,
     )
 
+    version: Mapped[int] = mapped_column(
+        nullable=False,
+        default=1,
+    )
+
     members: Mapped[list["TeamMemberModel"]] = relationship(
         back_populates="team",
         cascade="all, delete-orphan",

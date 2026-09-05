@@ -1,13 +1,17 @@
 from uuid import UUID
 
-from sqlalchemy import delete, select
+from sqlalchemy import delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.interfaces.teamRepository import TeamRepository
 from app.domain.team import Team
 from app.domain.team_member import TeamMember
+from app.domain.idempotency import TeamCreationIdempotency
 from app.infrastructure.persistence.configurations.teamConfigration import TeamModel
 from app.infrastructure.persistence.configurations.teamMemberCongfigration import TeamMemberModel
+from app.infrastructure.persistence.configurations.teamCreationIdempotency import (
+    TeamCreationIdempotencyModel,
+)
 
 
 class SqlAlchemyTeamRepository(TeamRepository):
@@ -17,7 +21,12 @@ class SqlAlchemyTeamRepository(TeamRepository):
 
     @staticmethod
     def _team(model: TeamModel) -> Team:
-        return Team(id=model.id, name=model.name, created_at=model.created_at)
+        return Team(
+            id=model.id,
+            name=model.name,
+            created_at=model.created_at,
+            version=model.version,
+        )
 
     @staticmethod
     def _member(model: TeamMemberModel) -> TeamMember:
@@ -52,7 +61,14 @@ class SqlAlchemyTeamRepository(TeamRepository):
         return self._team(model) if model is not None else None
 
     async def create(self, team: Team, owner: TeamMember) -> Team:
-        self.session.add(TeamModel(id=team.id, name=team.name, created_at=team.created_at))
+        self.session.add(
+            TeamModel(
+                id=team.id,
+                name=team.name,
+                created_at=team.created_at,
+                version=team.version,
+            )
+        )
         self.session.add(
             TeamMemberModel(
                 id=owner.id,
@@ -65,13 +81,47 @@ class SqlAlchemyTeamRepository(TeamRepository):
         await self.session.flush()
         return team
 
-    async def update_name(self, team_id: UUID, name: str) -> Team | None:
-        model = await self.session.get(TeamModel, team_id)
+    async def get_creation_idempotency(self, user_id: UUID, key: str):
+        model = await self.session.get(TeamCreationIdempotencyModel, (user_id, key))
         if model is None:
             return None
-        model.name = name
+        return TeamCreationIdempotency(
+            user_id=model.user_id,
+            key=model.key,
+            request_hash=model.request_hash,
+            team_id=model.team_id,
+        )
+
+    async def save_creation_idempotency(self, record: TeamCreationIdempotency) -> None:
+        self.session.add(
+            TeamCreationIdempotencyModel(
+                user_id=record.user_id,
+                key=record.key,
+                request_hash=record.request_hash,
+                team_id=record.team_id,
+            )
+        )
         await self.session.flush()
-        return self._team(model)
+
+    async def update_name(
+        self,
+        team_id: UUID,
+        name: str,
+        expected_version: int,
+    ) -> Team | None:
+        result = await self.session.execute(
+            update(TeamModel)
+            .where(
+                TeamModel.id == team_id,
+                TeamModel.version == expected_version,
+            )
+            .values(name=name, version=expected_version + 1)
+        )
+        if result.rowcount != 1:
+            return None
+        await self.session.flush()
+        model = await self.session.get(TeamModel, team_id)
+        return self._team(model) if model is not None else None
 
     async def is_member(self, team_id: UUID, user_id: UUID) -> bool:
         stmt = select(TeamMemberModel.id).where(
