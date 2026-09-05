@@ -21,6 +21,7 @@ class Settings(BaseSettings):
     object_storage_secret_key: SecretStr | None = None
     oidc_issuer: str | None = None
     oidc_audience: str | None = None
+    oidc_jwks_url: str | None = None
     ai_worker_shared_secret: SecretStr | None = None
     mail_backend: Literal["fake", "gmail"] = "fake"
     gmail_smtp_host: str = "smtp.gmail.com"
