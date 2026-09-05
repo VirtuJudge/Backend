@@ -1,15 +1,20 @@
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from httpx import request
 import app.infrastructure.auth.provider as logto_verifier
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from app.infrastructure.database import get_session
+from app.infrastructure.repositories.sqlalchemyUserRepositories import SqlAlchemyUserRepository
 from app.application.services.userService import UserService
+from app.domain.user import User
 
 security = HTTPBearer()
 
 
 async def get_current_user(
     credentials: HTTPAuthorizationCredentials = Depends(security),
-):
+    session: AsyncSession = Depends(get_session),
+) -> User:
     token = credentials.credentials
 
     try:
@@ -20,7 +25,7 @@ async def get_current_user(
             detail="Invalid authentication credentials",
         )
 
-    user = await UserService.get_or_create_user(
+    user = await UserService(SqlAlchemyUserRepository(session)).get_or_create_user(
         issuer=claims["iss"],
         subject=claims["sub"],
         email=claims.get("email"),
