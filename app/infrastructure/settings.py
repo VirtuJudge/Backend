@@ -17,9 +17,13 @@ class Settings(BaseSettings):
     redis_url: str = "redis://localhost:6379/0"
     redis_cache_url: str = "redis://localhost:6379/1"
     object_storage_endpoint: str = "http://localhost:9000"
+    object_storage_public_endpoint: str | None = None
     object_storage_bucket: str = "virtujudge"
+    object_storage_region: str = "us-east-1"
     object_storage_access_key: SecretStr | None = None
     object_storage_secret_key: SecretStr | None = None
+    object_storage_upload_url_ttl_seconds: int = 900
+    object_storage_download_url_ttl_seconds: int = 900
     oidc_issuer: str | None = None
     oidc_audience: str | None = None
     oidc_jwks_url: str | None = None
