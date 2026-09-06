@@ -2,9 +2,10 @@ from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import DateTime, String, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.database import Base
+from app.infrastructure.persistence.configurations.teamMemberCongfigration import TeamMemberModel
 
 
 class UserModel(Base):
@@ -32,6 +33,10 @@ class UserModel(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
+    )
+
+    team_memberships: Mapped[list["TeamMemberModel"]] = relationship(
+        back_populates="user"
     )
 
     __table_args__ = (
