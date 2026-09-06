@@ -4,7 +4,9 @@ from app.api.dependencies.auth import get_current_user
 from app.api.schemas.user import UserResponse
 from app.domain.user import User
 
-router = APIRouter()
+router = APIRouter(
+    prefix="/api/v1",
+)
 
 
 @router.get("/me", response_model=UserResponse, tags=["users"])

@@ -56,7 +56,9 @@ class SqlAlchemyProjectRepository(ProjectRepository):
         if search:
             stmt = stmt.where(ProjectModel.name.ilike(f"%{search}%"))
         rows = list((await self.session.scalars(stmt)).all())
-        next_cursor = rows.pop().id if len(rows) > limit else None
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        next_cursor = rows[-1].id if has_more else None
         return [self._project(row) for row in rows], next_cursor
 
     async def get_by_id(self, project_id: UUID) -> Project | None:

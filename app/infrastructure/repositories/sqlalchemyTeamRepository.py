@@ -40,7 +40,10 @@ class SqlAlchemyTeamRepository(TeamRepository):
         )
 
     async def list_for_user(
-        self, user_id: UUID, cursor: UUID | None = None, limit: int = 50
+        self,
+        user_id: UUID,
+        cursor: UUID | None = None,
+        limit: int = 50,
     ) -> tuple[list[Team], UUID | None]:
         stmt = (
             select(TeamModel)
@@ -49,10 +52,13 @@ class SqlAlchemyTeamRepository(TeamRepository):
             .order_by(TeamModel.id)
             .limit(limit + 1)
         )
+
         if cursor is not None:
             stmt = stmt.where(TeamModel.id > cursor)
         rows = list((await self.session.scalars(stmt)).all())
-        next_cursor = rows.pop().id if len(rows) > limit else None
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        next_cursor = rows[-1].id if has_more else None
         return [self._team(row) for row in rows], next_cursor
 
     async def get_by_id(self, team_id: UUID) -> Team | None:
@@ -154,7 +160,9 @@ class SqlAlchemyTeamRepository(TeamRepository):
         if cursor is not None:
             stmt = stmt.where(TeamMemberModel.id > cursor)
         rows = list((await self.session.scalars(stmt)).all())
-        next_cursor = rows.pop().id if len(rows) > limit else None
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        next_cursor = rows[-1].id if has_more else None
         return [self._member(row) for row in rows], next_cursor
 
     async def delete_member(self, team_id: UUID, user_id: UUID) -> bool:

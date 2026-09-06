@@ -22,7 +22,9 @@ from app.application.services.projectService import (
 )
 from app.domain.user import User
 
-router = APIRouter()
+router = APIRouter(
+    prefix="/api/v1",
+)
 
 
 def project_response(project: object) -> ProjectResponse:

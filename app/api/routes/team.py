@@ -26,7 +26,9 @@ from app.domain.team import Team
 from app.domain.team_member import TeamMember
 from app.domain.user import User
 
-router = APIRouter()
+router = APIRouter(
+    prefix="/api/v1",
+)
 
 
 def team_response(team: Team) -> TeamResponse:
