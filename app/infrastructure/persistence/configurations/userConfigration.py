@@ -35,9 +35,7 @@ class UserModel(Base):
         nullable=False,
     )
 
-    team_memberships: Mapped[list["TeamMemberModel"]] = relationship(
-        back_populates="user"
-    )
+    team_memberships: Mapped[list["TeamMemberModel"]] = relationship(back_populates="user")
 
     __table_args__ = (
         UniqueConstraint(

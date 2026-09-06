@@ -14,6 +14,7 @@ from app.application.interfaces.teamRepository import TeamRepository
 from app.application.interfaces.userRepository import UserRepository
 from app.application.services.projectService import (
     ProjectForbidden,
+    ProjectNotFound,
     ProjectPreconditionFailed,
     ProjectService,
     project_etag,
@@ -81,6 +82,10 @@ class FakeTeamRepository(TeamRepository):
         self.members[(owner.team_id, owner.user_id)] = owner
         self.created_memberships.append(owner)
         return team
+
+    async def is_owner(self, team_id: UUID, user_id: UUID) -> bool:
+        member = self.members.get((team_id, user_id))
+        return member is not None and member.role == "owner"
 
     async def get_creation_idempotency(
         self, user_id: UUID, key: str
@@ -241,6 +246,7 @@ def test_oidc_verifier_delegates_signature_issuer_audience_and_expiry_validation
         algorithms: list[str],
         issuer: str,
         audience: str,
+        options: dict[str, object],
     ) -> dict[str, object]:
         calls.append(
             {
@@ -249,6 +255,7 @@ def test_oidc_verifier_delegates_signature_issuer_audience_and_expiry_validation
                 "algorithms": algorithms,
                 "issuer": issuer,
                 "audience": audience,
+                "options": options,
             }
         )
         return {"iss": issuer, "aud": audience, "sub": "subject", "exp": 9999999999}
@@ -266,6 +273,7 @@ def test_oidc_verifier_delegates_signature_issuer_audience_and_expiry_validation
             "algorithms": ["RS256"],
             "issuer": "issuer",
             "audience": "audience",
+            "options": {"require": ["exp", "sub"]},
         }
     ]
 
@@ -302,8 +310,13 @@ def test_outside_user_cannot_list_or_modify_team_projects() -> None:
 
     with pytest.raises(ProjectForbidden):
         run(service.list(TEAM_ID, OUTSIDER_ID, None, None, 50))
-    with pytest.raises(ProjectForbidden):
+
+    with pytest.raises(ProjectNotFound):
         run(service.get(project.id, OUTSIDER_ID))
+
+    with pytest.raises(ProjectNotFound):
+        run(service.get(project.id, OUTSIDER_ID))
+
     with pytest.raises(ProjectForbidden):
         run(service.create(TEAM_ID, OUTSIDER_ID, "Other", None))
 
@@ -391,8 +404,23 @@ def test_project_erasure_request_is_idempotent() -> None:
     project_repository = FakeProjectRepository(project)
     service = ProjectService(project_repository, team_repository)
 
-    first = run(service.request_erasure(project.id, MEMBER_ID, "Project", "erase-1"))
-    second = run(service.request_erasure(project.id, MEMBER_ID, "Project", "erase-1"))
+    first = run(
+        service.request_erasure(
+            project.id,
+            OWNER_ID,
+            "Project",
+            "erase-1",
+        )
+    )
+
+    second = run(
+        service.request_erasure(
+            project.id,
+            OWNER_ID,
+            "Project",
+            "erase-1",
+        )
+    )
 
     assert first == second
     assert len(project_repository.erasure_requests) == 1
