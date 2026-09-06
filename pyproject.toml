@@ -7,21 +7,15 @@ requires-python = ">=3.11"
 dependencies = [
     "alembic==1.19.1",
     "asyncpg==0.31.0",
-<<<<<<< HEAD
     "email-validator>=2.3.0",
-=======
     "boto3==1.43.88",
->>>>>>> origin/main
     "fastapi==0.141.1",
     "psycopg2-binary>=2.9.12",
     "psycopg[binary]==3.3.5",
     "pydantic==2.13.5",
     "pydantic-settings==2.15.0",
-<<<<<<< HEAD
     "pyjwt>=2.13.0",
-=======
     "redis==8.1.0",
->>>>>>> origin/main
     "sqlalchemy[asyncio]==2.0.52",
     "uvicorn[standard]==0.52.4",
 ]
