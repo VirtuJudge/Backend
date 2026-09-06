@@ -15,6 +15,7 @@ class Settings(BaseSettings):
         "postgresql+asyncpg://virtujudge_backend:virtujudge_backend@localhost:5432/virtujudge"
     )
     redis_url: str = "redis://localhost:6379/0"
+    redis_cache_url: str = "redis://localhost:6379/1"
     object_storage_endpoint: str = "http://localhost:9000"
     object_storage_bucket: str = "virtujudge"
     object_storage_access_key: SecretStr | None = None
@@ -29,3 +30,5 @@ class Settings(BaseSettings):
     gmail_smtp_username: str | None = None
     gmail_smtp_password: SecretStr | None = None
     gmail_from_address: str | None = None
+    gmail_smtp_timeout_seconds: float = 10.0
+    gmail_smoke_allowlist: str | None = None

@@ -24,3 +24,6 @@ venv/
 .vscode/
 .DS_Store
 Thumbs.db
+
+# Task notes
+.scratch/
