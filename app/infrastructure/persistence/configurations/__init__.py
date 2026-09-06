@@ -1,3 +1,8 @@
+from app.infrastructure.persistence.configurations.assetConfiguration import (
+    AssetModel,
+    AssetUploadIdempotencyModel,
+    AssetVersionModel,
+)
 from app.infrastructure.persistence.configurations.projectConfigration import ProjectModel
 from app.infrastructure.persistence.configurations.projectErasureRequest import (
     ProjectErasureRequestModel,
@@ -16,4 +21,7 @@ __all__ = [
     "TeamMemberModel",
     "TeamCreationIdempotencyModel",
     "ProjectErasureRequestModel",
+    "AssetModel",
+    "AssetVersionModel",
+    "AssetUploadIdempotencyModel",
 ]
