@@ -38,7 +38,7 @@ class ProjectService:
         if project is None:
             raise ProjectNotFound
         if not await self.teams.is_member(project.team_id, user_id):
-            raise ProjectForbidden
+            raise ProjectNotFound
         return project
 
     async def list(
@@ -98,6 +98,8 @@ class ProjectService:
         self, project_id: UUID, user_id: UUID, confirmation: str, key: str
     ) -> ErasureRequest:
         project = await self._authorized(project_id, user_id)
+        if not await self.teams.is_owner(project.team_id, user_id):
+            raise ProjectForbidden
         if confirmation != project.name:
             raise ProjectConfirmationRequired
         previous = await self.repository.get_erasure_request(project_id, user_id, key)

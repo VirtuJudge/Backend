@@ -49,6 +49,9 @@ class TeamRepository(ABC):
     async def is_member(self, team_id: UUID, user_id: UUID) -> bool: ...
 
     @abstractmethod
+    async def is_owner(self, team_id: UUID, user_id: UUID) -> bool: ...
+
+    @abstractmethod
     async def get_membership(self, team_id: UUID, user_id: UUID) -> TeamMember | None: ...
 
     @abstractmethod

@@ -140,6 +140,10 @@ class SqlAlchemyTeamRepository(TeamRepository):
     async def is_member(self, team_id: UUID, user_id: UUID) -> bool:
         return await self.get_membership(team_id, user_id) is not None
 
+    async def is_owner(self, team_id: UUID, user_id: UUID) -> bool:
+        membership = await self.get_membership(team_id, user_id)
+        return membership is not None and membership.role == "owner"
+
     async def get_membership(self, team_id: UUID, user_id: UUID) -> TeamMember | None:
         stmt = select(TeamMemberModel).where(
             TeamMemberModel.team_id == team_id,
