@@ -21,18 +21,17 @@ class SqlAlchemyUserRepository(UserRepository):
             UserModel.subject == subject,
         )
 
-        model = await self.session.scalar(stmt)
+        row = await self.session.scalar(stmt)
 
-        if model is None:
+        if row is None:
             return None
 
         return User(
-            id=model.id,
-            issuer=model.issuer,
-            subject=model.subject,
-            email=model.email,
-            display_name=model.display_name,
-            created_at=model.created_at,
+            id=row.id,
+            issuer=row.issuer,
+            subject=row.subject,
+            email=row.email,
+            created_at=row.created_at,
         )
 
     async def create(self, user: User) -> User:
