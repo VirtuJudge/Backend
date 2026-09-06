@@ -24,4 +24,7 @@ class OIDCTokenVerifier:
             algorithms=["RS256"],
             issuer=self.issuer,
             audience=self.audience,
+            options={
+                "require": ["exp", "sub"],
+            },
         )
