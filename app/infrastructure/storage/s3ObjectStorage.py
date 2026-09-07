@@ -1,9 +1,11 @@
 import asyncio
+import contextlib
 import hashlib
 import os
 import urllib.parse
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from threading import Event
 from typing import Any
 
 import boto3  # type: ignore[import-untyped]
@@ -143,6 +145,8 @@ class S3ObjectStorage(ObjectStoragePort):
         target_path: Path,
         max_bytes: int,
     ) -> tuple[int, str, str]:
+        cancelled = Event()
+
         def _read_sync() -> tuple[int, str, str]:
             try:
                 response: dict[str, Any] = self.internal_client.get_object(
@@ -162,8 +166,12 @@ class S3ObjectStorage(ObjectStoragePort):
             total_bytes = 0
 
             try:
+                if cancelled.is_set():
+                    return 0, "", ""
                 with target_path.open("wb") as f:
                     while True:
+                        if cancelled.is_set():
+                            return 0, "", ""
                         try:
                             chunk = body.read(64 * 1024) if body is not None else b""
                         except (botocore.exceptions.BotoCoreError, OSError) as read_err:
@@ -181,11 +189,23 @@ class S3ObjectStorage(ObjectStoragePort):
                         f.write(chunk)
             finally:
                 if body is not None and hasattr(body, "close"):
-                    import contextlib
-
                     with contextlib.suppress(Exception):
                         body.close()
 
             return total_bytes, hasher.hexdigest(), observed_content_type
 
-        return await asyncio.to_thread(_read_sync)
+        transfer = asyncio.create_task(asyncio.to_thread(_read_sync))
+        try:
+            return await asyncio.shield(transfer)
+        except asyncio.CancelledError:
+            cancelled.set()
+            while not transfer.done():
+                try:
+                    await asyncio.shield(transfer)
+                except asyncio.CancelledError:
+                    continue
+                except Exception:
+                    break
+            with contextlib.suppress(Exception):
+                transfer.result()
+            raise
