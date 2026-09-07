@@ -1,7 +1,7 @@
 import asyncio
 import os
 from collections.abc import AsyncIterator
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -543,3 +543,203 @@ async def test_version_allocation_idempotency_and_consistent_metadata(
         assert updated_asset.current_version_id == res_v3.id
         assert updated_asset.file_name == res_v3.file_name
         assert updated_asset.state == "verified"
+
+
+@pytest.mark.anyio
+async def test_sqlalchemy_asset_repository_media_retention_and_duration(
+    async_db_session: AsyncSession,
+) -> None:
+    session = async_db_session
+    repo = SqlAlchemyAssetRepository(session)
+
+    user_id = uuid4()
+    team_id = uuid4()
+    project_id = uuid4()
+    asset_id = uuid4()
+    version_id = uuid4()
+
+    user = UserModel(
+        id=user_id,
+        email=f"user-{uuid4().hex[:8]}@example.com",
+        issuer="https://auth.example",
+        subject=f"sub-{uuid4().hex[:8]}",
+        created_at=NOW,
+    )
+    team = TeamModel(id=team_id, name=f"Team-{uuid4().hex[:8]}", created_at=NOW)
+    project = ProjectModel(
+        id=project_id,
+        team_id=team_id,
+        name="Media Project",
+        description=None,
+        created_at=NOW,
+    )
+    session.add_all([user, team, project])
+    await session.commit()
+
+    retention_expires = NOW + timedelta(days=30)
+    asset = Asset(
+        id=asset_id,
+        project_id=project_id,
+        kind="presentation_video",
+        state="pending_upload",
+        file_name="pitch.mp4",
+        current_version_id=version_id,
+        created_by=user_id,
+        created_at=NOW,
+        retention_expires_at=retention_expires,
+    )
+    version = AssetVersion(
+        id=version_id,
+        asset_id=asset_id,
+        version_number=1,
+        state="pending_upload",
+        storage_key=f"teams/{team_id}/projects/{project_id}/assets/{asset_id}/{version_id}.mp4",
+        file_name="pitch.mp4",
+        declared_media_type="video/mp4",
+        declared_size_bytes=100000,
+        created_by=user_id,
+        created_at=NOW,
+    )
+    idem = AssetUploadIdempotency(
+        user_id=user_id,
+        project_id=project_id,
+        operation="upload_intent",
+        key="media-key-1",
+        request_hash="hash-media",
+        asset_id=asset_id,
+        version_id=version_id,
+    )
+    await repo.save_asset_with_initial_version(asset, version, idem)
+    await session.commit()
+
+    # Verify initial retention_expires_at is persisted
+    fetched = await repo.get_asset(asset_id)
+    assert fetched is not None
+    assert fetched.retention_expires_at is not None
+    assert fetched.kind == "presentation_video"
+
+    # Complete upload with duration
+    locked_asset, locked_ver, _ = await repo.get_asset_and_version_for_completion(
+        asset_id, version_id
+    )
+    assert locked_asset is not None and locked_ver is not None
+
+    locked_ver.state = "verified"
+    locked_ver.size_bytes = 100000
+    locked_ver.checksum = "sha256:112233"
+    locked_ver.media_type = "video/mp4"
+    locked_ver.duration_ms = 45000
+    locked_ver.completed_at = NOW
+
+    locked_asset.state = "verified"
+    locked_asset.file_name = locked_ver.file_name
+    locked_asset.size_bytes = 100000
+    locked_asset.checksum = "sha256:112233"
+    locked_asset.media_type = "video/mp4"
+    locked_asset.current_version_id = locked_ver.id
+    locked_asset.duration_ms = 45000
+    locked_asset.retention_expires_at = retention_expires
+
+    await repo.save_version_completion(locked_ver, locked_asset)
+
+    completed_asset = await repo.get_asset(asset_id)
+    assert completed_asset is not None
+    assert completed_asset.state == "verified"
+    assert completed_asset.duration_ms == 45000
+    assert completed_asset.retention_expires_at is not None
+
+    completed_ver = await repo.get_version(version_id)
+    assert completed_ver is not None
+    assert completed_ver.state == "verified"
+    assert completed_ver.duration_ms == 45000
+
+
+@pytest.mark.anyio
+async def test_get_asset_and_version_populate_existing_refreshes_prefilled_identity_map(
+    db_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
+    user_id = uuid4()
+    team_id = uuid4()
+    project_id = uuid4()
+    asset_id = uuid4()
+    version_id = uuid4()
+
+    async with db_session_factory() as session:
+        user = UserModel(
+            id=user_id,
+            email=f"user-{uuid4().hex[:8]}@example.com",
+            issuer="https://auth.example",
+            subject=f"sub-{uuid4().hex[:8]}",
+            created_at=NOW,
+        )
+        team = TeamModel(id=team_id, name=f"Team-{uuid4().hex[:8]}", created_at=NOW)
+        project = ProjectModel(
+            id=project_id,
+            team_id=team_id,
+            name="Refresh Project",
+            description=None,
+            created_at=NOW,
+        )
+        session.add_all([user, team, project])
+        await session.commit()
+
+        repo = SqlAlchemyAssetRepository(session)
+        asset = Asset(
+            id=asset_id,
+            project_id=project_id,
+            kind="supporting_document",
+            state="pending_upload",
+            file_name="refresh.pdf",
+            current_version_id=version_id,
+            created_by=user_id,
+            created_at=NOW,
+        )
+        version = AssetVersion(
+            id=version_id,
+            asset_id=asset_id,
+            version_number=1,
+            state="pending_upload",
+            storage_key=f"key-{uuid4()}.pdf",
+            file_name="refresh.pdf",
+            declared_media_type="application/pdf",
+            declared_size_bytes=1000,
+            created_by=user_id,
+            created_at=NOW,
+        )
+        idem = AssetUploadIdempotency(
+            user_id=user_id,
+            project_id=project_id,
+            operation="upload_intent",
+            key="refresh-key-1",
+            request_hash="hash-refresh",
+            asset_id=asset_id,
+            version_id=version_id,
+        )
+        await repo.save_asset_with_initial_version(asset, version, idem)
+        await session.commit()
+
+    # Now open session 1: prefill identity map with an authorize-style read
+    async with db_session_factory() as session1:
+        repo1 = SqlAlchemyAssetRepository(session1)
+        stale_asset = await repo1.get_asset(asset_id)
+        assert stale_asset is not None
+        assert stale_asset.state == "pending_upload"
+
+        # Concurrently in session 2: update asset state in database
+        async with db_session_factory() as session2:
+            repo2 = SqlAlchemyAssetRepository(session2)
+            asset2, ver2, _ = await repo2.get_asset_and_version_for_completion(asset_id, version_id)
+            assert asset2 is not None and ver2 is not None
+            ver2.state = "verified"
+            ver2.size_bytes = 1000
+            ver2.checksum = "sha256:ffff"
+            ver2.media_type = "application/pdf"
+            asset2.state = "verified"
+            await repo2.save_version_completion(ver2, asset2)
+
+        # The original session must refresh its cached rows when it acquires the locks.
+        locked_asset, locked_ver, _ = await repo1.get_asset_and_version_for_completion(
+            asset_id, version_id
+        )
+        assert locked_asset is not None
+        assert locked_asset.state == "verified"

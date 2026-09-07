@@ -72,6 +72,7 @@ class Asset:
     size_bytes: int | None = None
     checksum: str | None = None
     duration_ms: int | None = None
+    retention_expires_at: datetime | None = None
     rejection_reason: str | None = None
 
 

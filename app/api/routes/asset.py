@@ -173,6 +173,7 @@ def asset_to_response(asset: Asset) -> AssetResponse:
         duration_ms=asset.duration_ms,
         created_by=asset.created_by,
         created_at=asset.created_at,
+        retention_expires_at=asset.retention_expires_at,
         rejection_reason=asset.rejection_reason,
     )
 

@@ -23,6 +23,8 @@ def test_migration_upgrade_and_downgrade(tmp_path: Path) -> None:
     assert "assets" in tables
     assert "asset_versions" in tables
     assert "asset_upload_idempotency" in tables
+    asset_columns = [c["name"] for c in inspect(engine).get_columns("assets")]
+    assert "retention_expires_at" in asset_columns
 
     command.downgrade(configuration, "base")
     tables_downgraded = inspect(engine).get_table_names()

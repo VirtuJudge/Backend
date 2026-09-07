@@ -11,6 +11,7 @@ from httpx import ASGITransport, AsyncClient
 from pypdf import PdfWriter
 
 from app.application.interfaces.assetRepository import AssetRepository
+from app.application.interfaces.mediaVerifier import MediaVerifierPort
 from app.application.interfaces.objectStorage import ObjectStoragePort
 from app.application.services.assetStore import AssetStore
 from app.domain.asset import (
@@ -301,6 +302,7 @@ def create_test_client(
     user: User,
     repo: AssetRepository,
     storage: ObjectStoragePort,
+    media_verifier: MediaVerifierPort | None = None,
 ) -> AsyncClient:
     settings = Settings(
         app_env="test",
@@ -318,6 +320,7 @@ def create_test_client(
         repository=repo,
         storage=storage,
         document_verifier=DocumentVerifier(),
+        media_verifier=media_verifier,
         upload_ttl_seconds=900,
         download_ttl_seconds=900,
     )

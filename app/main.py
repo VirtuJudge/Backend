@@ -12,6 +12,7 @@ from app.infrastructure.database import create_database_engine
 from app.infrastructure.database import get_session as infrastructure_get_session
 from app.infrastructure.documents.document_verifier import DocumentVerifier
 from app.infrastructure.mail import create_mail_sender
+from app.infrastructure.media.ffmpegVerifier import FFmpegMediaVerifier
 from app.infrastructure.repositories.sqlalchemyAssetRepository import SqlAlchemyAssetRepository
 from app.infrastructure.repositories.sqlalchemyProjectRepository import SqlAlchemyProjectRepository
 from app.infrastructure.repositories.sqlalchemyTeamRepository import SqlAlchemyTeamRepository
@@ -85,6 +86,7 @@ def asset_store_factory(session: AsyncSession, settings: Settings) -> AssetStore
         repository=SqlAlchemyAssetRepository(session),
         storage=S3ObjectStorage(settings),
         document_verifier=DocumentVerifier(),
+        media_verifier=FFmpegMediaVerifier(),
         upload_ttl_seconds=settings.object_storage_upload_url_ttl_seconds,
         download_ttl_seconds=settings.object_storage_download_url_ttl_seconds,
     )

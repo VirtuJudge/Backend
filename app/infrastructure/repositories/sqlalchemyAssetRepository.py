@@ -39,6 +39,7 @@ class SqlAlchemyAssetRepository(AssetRepository):
             size_bytes=model.size_bytes,
             checksum=model.checksum,
             duration_ms=model.duration_ms,
+            retention_expires_at=model.retention_expires_at,
             rejection_reason=model.rejection_reason,
         )
 
@@ -126,6 +127,7 @@ class SqlAlchemyAssetRepository(AssetRepository):
             current_version_id=asset.current_version_id,
             created_by=asset.created_by,
             created_at=asset.created_at,
+            retention_expires_at=asset.retention_expires_at,
         )
         version_model = AssetVersionModel(
             id=version.id,
@@ -310,8 +312,10 @@ class SqlAlchemyAssetRepository(AssetRepository):
             if asset_model.current_version_id == version_model.id:
                 current_ver = self._to_version(version_model)
             else:
-                cur_stmt = select(AssetVersionModel).where(
-                    AssetVersionModel.id == asset_model.current_version_id
+                cur_stmt = (
+                    select(AssetVersionModel)
+                    .where(AssetVersionModel.id == asset_model.current_version_id)
+                    .execution_options(populate_existing=True)
                 )
                 cur_model = await self.session.scalar(cur_stmt)
                 if cur_model is not None:
@@ -359,6 +363,7 @@ class SqlAlchemyAssetRepository(AssetRepository):
                 size_bytes=version.size_bytes,
                 checksum=version.checksum,
                 media_type=version.media_type,
+                duration_ms=version.duration_ms,
                 completed_at=version.completed_at,
             )
         )
@@ -371,7 +376,9 @@ class SqlAlchemyAssetRepository(AssetRepository):
                 size_bytes=asset.size_bytes,
                 checksum=asset.checksum,
                 media_type=asset.media_type,
+                duration_ms=asset.duration_ms,
                 current_version_id=asset.current_version_id,
+                retention_expires_at=asset.retention_expires_at,
                 rejection_reason=asset.rejection_reason,
             )
         )

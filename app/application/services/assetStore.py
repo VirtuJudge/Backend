@@ -1,13 +1,15 @@
 import json
 import re
 import tempfile
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from hashlib import sha256
 from pathlib import Path
+from typing import Any
 from uuid import UUID, uuid4
 
 from app.application.interfaces.assetRepository import AssetRepository
 from app.application.interfaces.documentVerifier import DocumentVerifierPort
+from app.application.interfaces.mediaVerifier import MediaVerifierPort
 from app.application.interfaces.objectStorage import ObjectStoragePort
 from app.domain.asset import (
     Asset,
@@ -39,6 +41,39 @@ SUPPORTED_DOCUMENT_TYPES = {
     ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 }
 
+ALLOWED_ASSET_TYPES: dict[str, dict[str, str]] = {
+    "supporting_document": {
+        ".pdf": "application/pdf",
+        ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+    },
+    "presentation_video": {
+        ".mp4": "video/mp4",
+        ".webm": "video/webm",
+    },
+    "answer_audio": {
+        ".webm": "audio/webm",
+        ".ogg": "audio/ogg",
+        ".mp4": "audio/mp4",
+        ".m4a": "audio/mp4",
+        ".wav": "audio/wav",
+    },
+}
+
+ASSET_KIND_LIMITS: dict[str, dict[str, Any]] = {
+    "supporting_document": {
+        "max_size_bytes": 25 * 1024 * 1024,
+        "max_duration_ms": None,
+    },
+    "presentation_video": {
+        "max_size_bytes": 500 * 1024 * 1024,
+        "max_duration_ms": 600_000,
+    },
+    "answer_audio": {
+        "max_size_bytes": 25 * 1024 * 1024,
+        "max_duration_ms": 120_000,
+    },
+}
+
 
 def clamp_ttl(ttl: int) -> int:
     return max(MIN_TTL_SECONDS, min(MAX_TTL_SECONDS, ttl))
@@ -60,30 +95,42 @@ def compute_upload_fingerprint(
     return sha256(canonical.encode("utf-8")).hexdigest()
 
 
-def validate_document_file_and_type(
-    file_name: str, declared_media_type: str
+def validate_asset_file_and_type(
+    kind: str, file_name: str, declared_media_type: str
 ) -> tuple[str, str, str]:
     normalized_name = file_name.strip()
     invalid_chars = ("/", "\\", "..")
     if not normalized_name or any(c in normalized_name for c in invalid_chars):
         raise AssetValidationFailed("Invalid file name")
 
+    if kind not in ALLOWED_ASSET_TYPES:
+        raise AssetUnsupportedMediaType(f"Unsupported asset kind: {kind}")
+
+    kind_types = ALLOWED_ASSET_TYPES[kind]
     lower_name = normalized_name.lower()
-    ext = None
-    if lower_name.endswith(".pdf"):
-        ext = ".pdf"
-    elif lower_name.endswith(".pptx"):
-        ext = ".pptx"
-    else:
-        raise AssetUnsupportedMediaType("File extension must be .pdf or .pptx")
+    ext: str | None = None
+    for allowed_ext in kind_types:
+        if lower_name.endswith(allowed_ext):
+            ext = allowed_ext
+            break
 
+    if ext is None:
+        if kind == "supporting_document":
+            raise AssetUnsupportedMediaType("File extension must be .pdf or .pptx")
+        raise AssetUnsupportedMediaType(f"File extension not supported for kind {kind}")
+
+    canonical_media_type = kind_types[ext]
     normalized_media_type = declared_media_type.strip().lower()
-    if normalized_media_type != SUPPORTED_DOCUMENT_TYPES[ext]:
-        raise AssetUnsupportedMediaType(
-            f"Declared media type must be {SUPPORTED_DOCUMENT_TYPES[ext]}"
-        )
+    if normalized_media_type != canonical_media_type:
+        raise AssetUnsupportedMediaType(f"Declared media type must be {canonical_media_type}")
 
-    return normalized_name, normalized_media_type, ext
+    return normalized_name, canonical_media_type, ext
+
+
+def validate_document_file_and_type(
+    file_name: str, declared_media_type: str
+) -> tuple[str, str, str]:
+    return validate_asset_file_and_type("supporting_document", file_name, declared_media_type)
 
 
 class AssetStore:
@@ -92,12 +139,14 @@ class AssetStore:
         repository: AssetRepository,
         storage: ObjectStoragePort,
         document_verifier: DocumentVerifierPort,
+        media_verifier: MediaVerifierPort | None = None,
         upload_ttl_seconds: int = DEFAULT_TTL_SECONDS,
         download_ttl_seconds: int = DEFAULT_TTL_SECONDS,
     ):
         self.repository = repository
         self.storage = storage
         self.document_verifier = document_verifier
+        self.media_verifier = media_verifier
         self.upload_ttl_seconds = clamp_ttl(upload_ttl_seconds)
         self.download_ttl_seconds = clamp_ttl(download_ttl_seconds)
 
@@ -138,22 +187,27 @@ class AssetStore:
     ) -> UploadIntent:
         _, team_id = await self._authorize_project(project_id, user_id)
 
-        if kind != "supporting_document":
+        if kind not in ALLOWED_ASSET_TYPES:
             raise AssetUnsupportedMediaType("Unsupported asset kind")
 
-        normalized_name, normalized_media_type, ext = validate_document_file_and_type(
-            file_name, declared_media_type
+        normalized_name, canonical_media_type, ext = validate_asset_file_and_type(
+            kind, file_name, declared_media_type
         )
+
+        kind_limit = ASSET_KIND_LIMITS[kind]
+        max_size_bytes = kind_limit["max_size_bytes"]
+        assert max_size_bytes is not None
 
         if declared_size_bytes <= 0:
             raise AssetValidationFailed("Declared size must be positive")
-        if declared_size_bytes > MAX_DOCUMENT_SIZE_BYTES:
-            raise AssetSizeLimitExceeded("Declared size exceeds 25 MiB limit")
+        if declared_size_bytes > max_size_bytes:
+            max_mb = max_size_bytes // (1024 * 1024)
+            raise AssetSizeLimitExceeded(f"Declared size exceeds {max_mb} MiB limit")
 
         request_hash = compute_upload_fingerprint(
             kind,
             normalized_name,
-            normalized_media_type,
+            canonical_media_type,
             declared_size_bytes,
         )
 
@@ -180,13 +234,16 @@ class AssetStore:
                     method="PUT",
                     required_headers=headers,
                     expires_at=expires_at,
-                    maximum_size_bytes=MAX_DOCUMENT_SIZE_BYTES,
+                    maximum_size_bytes=max_size_bytes,
                 )
 
         asset_id = uuid4()
         version_id = uuid4()
         now = datetime.now(UTC)
         storage_key = f"teams/{team_id}/projects/{project_id}/assets/{asset_id}/{version_id}{ext}"
+        retention_expires_at = (
+            now + timedelta(days=30) if kind in ("presentation_video", "answer_audio") else None
+        )
 
         asset = Asset(
             id=asset_id,
@@ -197,6 +254,7 @@ class AssetStore:
             current_version_id=version_id,
             created_by=user_id,
             created_at=now,
+            retention_expires_at=retention_expires_at,
         )
         version = AssetVersion(
             id=version_id,
@@ -205,7 +263,7 @@ class AssetStore:
             state="pending_upload",
             storage_key=storage_key,
             file_name=normalized_name,
-            declared_media_type=normalized_media_type,
+            declared_media_type=canonical_media_type,
             declared_size_bytes=declared_size_bytes,
             created_by=user_id,
             created_at=now,
@@ -238,7 +296,7 @@ class AssetStore:
             method="PUT",
             required_headers=headers,
             expires_at=expires_at,
-            maximum_size_bytes=MAX_DOCUMENT_SIZE_BYTES,
+            maximum_size_bytes=max_size_bytes,
         )
 
     async def create_version_upload_intent(
@@ -254,19 +312,24 @@ class AssetStore:
         if asset.kind != "supporting_document":
             raise AssetReplacementNotAllowed("Only supporting documents accept replacement")
 
-        normalized_name, normalized_media_type, ext = validate_document_file_and_type(
-            file_name, declared_media_type
+        normalized_name, canonical_media_type, ext = validate_asset_file_and_type(
+            asset.kind, file_name, declared_media_type
         )
+
+        kind_limit = ASSET_KIND_LIMITS[asset.kind]
+        max_size_bytes = kind_limit["max_size_bytes"]
+        assert max_size_bytes is not None
 
         if declared_size_bytes <= 0:
             raise AssetValidationFailed("Declared size must be positive")
-        if declared_size_bytes > MAX_DOCUMENT_SIZE_BYTES:
-            raise AssetSizeLimitExceeded("Declared size exceeds 25 MiB limit")
+        if declared_size_bytes > max_size_bytes:
+            max_mb = max_size_bytes // (1024 * 1024)
+            raise AssetSizeLimitExceeded(f"Declared size exceeds {max_mb} MiB limit")
 
         request_hash = compute_upload_fingerprint(
             asset.kind,
             normalized_name,
-            normalized_media_type,
+            canonical_media_type,
             declared_size_bytes,
         )
 
@@ -294,7 +357,7 @@ class AssetStore:
                     method="PUT",
                     required_headers=headers,
                     expires_at=expires_at,
-                    maximum_size_bytes=MAX_DOCUMENT_SIZE_BYTES,
+                    maximum_size_bytes=max_size_bytes,
                 )
 
         version_id = uuid4()
@@ -312,7 +375,7 @@ class AssetStore:
             state="pending_upload",
             storage_key=storage_key,
             file_name=normalized_name,
-            declared_media_type=normalized_media_type,
+            declared_media_type=canonical_media_type,
             declared_size_bytes=declared_size_bytes,
             created_by=user_id,
             created_at=now,
@@ -387,6 +450,7 @@ class AssetStore:
                     size_bytes=version.size_bytes,
                     checksum=version.checksum,
                     duration_ms=version.duration_ms,
+                    retention_expires_at=locked_asset.retention_expires_at,
                     rejection_reason=version.rejection_reason,
                 )
             raise AssetCompletionConflict("Checksum or size does not match verified version")
@@ -398,9 +462,16 @@ class AssetStore:
             await self._reject_version(version, locked_asset, "size_mismatch")
             raise AssetCorrupt("size_mismatch")
 
-        suffix = (
-            ".pptx" if version.declared_media_type == SUPPORTED_DOCUMENT_TYPES[".pptx"] else ".pdf"
+        suffix = Path(version.file_name).suffix.lower()
+        if not suffix:
+            suffix = Path(version.storage_key).suffix.lower()
+
+        kind_limit = ASSET_KIND_LIMITS.get(
+            locked_asset.kind, {"max_size_bytes": MAX_DOCUMENT_SIZE_BYTES}
         )
+        max_cap = kind_limit["max_size_bytes"]
+        assert max_cap is not None
+
         with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as temp_file:
             temp_path = Path(temp_file.name)
 
@@ -413,7 +484,7 @@ class AssetStore:
                 ) = await self.storage.stream_to_disk(
                     version.storage_key,
                     temp_path,
-                    MAX_DOCUMENT_SIZE_BYTES,
+                    max_cap,
                 )
             except (StorageUnavailable, StorageObjectNotFound):
                 raise
@@ -434,8 +505,20 @@ class AssetStore:
                 await self._reject_version(version, locked_asset, "checksum_mismatch")
                 raise AssetCorrupt("checksum_mismatch")
 
+            verified_duration_ms: int | None = None
             try:
-                await self.document_verifier.verify_document(temp_path, version.declared_media_type)
+                if locked_asset.kind == "supporting_document":
+                    await self.document_verifier.verify_document(
+                        temp_path, version.declared_media_type
+                    )
+                elif locked_asset.kind in ("presentation_video", "answer_audio"):
+                    if self.media_verifier is None:
+                        raise StorageUnavailable("Media verifier unavailable")
+                    verified_duration_ms = await self.media_verifier.verify_media(
+                        temp_path, version.declared_media_type, locked_asset.kind
+                    )
+                else:
+                    raise AssetValidationFailed("Unsupported asset kind")
             except AssetCorrupt as err:
                 await self._reject_version(version, locked_asset, err.reason)
                 raise
@@ -445,6 +528,7 @@ class AssetStore:
             version.size_bytes = observed_bytes
             version.checksum = formatted_checksum
             version.media_type = version.declared_media_type
+            version.duration_ms = verified_duration_ms
             version.completed_at = now
 
             should_advance = (
@@ -460,7 +544,14 @@ class AssetStore:
                 locked_asset.checksum = formatted_checksum
                 locked_asset.media_type = version.declared_media_type
                 locked_asset.current_version_id = version.id
+                locked_asset.duration_ms = verified_duration_ms
                 locked_asset.rejection_reason = None
+                if (
+                    locked_asset.kind in ("presentation_video", "answer_audio")
+                    and locked_asset.retention_expires_at is None
+                ):
+                    base_time = locked_asset.created_at or now
+                    locked_asset.retention_expires_at = base_time + timedelta(days=30)
 
             await self.repository.save_version_completion(version, locked_asset)
 
@@ -477,6 +568,7 @@ class AssetStore:
                 size_bytes=version.size_bytes,
                 checksum=version.checksum,
                 duration_ms=version.duration_ms,
+                retention_expires_at=locked_asset.retention_expires_at,
                 rejection_reason=version.rejection_reason,
             )
         finally:
