@@ -1,11 +1,11 @@
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.interfaces.assetRepository import AssetRepository
-from app.domain.asset import Asset, AssetIdempotencyConflict, AssetVersion
+from app.domain.asset import Asset, AssetIdempotencyConflict, AssetNotFound, AssetVersion
 from app.domain.idempotency import AssetUploadIdempotency
 from app.domain.project import Project
 from app.infrastructure.persistence.configurations.assetConfiguration import (
@@ -186,9 +186,169 @@ class SqlAlchemyAssetRepository(AssetRepository):
         return self._to_version(model) if model is not None else None
 
     async def get_version_for_update(self, version_id: UUID) -> AssetVersion | None:
-        stmt = select(AssetVersionModel).where(AssetVersionModel.id == version_id).with_for_update()
+        stmt = (
+            select(AssetVersionModel)
+            .where(AssetVersionModel.id == version_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
         model = await self.session.scalar(stmt)
         return self._to_version(model) if model is not None else None
+
+    async def save_replacement_version(
+        self,
+        asset_id: UUID,
+        version: AssetVersion,
+        idempotency: AssetUploadIdempotency,
+    ) -> tuple[Asset, AssetVersion]:
+        stmt = (
+            select(AssetModel)
+            .where(AssetModel.id == asset_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        asset_model = await self.session.scalar(stmt)
+        if asset_model is None:
+            raise AssetNotFound
+
+        existing = await self.get_upload_idempotency(
+            idempotency.user_id,
+            idempotency.project_id,
+            idempotency.operation,
+            idempotency.key,
+        )
+        if existing is not None:
+            if existing.request_hash != idempotency.request_hash:
+                raise AssetIdempotencyConflict(
+                    "Idempotency key already used with different parameters"
+                )
+            existing_ver = await self.get_version(existing.version_id)
+            if existing_ver is not None:
+                return self._to_asset(asset_model), existing_ver
+
+        max_v_stmt = select(func.coalesce(func.max(AssetVersionModel.version_number), 0)).where(
+            AssetVersionModel.asset_id == asset_id
+        )
+        current_max = await self.session.scalar(max_v_stmt)
+        next_version_num = (current_max or 0) + 1
+        version.version_number = next_version_num
+
+        version_model = AssetVersionModel(
+            id=version.id,
+            asset_id=asset_id,
+            version_number=version.version_number,
+            state=version.state,
+            storage_key=version.storage_key,
+            file_name=version.file_name,
+            declared_media_type=version.declared_media_type,
+            declared_size_bytes=version.declared_size_bytes,
+            created_by=version.created_by,
+            created_at=version.created_at,
+        )
+        idempotency_model = AssetUploadIdempotencyModel(
+            user_id=idempotency.user_id,
+            project_id=idempotency.project_id,
+            operation=idempotency.operation,
+            key=idempotency.key,
+            request_hash=idempotency.request_hash,
+            asset_id=idempotency.asset_id,
+            version_id=idempotency.version_id,
+            created_at=version.created_at,
+        )
+
+        try:
+            async with self.session.begin_nested():
+                self.session.add(version_model)
+                await self.session.flush()
+                self.session.add(idempotency_model)
+                await self.session.flush()
+        except IntegrityError as exc:
+            existing = await self.get_upload_idempotency(
+                idempotency.user_id,
+                idempotency.project_id,
+                idempotency.operation,
+                idempotency.key,
+            )
+            if existing is not None:
+                if existing.request_hash != idempotency.request_hash:
+                    raise AssetIdempotencyConflict(
+                        "Idempotency key already used with different parameters"
+                    ) from exc
+                existing_ver = await self.get_version(existing.version_id)
+                if existing_ver is not None:
+                    return self._to_asset(asset_model), existing_ver
+            raise
+
+        await self.session.commit()
+        return self._to_asset(asset_model), version
+
+    async def get_asset_and_version_for_completion(
+        self, asset_id: UUID, version_id: UUID
+    ) -> tuple[Asset | None, AssetVersion | None, AssetVersion | None]:
+        asset_stmt = (
+            select(AssetModel)
+            .where(AssetModel.id == asset_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        asset_model = await self.session.scalar(asset_stmt)
+        if asset_model is None:
+            return None, None, None
+
+        ver_stmt = (
+            select(AssetVersionModel)
+            .where(AssetVersionModel.id == version_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        version_model = await self.session.scalar(ver_stmt)
+        if version_model is None or version_model.asset_id != asset_id:
+            return self._to_asset(asset_model), None, None
+
+        current_ver: AssetVersion | None = None
+        if asset_model.current_version_id is not None:
+            if asset_model.current_version_id == version_model.id:
+                current_ver = self._to_version(version_model)
+            else:
+                cur_stmt = select(AssetVersionModel).where(
+                    AssetVersionModel.id == asset_model.current_version_id
+                )
+                cur_model = await self.session.scalar(cur_stmt)
+                if cur_model is not None:
+                    current_ver = self._to_version(cur_model)
+
+        return self._to_asset(asset_model), self._to_version(version_model), current_ver
+
+    async def list_versions(
+        self,
+        asset_id: UUID,
+        cursor: UUID | None,
+        limit: int,
+    ) -> tuple[list[AssetVersion], UUID | None]:
+        stmt = (
+            select(AssetVersionModel)
+            .where(AssetVersionModel.asset_id == asset_id)
+            .order_by(AssetVersionModel.version_number.asc(), AssetVersionModel.id.asc())
+            .limit(limit + 1)
+        )
+        if cursor is not None:
+            cursor_ver = await self.get_version(cursor)
+            if cursor_ver is not None:
+                stmt = stmt.where(
+                    (AssetVersionModel.version_number > cursor_ver.version_number)
+                    | (
+                        (AssetVersionModel.version_number == cursor_ver.version_number)
+                        & (AssetVersionModel.id > cursor)
+                    )
+                )
+            else:
+                stmt = stmt.where(AssetVersionModel.id > cursor)
+
+        rows = list((await self.session.scalars(stmt)).all())
+        has_more = len(rows) > limit
+        rows = rows[:limit]
+        next_cursor = rows[-1].id if has_more else None
+        return [self._to_version(row) for row in rows], next_cursor
 
     async def save_version_completion(self, version: AssetVersion, asset: Asset) -> None:
         await self.session.execute(
@@ -207,10 +367,12 @@ class SqlAlchemyAssetRepository(AssetRepository):
             .where(AssetModel.id == asset.id)
             .values(
                 state=asset.state,
+                file_name=asset.file_name,
                 size_bytes=asset.size_bytes,
                 checksum=asset.checksum,
                 media_type=asset.media_type,
                 current_version_id=asset.current_version_id,
+                rejection_reason=asset.rejection_reason,
             )
         )
         await self.session.commit()

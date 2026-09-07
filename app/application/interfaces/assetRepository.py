@@ -55,6 +55,30 @@ class AssetRepository(ABC):
         pass
 
     @abstractmethod
+    async def save_replacement_version(
+        self,
+        asset_id: UUID,
+        version: AssetVersion,
+        idempotency: AssetUploadIdempotency,
+    ) -> tuple[Asset, AssetVersion]:
+        pass
+
+    @abstractmethod
+    async def get_asset_and_version_for_completion(
+        self, asset_id: UUID, version_id: UUID
+    ) -> tuple[Asset | None, AssetVersion | None, AssetVersion | None]:
+        pass
+
+    @abstractmethod
+    async def list_versions(
+        self,
+        asset_id: UUID,
+        cursor: UUID | None,
+        limit: int,
+    ) -> tuple[list[AssetVersion], UUID | None]:
+        pass
+
+    @abstractmethod
     async def list_assets(
         self,
         project_id: UUID,

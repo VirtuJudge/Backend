@@ -1,4 +1,5 @@
 import urllib.parse
+import zipfile
 from datetime import UTC, datetime
 from io import BytesIO
 from pathlib import Path
@@ -13,9 +14,11 @@ from app.domain.asset import (
     AssetSizeLimitExceeded,
     StorageUnavailable,
 )
-from app.infrastructure.pdf.pypdfVerifier import PyPdfVerifier
+from app.infrastructure.documents.document_verifier import DocumentVerifier
 from app.infrastructure.settings import Settings
 from app.infrastructure.storage.s3ObjectStorage import S3ObjectStorage
+
+PPTX_TYPE = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 
 
 def create_synthetic_pdf(
@@ -33,60 +36,234 @@ def create_synthetic_pdf(
     return buf.getvalue()
 
 
+def create_synthetic_pptx(
+    extra_files: dict[str, bytes] | None = None,
+    override_files: dict[str, bytes] | None = None,
+    corrupt_crc: bool = False,
+) -> bytes:
+    ct_xml = (
+        b'<?xml version="1.0" encoding="UTF-8"?>'
+        b'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+        b'<Default Extension="rels" '
+        b'ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+        b'<Default Extension="xml" ContentType="application/xml"/>'
+        b'<Override PartName="/ppt/presentation.xml" '
+        b'ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>'
+        b'<Override PartName="/ppt/slides/slide1.xml" '
+        b'ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>'
+        b"</Types>"
+    )
+    root_rels = (
+        b'<?xml version="1.0" encoding="UTF-8"?>'
+        b'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        b'<Relationship Id="rId1" '
+        b'Type="http://schemas.openxmlformats.org/'
+        b'officeDocument/2006/relationships/officeDocument" '
+        b'Target="ppt/presentation.xml"/>'
+        b"</Relationships>"
+    )
+    pres_rels = (
+        b'<?xml version="1.0" encoding="UTF-8"?>'
+        b'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        b'<Relationship Id="rId1" '
+        b'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" '
+        b'Target="slides/slide1.xml"/>'
+        b"</Relationships>"
+    )
+    files = {
+        "[Content_Types].xml": ct_xml,
+        "_rels/.rels": root_rels,
+        "ppt/presentation.xml": (
+            b'<?xml version="1.0" encoding="UTF-8"?>'
+            b'<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" '
+            b'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+            b'<p:sldIdLst><p:sldId id="256" r:id="rId1"/></p:sldIdLst>'
+            b"</p:presentation>"
+        ),
+        "ppt/_rels/presentation.xml.rels": pres_rels,
+        "ppt/slides/slide1.xml": (
+            b'<?xml version="1.0" encoding="UTF-8"?>'
+            b'<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld/></p:sld>'
+        ),
+    }
+    if override_files:
+        files.update(override_files)
+    if extra_files:
+        files.update(extra_files)
+
+    buf = BytesIO()
+    with zipfile.ZipFile(buf, "w", zipfile.ZIP_DEFLATED) as zf:
+        for name, data in files.items():
+            zf.writestr(name, data)
+
+    val = buf.getvalue()
+    if corrupt_crc:
+        val = val[:50] + b"\xff\xff\xff\xff" + val[54:]
+    return val
+
+
 @pytest.mark.anyio
-async def test_pypdf_verifier_accepts_valid_pdf(tmp_path: Path) -> None:
-    verifier = PyPdfVerifier()
+async def test_document_verifier_accepts_valid_pdf(tmp_path: Path) -> None:
+    verifier = DocumentVerifier()
     pdf_path = tmp_path / "valid.pdf"
     pdf_path.write_bytes(create_synthetic_pdf())
 
-    await verifier.verify_pdf(pdf_path)
+    await verifier.verify_document(pdf_path, "application/pdf")
 
 
 @pytest.mark.anyio
-async def test_pypdf_verifier_rejects_corrupt_pdf(tmp_path: Path) -> None:
-    verifier = PyPdfVerifier()
+async def test_document_verifier_rejects_corrupt_pdf(tmp_path: Path) -> None:
+    verifier = DocumentVerifier()
     pdf_path = tmp_path / "corrupt.pdf"
     pdf_path.write_bytes(b"%PDF-1.4\ncorrupted file body without valid objects")
 
     with pytest.raises(AssetCorrupt) as exc_info:
-        await verifier.verify_pdf(pdf_path)
+        await verifier.verify_document(pdf_path, "application/pdf")
     assert "corrupt_pdf" in str(exc_info.value)
 
 
 @pytest.mark.anyio
-async def test_pypdf_verifier_rejects_encrypted_pdf(tmp_path: Path) -> None:
-    verifier = PyPdfVerifier()
+async def test_document_verifier_rejects_encrypted_pdf(tmp_path: Path) -> None:
+    verifier = DocumentVerifier()
     pdf_path = tmp_path / "encrypted.pdf"
     pdf_path.write_bytes(create_synthetic_pdf(encrypted=True))
 
     with pytest.raises(AssetCorrupt) as exc_info:
-        await verifier.verify_pdf(pdf_path)
+        await verifier.verify_document(pdf_path, "application/pdf")
     assert "encrypted_pdf" in str(exc_info.value)
 
 
 @pytest.mark.anyio
-async def test_pypdf_verifier_rejects_non_pdf_file(tmp_path: Path) -> None:
-    verifier = PyPdfVerifier()
+async def test_document_verifier_rejects_non_pdf_file(tmp_path: Path) -> None:
+    verifier = DocumentVerifier()
     pdf_path = tmp_path / "text.pdf"
     pdf_path.write_bytes(b"This is a text file not starting with pdf magic bytes")
 
     with pytest.raises(AssetCorrupt) as exc_info:
-        await verifier.verify_pdf(pdf_path)
+        await verifier.verify_document(pdf_path, "application/pdf")
     assert "malformed_pdf" in str(exc_info.value)
 
 
 @pytest.mark.anyio
-async def test_pypdf_verifier_rejects_malformed_repaired_pdf(tmp_path: Path) -> None:
-    verifier = PyPdfVerifier()
+async def test_document_verifier_rejects_malformed_repaired_pdf(tmp_path: Path) -> None:
+    verifier = DocumentVerifier()
     pdf_path = tmp_path / "broken_xref.pdf"
     valid_bytes = create_synthetic_pdf()
-    # Damage the xref pointer near the end of the file
     corrupt_bytes = valid_bytes.replace(b"startxref", b"corruptxr")
     pdf_path.write_bytes(corrupt_bytes)
 
     with pytest.raises(AssetCorrupt) as exc_info:
-        await verifier.verify_pdf(pdf_path)
+        await verifier.verify_document(pdf_path, "application/pdf")
     assert "corrupt_pdf" in str(exc_info.value)
+
+
+@pytest.mark.anyio
+async def test_document_verifier_accepts_valid_pptx(tmp_path: Path) -> None:
+    verifier = DocumentVerifier()
+    p = tmp_path / "valid.pptx"
+    p.write_bytes(create_synthetic_pptx())
+    await verifier.verify_document(p, PPTX_TYPE)
+
+
+@pytest.mark.anyio
+async def test_document_verifier_accepts_pptx_with_harmless_names(tmp_path: Path) -> None:
+    verifier = DocumentVerifier()
+    p = tmp_path / "harmless.pptx"
+    p.write_bytes(
+        create_synthetic_pptx(
+            extra_files={
+                "ppt/media/canvas.xml": b"<canvas/>",
+                "ppt/navbar.png": b"fake image",
+            }
+        )
+    )
+    await verifier.verify_document(p, PPTX_TYPE)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "corrupt_data,expected_reason",
+    [
+        (b"not a zip file", "corrupt_pptx"),
+        (create_synthetic_pptx(corrupt_crc=True), "corrupt_pptx"),
+        (
+            create_synthetic_pptx(extra_files={"ppt/vbaProject.bin": b"macro"}),
+            "macro_enabled_presentation",
+        ),
+        (
+            create_synthetic_pptx(extra_files={"ppt\\..\\outside.xml": b"<xml/>"}),
+            "unsafe_archive_path",
+        ),
+        (
+            create_synthetic_pptx(extra_files={"/abs/path.xml": b"<xml/>"}),
+            "unsafe_archive_path",
+        ),
+        (
+            create_synthetic_pptx(
+                override_files={
+                    "ppt/presentation.xml": (
+                        b'<?xml version="1.0" encoding="UTF-8"?>'
+                        b'<p:presentation xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">'
+                        b"<p:sldIdLst></p:sldIdLst></p:presentation>"
+                    )
+                }
+            ),
+            "empty_pptx",
+        ),
+        (
+            create_synthetic_pptx(override_files={"ppt/presentation.xml": b"<corrupted><xml"}),
+            "malformed_pptx",
+        ),
+        (
+            create_synthetic_pptx(
+                override_files={
+                    "ppt/_rels/presentation.xml.rels": (
+                        b'<?xml version="1.0" encoding="UTF-8"?>'
+                        b'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                        b'<Relationship Id="rId1" '
+                        b'Type="http://schemas.openxmlformats.org/'
+                        b'officeDocument/2006/relationships/slide" '
+                        b'Target="slides/missing.xml"/>'
+                        b"</Relationships>"
+                    )
+                }
+            ),
+            "broken_slide_reference",
+        ),
+    ],
+)
+async def test_document_verifier_rejects_invalid_pptx(
+    tmp_path: Path, corrupt_data: bytes, expected_reason: str
+) -> None:
+    verifier = DocumentVerifier()
+    p = tmp_path / "test.pptx"
+    p.write_bytes(corrupt_data)
+    with pytest.raises(AssetCorrupt) as exc_info:
+        await verifier.verify_document(p, PPTX_TYPE)
+    assert expected_reason in str(exc_info.value)
+
+
+@pytest.mark.anyio
+async def test_document_verifier_timeout_raises_storage_unavailable(tmp_path: Path) -> None:
+    verifier = DocumentVerifier(timeout_seconds=0.0001)
+    p = tmp_path / "timeout.pptx"
+    p.write_bytes(create_synthetic_pptx())
+    with pytest.raises(StorageUnavailable):
+        await verifier.verify_document(p, PPTX_TYPE)
+
+
+@pytest.mark.anyio
+async def test_document_verifier_cancellation_reaps_child_process(tmp_path: Path) -> None:
+    import asyncio
+
+    verifier = DocumentVerifier(timeout_seconds=10.0)
+    p = tmp_path / "cancel.pptx"
+    p.write_bytes(create_synthetic_pptx())
+    task = asyncio.create_task(verifier.verify_document(p, PPTX_TYPE))
+    await asyncio.sleep(0.001)
+    task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await task
 
 
 def test_s3_storage_signed_put_enforces_headers() -> None:

@@ -10,8 +10,8 @@ from app.application.services.userService import UserService
 from app.infrastructure.auth.provider import create_token_verifier
 from app.infrastructure.database import create_database_engine
 from app.infrastructure.database import get_session as infrastructure_get_session
+from app.infrastructure.documents.document_verifier import DocumentVerifier
 from app.infrastructure.mail import create_mail_sender
-from app.infrastructure.pdf.pypdfVerifier import PyPdfVerifier
 from app.infrastructure.repositories.sqlalchemyAssetRepository import SqlAlchemyAssetRepository
 from app.infrastructure.repositories.sqlalchemyProjectRepository import SqlAlchemyProjectRepository
 from app.infrastructure.repositories.sqlalchemyTeamRepository import SqlAlchemyTeamRepository
@@ -84,7 +84,7 @@ def asset_store_factory(session: AsyncSession, settings: Settings) -> AssetStore
     return AssetStore(
         repository=SqlAlchemyAssetRepository(session),
         storage=S3ObjectStorage(settings),
-        pdf_verifier=PyPdfVerifier(),
+        document_verifier=DocumentVerifier(),
         upload_ttl_seconds=settings.object_storage_upload_url_ttl_seconds,
         download_ttl_seconds=settings.object_storage_download_url_ttl_seconds,
     )

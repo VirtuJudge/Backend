@@ -45,6 +45,10 @@ class AssetNotVerified(AssetConflict):
     pass
 
 
+class AssetReplacementNotAllowed(AssetConflict):
+    pass
+
+
 class StorageUnavailable(AssetDomainError):
     pass
 

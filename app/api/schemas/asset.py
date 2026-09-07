@@ -11,6 +11,12 @@ class UploadIntentRequest(BaseModel):
     declared_size_bytes: int = Field(gt=0)
 
 
+class VersionUploadIntentRequest(BaseModel):
+    file_name: str = Field(min_length=1, max_length=255)
+    declared_media_type: str = Field(min_length=1, max_length=100)
+    declared_size_bytes: int = Field(gt=0)
+
+
 class UploadIntentResponse(BaseModel):
     asset_id: UUID
     asset_version_id: UUID
@@ -45,6 +51,29 @@ class AssetResponse(BaseModel):
 
 class AssetPage(BaseModel):
     items: list[AssetResponse]
+    next_cursor: str | None = None
+
+
+class AssetVersionResponse(BaseModel):
+    id: UUID
+    asset_id: UUID
+    version_number: int
+    state: str
+    file_name: str
+    declared_media_type: str
+    declared_size_bytes: int
+    media_type: str | None = None
+    size_bytes: int | None = None
+    checksum: str | None = None
+    duration_ms: int | None = None
+    created_by: UUID
+    created_at: datetime
+    completed_at: datetime | None = None
+    rejection_reason: str | None = None
+
+
+class AssetVersionPage(BaseModel):
+    items: list[AssetVersionResponse]
     next_cursor: str | None = None
 
 
