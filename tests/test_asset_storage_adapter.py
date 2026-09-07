@@ -83,7 +83,12 @@ def create_synthetic_pptx(
         "ppt/_rels/presentation.xml.rels": pres_rels,
         "ppt/slides/slide1.xml": (
             b'<?xml version="1.0" encoding="UTF-8"?>'
-            b'<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld/></p:sld>'
+            b'<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main">'
+            b"<p:cSld><p:spTree>"
+            b'<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>'
+            b"<p:grpSpPr/>"
+            b"</p:spTree></p:cSld>"
+            b"</p:sld>"
         ),
     }
     if override_files:
@@ -181,11 +186,77 @@ async def test_document_verifier_accepts_pptx_with_harmless_names(tmp_path: Path
 
 
 @pytest.mark.anyio
+async def test_document_verifier_accepts_pptx_with_internal_media(tmp_path: Path) -> None:
+    verifier = DocumentVerifier()
+    p = tmp_path / "internal_media.pptx"
+    slide_xml = (
+        b'<?xml version="1.0" encoding="UTF-8"?>'
+        b'<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" '
+        b'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        b"<p:cSld><p:spTree>"
+        b"<p:pic><p:blipFill>"
+        b'<a:blip xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+        b'r:embed="rId2"/></p:blipFill></p:pic>'
+        b"</p:spTree></p:cSld></p:sld>"
+    )
+    slide_rels = (
+        b'<?xml version="1.0" encoding="UTF-8"?>'
+        b'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        b'<Relationship Id="rId2" '
+        b'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" '
+        b'Target="../media/image.png"/>'
+        b"</Relationships>"
+    )
+    p.write_bytes(
+        create_synthetic_pptx(
+            override_files={"ppt/slides/slide1.xml": slide_xml},
+            extra_files={
+                "ppt/slides/_rels/slide1.xml.rels": slide_rels,
+                "ppt/media/image.png": b"\x89PNG\r\n\x1a\nfakeimage",
+            },
+        )
+    )
+    await verifier.verify_document(p, PPTX_TYPE)
+
+
+@pytest.mark.anyio
+async def test_document_verifier_accepts_pptx_with_external_hyperlink(tmp_path: Path) -> None:
+    verifier = DocumentVerifier()
+    p = tmp_path / "external_link.pptx"
+    slide_xml = (
+        b'<?xml version="1.0" encoding="UTF-8"?>'
+        b'<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" '
+        b'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        b"<p:cSld><p:spTree>"
+        b'<p:sp><p:txBody><a:p xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main">'
+        b'<a:r><a:rPr><a:hlinkClick r:id="rId3"/></a:rPr><a:t>Link</a:t></a:r>'
+        b"</a:p></p:txBody></p:sp>"
+        b"</p:spTree></p:cSld></p:sld>"
+    )
+    slide_rels = (
+        b'<?xml version="1.0" encoding="UTF-8"?>'
+        b'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        b'<Relationship Id="rId3" '
+        b'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/hyperlink" '
+        b'Target="https://example.com" TargetMode="External"/>'
+        b"</Relationships>"
+    )
+    p.write_bytes(
+        create_synthetic_pptx(
+            override_files={"ppt/slides/slide1.xml": slide_xml},
+            extra_files={"ppt/slides/_rels/slide1.xml.rels": slide_rels},
+        )
+    )
+    await verifier.verify_document(p, PPTX_TYPE)
+
+
+@pytest.mark.anyio
 @pytest.mark.parametrize(
     "corrupt_data,expected_reason",
     [
         (b"not a zip file", "corrupt_pptx"),
         (create_synthetic_pptx(corrupt_crc=True), "corrupt_pptx"),
+        (b"not-a-pptx-header" + create_synthetic_pptx(), "corrupt_pptx"),
         (
             create_synthetic_pptx(extra_files={"ppt/vbaProject.bin": b"macro"}),
             "macro_enabled_presentation",
@@ -225,6 +296,120 @@ async def test_document_verifier_accepts_pptx_with_harmless_names(tmp_path: Path
                         b'officeDocument/2006/relationships/slide" '
                         b'Target="slides/missing.xml"/>'
                         b"</Relationships>"
+                    )
+                }
+            ),
+            "broken_slide_reference",
+        ),
+        (
+            create_synthetic_pptx(extra_files={"ppt/slides/_rels/slide1.xml.rels": b"<broken"}),
+            "malformed_pptx",
+        ),
+        (
+            create_synthetic_pptx(
+                extra_files={
+                    "ppt/slides/_rels/slide1.xml.rels": (
+                        b'<?xml version="1.0" encoding="UTF-8"?>'
+                        b'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                        b'<Relationship Id="rId1" '
+                        b'Type="http://schemas.openxmlformats.org/officeDocument/2006/'
+                        b'relationships/image" '
+                        b'Target="../media/image.png"/>'
+                        b'<Relationship Id="rId1" '
+                        b'Type="http://schemas.openxmlformats.org/officeDocument/2006/'
+                        b'relationships/image" '
+                        b'Target="../media/image2.png"/>'
+                        b"</Relationships>"
+                    )
+                }
+            ),
+            "malformed_pptx",
+        ),
+        (
+            create_synthetic_pptx(
+                override_files={
+                    "ppt/slides/slide1.xml": (
+                        b'<?xml version="1.0" encoding="UTF-8"?>'
+                        b"<p:sld "
+                        b'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" '
+                        b'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+                        b"<p:cSld><p:spTree>"
+                        b"<p:pic><p:blipFill>"
+                        b'<a:blip xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+                        b'r:embed="rIdMissing"/></p:blipFill></p:pic>'
+                        b"</p:spTree></p:cSld></p:sld>"
+                    )
+                }
+            ),
+            "broken_slide_reference",
+        ),
+        (
+            create_synthetic_pptx(
+                extra_files={
+                    "ppt/slides/_rels/slide1.xml.rels": (
+                        b'<?xml version="1.0" encoding="UTF-8"?>'
+                        b'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                        b'<Relationship Id="rId1" '
+                        b'Type="http://schemas.openxmlformats.org/officeDocument/2006/'
+                        b'relationships/image" '
+                        b'Target="../media/missing.png"/>'
+                        b"</Relationships>"
+                    )
+                }
+            ),
+            "broken_slide_reference",
+        ),
+        (
+            create_synthetic_pptx(
+                extra_files={
+                    "ppt/slides/_rels/slide1.xml.rels": (
+                        b'<?xml version="1.0" encoding="UTF-8"?>'
+                        b'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                        b'<Relationship Id="rId2" '
+                        b'Type="http://schemas.openxmlformats.org/officeDocument/2006/'
+                        b'relationships/image" '
+                        b'Target="../../../outside.png"/>'
+                        b"</Relationships>"
+                    )
+                }
+            ),
+            "unsafe_archive_path",
+        ),
+        (
+            create_synthetic_pptx(
+                override_files={
+                    "[Content_Types].xml": (
+                        b'<?xml version="1.0" encoding="UTF-8"?>'
+                        b'<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+                        b'<Default Extension="rels" '
+                        b'ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+                        b'<Default Extension="xml" ContentType="application/xml"/>'
+                        b'<Override PartName="/ppt/presentation.xml" '
+                        b'ContentType="application/vnd.openxmlformats-officedocument.'
+                        b'presentationml.presentation.main+xml"/>'
+                        b"</Types>"
+                    )
+                }
+            ),
+            "malformed_pptx",
+        ),
+        (
+            create_synthetic_pptx(
+                override_files={
+                    "ppt/slides/slide1.xml": (
+                        b'<?xml version="1.0" encoding="UTF-8"?>'
+                        b'<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"/>'
+                    )
+                }
+            ),
+            "broken_slide_reference",
+        ),
+        (
+            create_synthetic_pptx(
+                override_files={
+                    "ppt/slides/slide1.xml": (
+                        b'<?xml version="1.0" encoding="UTF-8"?>'
+                        b'<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"><p:cSld/></p:sld>'
                     )
                 }
             ),

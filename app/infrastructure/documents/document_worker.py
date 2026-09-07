@@ -3,6 +3,7 @@ import posixpath
 import sys
 import zipfile
 from pathlib import Path
+from urllib.parse import unquote
 
 try:
     import resource
@@ -37,6 +38,7 @@ NS_PRESENTATION = "http://schemas.openxmlformats.org/presentationml/2006/main"
 MAIN_PRESENTATION_TYPE = (
     "application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"
 )
+SLIDE_CONTENT_TYPE = "application/vnd.openxmlformats-officedocument.presentationml.slide+xml"
 REL_OFFICE_DOCUMENT = (
     "http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument"
 )
@@ -101,8 +103,32 @@ def is_unsafe_archive_path(filename: str) -> bool:
     return any(part == ".." or (len(part) > 1 and part[1] == ":") for part in parts)
 
 
+def resolve_rel_target(source_part: str, target: str) -> tuple[str, bool]:
+    if not target or "\x00" in target:
+        return ("", True)
+    decoded = unquote(target)
+    if "\x00" in decoded:
+        return ("", True)
+    norm = decoded.strip().replace("\\", "/")
+    if norm.startswith("/"):
+        resolved = posixpath.normpath(norm.lstrip("/"))
+    else:
+        source_dir = posixpath.dirname(source_part)
+        resolved = posixpath.normpath(posixpath.join(source_dir, norm))
+
+    if resolved.startswith("..") or resolved == ".." or resolved.startswith("/"):
+        return ("", True)
+    parts = resolved.split("/")
+    if any(part == ".." or (len(part) > 1 and part[1] == ":") for part in parts):
+        return ("", True)
+    return (resolved, False)
+
+
 def validate_pptx(target: Path) -> int:
     try:
+        with target.open("rb") as file:
+            if file.read(4) != b"PK\x03\x04":
+                return EXIT_CORRUPT
         if not zipfile.is_zipfile(target):
             return EXIT_CORRUPT
         zf = zipfile.ZipFile(target, "r")
@@ -156,6 +182,33 @@ def validate_pptx(target: Path) -> int:
         if "[Content_Types].xml" not in names or "_rels/.rels" not in names:
             return EXIT_MALFORMED
 
+        rels_by_path: dict[str, dict[str, tuple[str, str, str]]] = {}
+        for name in names:
+            if name.endswith(".rels"):
+                try:
+                    raw_rels = zf.read(name)
+                    root_elem = ET.fromstring(raw_rels)
+                except Exception:
+                    return EXIT_MALFORMED
+
+                if root_elem.tag != f"{{{NS_PACKAGE_RELS}}}Relationships":
+                    return EXIT_MALFORMED
+
+                file_rels: dict[str, tuple[str, str, str]] = {}
+                for elem in root_elem:
+                    if elem.tag != f"{{{NS_PACKAGE_RELS}}}Relationship":
+                        return EXIT_MALFORMED
+                    rid = elem.get("Id", "")
+                    if not rid or rid in file_rels:
+                        return EXIT_MALFORMED
+                    rtype = elem.get("Type", "")
+                    if "vbaproject" in rtype.lower():
+                        return EXIT_MACROS
+                    rtarget = elem.get("Target", "")
+                    rmode = elem.get("TargetMode", "")
+                    file_rels[rid] = (rtype, rtarget, rmode)
+                rels_by_path[name] = file_rels
+
         try:
             content_types_xml = zf.read("[Content_Types].xml")
             ct_root = ET.fromstring(content_types_xml)
@@ -165,51 +218,45 @@ def validate_pptx(target: Path) -> int:
         if ct_root.tag != f"{{{NS_CONTENT_TYPES}}}Types":
             return EXIT_MALFORMED
 
-        has_main_type = False
+        defaults: dict[str, str] = {}
+        overrides: dict[str, str] = {}
         for elem in ct_root:
             ct = elem.get("ContentType", "")
             if "macroenabled" in ct.lower() or "vbaproject" in ct.lower():
                 return EXIT_MACROS
-            tag = elem.tag.split("}")[-1]
-            if tag == "Override":
+            if elem.tag == f"{{{NS_CONTENT_TYPES}}}Default":
+                ext = elem.get("Extension", "").lower()
+                if ext:
+                    defaults[ext] = ct
+            elif elem.tag == f"{{{NS_CONTENT_TYPES}}}Override":
                 part_name = elem.get("PartName", "")
-                norm_part = part_name.replace("\\", "/").lstrip("/")
-                if norm_part == "ppt/presentation.xml" and ct == MAIN_PRESENTATION_TYPE:
-                    has_main_type = True
+                norm_part = posixpath.normpath(part_name.replace("\\", "/").lstrip("/"))
+                if norm_part:
+                    overrides[norm_part] = ct
 
-        if not has_main_type:
+        def get_content_type(part_path: str) -> str:
+            norm = posixpath.normpath(part_path.replace("\\", "/").lstrip("/"))
+            if norm in overrides:
+                return overrides[norm]
+            ext = posixpath.splitext(norm)[1].lstrip(".").lower()
+            return defaults.get(ext, "")
+
+        if get_content_type("ppt/presentation.xml") != MAIN_PRESENTATION_TYPE:
             return EXIT_MALFORMED
 
-        try:
-            root_rels_xml = zf.read("_rels/.rels")
-            root_rels = ET.fromstring(root_rels_xml)
-        except Exception:
-            return EXIT_MALFORMED
-
-        if root_rels.tag != f"{{{NS_PACKAGE_RELS}}}Relationships":
+        root_rels = rels_by_path.get("_rels/.rels")
+        if root_rels is None:
             return EXIT_MALFORMED
 
         presentation_part = None
-        seen_rel_ids: set[str] = set()
-        for elem in root_rels:
-            tag = elem.tag.split("}")[-1]
-            if tag == "Relationship":
-                rel_id = elem.get("Id", "")
-                if not rel_id or rel_id in seen_rel_ids:
+        for rtype, rtarget, rmode in root_rels.values():
+            if rtype == REL_OFFICE_DOCUMENT:
+                if rmode.lower() == "external":
                     return EXIT_MALFORMED
-                seen_rel_ids.add(rel_id)
-
-                rel_type = elem.get("Type", "")
-                target_mode = elem.get("TargetMode", "")
-                target_val = elem.get("Target", "")
-                if rel_type == REL_OFFICE_DOCUMENT:
-                    if target_mode.lower() == "external":
-                        return EXIT_MALFORMED
-                    if is_unsafe_archive_path(target_val):
-                        return EXIT_UNSAFE_PATH
-                    presentation_part = posixpath.normpath(
-                        target_val.replace("\\", "/").lstrip("/")
-                    )
+                resolved_pres, is_unsafe = resolve_rel_target("", rtarget)
+                if is_unsafe:
+                    return EXIT_UNSAFE_PATH
+                presentation_part = resolved_pres
 
         if presentation_part != "ppt/presentation.xml" or presentation_part not in names:
             return EXIT_MALFORMED
@@ -225,7 +272,7 @@ def validate_pptx(target: Path) -> int:
 
         slide_id_list = None
         for elem in pres_root:
-            if elem.tag.split("}")[-1] == "sldIdLst":
+            if elem.tag == f"{{{NS_PRESENTATION}}}sldIdLst":
                 slide_id_list = elem
                 break
 
@@ -234,7 +281,7 @@ def validate_pptx(target: Path) -> int:
 
         slide_rids: list[str] = []
         for elem in slide_id_list:
-            if elem.tag.split("}")[-1] == "sldId":
+            if elem.tag == f"{{{NS_PRESENTATION}}}sldId":
                 rid = elem.get(f"{{{NS_OFFICE_RELS}}}id") or elem.get("r:id") or elem.get("id")
                 if rid:
                     slide_rids.append(rid)
@@ -243,56 +290,80 @@ def validate_pptx(target: Path) -> int:
             return EXIT_EMPTY
 
         pres_rels_path = "ppt/_rels/presentation.xml.rels"
-        if pres_rels_path not in names:
+        if pres_rels_path not in rels_by_path:
             return EXIT_BROKEN_SLIDES
 
-        try:
-            pres_rels_xml = zf.read(pres_rels_path)
-            pres_rels_root = ET.fromstring(pres_rels_xml)
-        except Exception:
-            return EXIT_BROKEN_SLIDES
-
-        if pres_rels_root.tag != f"{{{NS_PACKAGE_RELS}}}Relationships":
-            return EXIT_BROKEN_SLIDES
-
-        rels_map: dict[str, tuple[str, str, str]] = {}
-        seen_pres_rel_ids: set[str] = set()
-        for elem in pres_rels_root:
-            if elem.tag.split("}")[-1] == "Relationship":
-                rel_id = elem.get("Id", "")
-                if not rel_id or rel_id in seen_pres_rel_ids:
-                    return EXIT_BROKEN_SLIDES
-                seen_pres_rel_ids.add(rel_id)
-
-                rel_type = elem.get("Type", "")
-                rel_target = elem.get("Target", "")
-                rel_mode = elem.get("TargetMode", "")
-                if "vbaproject" in rel_type.lower():
-                    return EXIT_MACROS
-                rels_map[rel_id] = (rel_type, rel_target, rel_mode)
-
+        pres_rels = rels_by_path[pres_rels_path]
         for rid in slide_rids:
-            if rid not in rels_map:
+            if rid not in pres_rels:
                 return EXIT_BROKEN_SLIDES
-            rel_type, rel_target, rel_mode = rels_map[rid]
+            rel_type, rel_target, rel_mode = pres_rels[rid]
             if rel_type != REL_SLIDE or rel_mode.lower() == "external":
                 return EXIT_BROKEN_SLIDES
 
-            if is_unsafe_archive_path(rel_target):
-                return EXIT_UNSAFE_PATH
-            resolved = posixpath.normpath(posixpath.join("ppt", rel_target.replace("\\", "/")))
-            if not resolved.startswith("ppt/"):
+            resolved, is_unsafe = resolve_rel_target("ppt/presentation.xml", rel_target)
+            if is_unsafe or not resolved.startswith("ppt/"):
                 return EXIT_UNSAFE_PATH
             if resolved not in names:
                 return EXIT_BROKEN_SLIDES
 
+            if get_content_type(resolved) != SLIDE_CONTENT_TYPE:
+                return EXIT_MALFORMED
+
             try:
                 slide_xml = zf.read(resolved)
                 slide_root = ET.fromstring(slide_xml)
-                if slide_root.tag != f"{{{NS_PRESENTATION}}}sld":
-                    return EXIT_BROKEN_SLIDES
             except Exception:
+                return EXIT_MALFORMED
+
+            if slide_root.tag != f"{{{NS_PRESENTATION}}}sld":
                 return EXIT_BROKEN_SLIDES
+
+            csld = None
+            for child in slide_root:
+                if child.tag == f"{{{NS_PRESENTATION}}}cSld":
+                    csld = child
+                    break
+            if csld is None:
+                return EXIT_BROKEN_SLIDES
+
+            sptree = None
+            for child in csld:
+                if child.tag == f"{{{NS_PRESENTATION}}}spTree":
+                    sptree = child
+                    break
+            if sptree is None:
+                return EXIT_BROKEN_SLIDES
+
+            slide_dir = posixpath.dirname(resolved)
+            slide_base = posixpath.basename(resolved)
+            slide_rels_path = posixpath.join(slide_dir, "_rels", f"{slide_base}.rels")
+            slide_rels = rels_by_path.get(slide_rels_path)
+
+            used_rel_ids: set[str] = set()
+            for elem in slide_root.iter():
+                for attr_name, attr_val in elem.attrib.items():
+                    if (
+                        attr_name.startswith(f"{{{NS_OFFICE_RELS}}}") or attr_name.startswith("r:")
+                    ) and attr_val.strip():
+                        used_rel_ids.add(attr_val.strip())
+
+            if used_rel_ids:
+                if slide_rels is None:
+                    return EXIT_BROKEN_SLIDES
+                for uid in used_rel_ids:
+                    if uid not in slide_rels:
+                        return EXIT_BROKEN_SLIDES
+
+            if slide_rels is not None:
+                for _s_type, s_target, s_mode in slide_rels.values():
+                    if s_mode.lower() == "external":
+                        continue
+                    t_resolved, t_unsafe = resolve_rel_target(resolved, s_target)
+                    if t_unsafe:
+                        return EXIT_UNSAFE_PATH
+                    if t_resolved not in names:
+                        return EXIT_BROKEN_SLIDES
 
         return EXIT_OK
 
