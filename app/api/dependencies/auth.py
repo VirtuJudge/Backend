@@ -33,6 +33,7 @@ async def get_current_user(
         issuer=claims["iss"],
         subject=claims["sub"],
         email=claims.get("email"),
+        name=claims.get("name")
     )
 
     return user

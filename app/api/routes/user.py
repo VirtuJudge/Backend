@@ -15,7 +15,7 @@ async def get_current_user_info(
 ) -> UserResponse:
     return UserResponse(
         id=current_user.id,
-        username=current_user.subject,
+        display_name=current_user.display_name,
         email=current_user.email,
         created_at=current_user.created_at.isoformat(),
     )

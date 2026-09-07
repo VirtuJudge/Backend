@@ -15,6 +15,11 @@ class UserModel(Base):
         primary_key=True,
     )
 
+    display_name: Mapped[str | None] = mapped_column(
+            String(255),
+            nullable=False,
+    )
+
     issuer: Mapped[str] = mapped_column(
         String(255),
         nullable=False,
@@ -25,9 +30,10 @@ class UserModel(Base):
         nullable=False,
     )
 
+
     email: Mapped[str | None] = mapped_column(
         String(320),
-        nullable=True,
+        nullable=False,
     )
 
     created_at: Mapped[datetime] = mapped_column(

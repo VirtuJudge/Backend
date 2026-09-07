@@ -25,6 +25,6 @@ class OIDCTokenVerifier:
             issuer=self.issuer,
             audience=self.audience,
             options={
-                "require": ["exp", "sub"],
+                "require": ["exp", "sub","name"],
             },
         )

@@ -14,6 +14,7 @@ class UserService:
         issuer: str,
         subject: str,
         email: str | None,
+        name: str | None
     ) -> User:
 
         user = await self.repository.get_by_identity(
@@ -26,6 +27,7 @@ class UserService:
 
         user = User(
             id=uuid4(),
+            display_name=name,
             issuer=issuer,
             subject=subject,
             email=email,

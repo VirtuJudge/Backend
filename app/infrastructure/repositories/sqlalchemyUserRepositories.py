@@ -30,6 +30,7 @@ class SqlAlchemyUserRepository(UserRepository):
 
         return User(
             id=row["id"],
+            display_name=row["display_name"],
             issuer=row["issuer"],
             subject=row["subject"],
             email=row["email"],
@@ -40,6 +41,7 @@ class SqlAlchemyUserRepository(UserRepository):
 
         stmt = insert(UserModel).values(
             id=user.id,
+            display_name=user.display_name,
             issuer=user.issuer,
             subject=user.subject,
             email=user.email,
