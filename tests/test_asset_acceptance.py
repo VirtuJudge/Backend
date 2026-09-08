@@ -184,7 +184,7 @@ class FakeAssetRepository(AssetRepository):
             for a in self.assets.values()
             if a.project_id == project_id
             and (kind is None or a.kind == kind)
-            and (state is None or a.state == state)
+            and (a.state == state if state is not None else a.state != "deleted")
         ]
         items.sort(key=lambda x: str(x.id))
         if cursor is not None:
@@ -193,6 +193,121 @@ class FakeAssetRepository(AssetRepository):
         page = items[:limit]
         next_cursor = page[-1].id if has_more and page else None
         return page, next_cursor
+
+    async def find_cleanup_candidate_versions(
+        self,
+        cutoff_created_at: datetime,
+        cutoff_expires_at: datetime,
+        now: datetime,
+        limit: int,
+    ) -> list[tuple[UUID, UUID]]:
+        candidates = []
+        for v in self.versions.values():
+            if (
+                v.state in ("pending_upload", "rejected", "deleting", "deleted")
+                and v.upload_expires_at is not None
+                and v.upload_expires_at <= cutoff_expires_at
+                and v.created_at <= cutoff_created_at
+                and (v.cleanup_next_attempt_at is None or v.cleanup_next_attempt_at <= now)
+            ):
+                candidates.append(v)
+        candidates.sort(
+            key=lambda v: (
+                v.cleanup_next_attempt_at is not None,
+                v.cleanup_next_attempt_at or datetime.min.replace(tzinfo=UTC),
+                v.created_at,
+            )
+        )
+        return [(v.asset_id, v.id) for v in candidates[:limit]]
+
+    async def claim_version_for_cleanup(
+        self,
+        asset_id: UUID,
+        version_id: UUID,
+        now: datetime,
+        lease_seconds: int,
+        tombstone_delay_seconds: int,
+        cutoff_created_at: datetime,
+        cutoff_expires_at: datetime,
+    ) -> AssetVersion | None:
+        asset = self.assets.get(asset_id)
+        version = self.versions.get(version_id)
+        if asset is None or version is None or version.asset_id != asset_id:
+            return None
+        if version.state not in ("pending_upload", "rejected", "deleting", "deleted"):
+            return None
+        if version.upload_expires_at is not None and version.upload_expires_at > cutoff_expires_at:
+            return None
+        if version.created_at > cutoff_created_at:
+            return None
+        if version.cleanup_next_attempt_at is not None and version.cleanup_next_attempt_at > now:
+            return None
+
+        if version.state in ("pending_upload", "rejected", "deleting"):
+            version.state = "deleting"
+            version.cleanup_next_attempt_at = now + timedelta(seconds=lease_seconds)
+        elif version.state == "deleted":
+            version.cleanup_next_attempt_at = now + timedelta(seconds=tombstone_delay_seconds)
+
+        return version
+
+    async def record_cleanup_failure(
+        self,
+        asset_id: UUID,
+        version_id: UUID,
+        next_attempt_at: datetime,
+    ) -> None:
+        version = self.versions.get(version_id)
+        if version is not None:
+            version.cleanup_next_attempt_at = next_attempt_at
+
+    async def finalize_version_cleanup(
+        self,
+        asset_id: UUID,
+        version_id: UUID,
+        next_attempt_at: datetime,
+    ) -> None:
+        version = self.versions.get(version_id)
+        if version is not None:
+            version.state = "deleted"
+            version.cleanup_next_attempt_at = next_attempt_at
+
+        asset = self.assets.get(asset_id)
+        if asset is not None and asset.current_version_id == version_id:
+            verified_versions = [
+                v
+                for v in self.versions.values()
+                if v.asset_id == asset_id and v.state == "verified" and v.id != version_id
+            ]
+            if verified_versions:
+                verified_versions.sort(key=lambda x: x.version_number, reverse=True)
+                latest_verified = verified_versions[0]
+                asset.current_version_id = latest_verified.id
+                asset.state = "verified"
+                asset.file_name = latest_verified.file_name
+                asset.media_type = latest_verified.media_type
+                asset.size_bytes = latest_verified.size_bytes
+                asset.checksum = latest_verified.checksum
+                asset.duration_ms = latest_verified.duration_ms
+            else:
+                pending_versions = [
+                    v
+                    for v in self.versions.values()
+                    if v.asset_id == asset_id and v.state == "pending_upload" and v.id != version_id
+                ]
+                if pending_versions:
+                    pending_versions.sort(key=lambda x: x.version_number, reverse=True)
+                    latest_pending = pending_versions[0]
+                    asset.current_version_id = latest_pending.id
+                    asset.state = "pending_upload"
+                    asset.file_name = latest_pending.file_name
+                    asset.media_type = None
+                    asset.size_bytes = None
+                    asset.checksum = None
+                    asset.duration_ms = None
+                    asset.rejection_reason = None
+                else:
+                    asset.state = "deleted"
 
 
 class FakeObjectStorage(ObjectStoragePort):
@@ -254,6 +369,11 @@ class FakeObjectStorage(ObjectStoragePort):
             else "application/pdf"
         )
         return len(data), hasher.hexdigest(), m_type
+
+    async def delete_object(self, storage_key: str) -> None:
+        if self.transient_failure:
+            raise StorageUnavailable("Storage transient network timeout")
+        self.objects.pop(storage_key, None)
 
 
 class FakeTokenVerifier:
