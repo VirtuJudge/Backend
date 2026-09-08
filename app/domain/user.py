@@ -10,3 +10,4 @@ class User:
     subject: str
     email: str | None
     created_at: datetime
+    display_name: str | None = None

@@ -270,7 +270,7 @@ def test_oidc_verifier_delegates_signature_issuer_audience_and_expiry_validation
         {
             "token": "signed-token",
             "key": "public-key",
-            "algorithms": ["RS256"],
+            "algorithms": ["RS256", "ES256"],
             "issuer": "issuer",
             "audience": "audience",
             "options": {"require": ["exp", "sub"]},
@@ -281,11 +281,19 @@ def test_oidc_verifier_delegates_signature_issuer_audience_and_expiry_validation
 def test_local_user_is_provisioned_from_issuer_and_subject() -> None:
     repository = FakeUserRepository()
     service = UserService(repository)
-    user = run(service.get_or_create_user("issuer", "subject", "user@example.com"))
+    user = run(
+        service.get_or_create_user(
+            "issuer",
+            "subject",
+            "user@example.com",
+            display_name="Test User",
+        )
+    )
 
     assert isinstance(user, User)
     assert user.issuer == "issuer"
     assert user.subject == "subject"
+    assert user.display_name == "Test User"
     assert repository.user == user
 
 
