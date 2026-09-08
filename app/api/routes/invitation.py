@@ -4,11 +4,10 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 
 from app.api.dependencies.auth import get_current_user
-from app.api.dependencies.auth import get_current_user
 from app.api.dependencies.services import get_TeamInvitation_service
 from app.api.schemas.mail import InvitationPreview
 from app.api.schemas.team import TeamMembershipResponse
-from app.application.services.teamInvitationService import InvitationEmailMismatchError, TeamInvitationExpiredError, TeamInvitationNotFoundError, TeamInvitationService
+from app.application.services.teamInvitationService import AlreadyConsumedInvitationError, InvitationEmailMismatchError, TeamInvitationExpiredError, TeamInvitationNotFoundError, TeamInvitationService
 from app.domain.user import User
 
 router = APIRouter()
@@ -24,6 +23,8 @@ async def invitation_preview(
         raise HTTPException(status_code=404, detail="Invitation not found")
     except TeamInvitationExpiredError as error:
         raise HTTPException(status_code=410, detail="Invitation has expired")
+    except AlreadyConsumedInvitationError as error:
+        raise HTTPException(status_code=409, detail="Invitation has already been accepted")
     return InvitationPreview(
         team_name=team_name,
         role=invitation.role,

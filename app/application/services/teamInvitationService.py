@@ -1,6 +1,7 @@
 
 import hashlib
 import secrets
+import token
 
 from alembic.environment import Optional
 
@@ -8,8 +9,9 @@ from app.application.interfaces.teamInvitationRepository import TeamInvitationRe
 from app.application.interfaces.teamRepository import TeamRepository
 from app.application.interfaces.teamMemberRepository import TeamMemberRepository
 from app.application.interfaces.userRepository import UserRepository
+from app.application.mail import MailDeliveryError, MailMessage, MailSender
 from app.domain.team_member import TeamMember
-from app.domain.team_invitation import TeamInvitation, InvitationStatus
+from app.domain.team_invitation import DeliveryStatus, TeamInvitation, InvitationStatus
 from uuid import UUID, uuid4
 from datetime import UTC, datetime, timedelta
 
@@ -39,7 +41,11 @@ class TeamInvitationService:
         self.member_repository = member_repository
         self.user_repository = user_repository
 
-    async def invite_member(self, team_id: UUID, email: str, role: str, idempotency_key: str) -> TeamInvitation:
+    async def invite_member(self, team_id: UUID, email: str
+                            , role: str
+                            , idempotency_key: str
+                            , frontend_url: str
+                            , mail_sender: MailSender) -> TeamInvitation:
             if not await self.member_repository.get_by_team_and_email(team_id, email):
                 raise AlreadyTeamMemberError(f"{email} is already a member of this team")
             if await self.repository.exists_pending_invitation(team_id, email):
@@ -68,10 +74,34 @@ class TeamInvitationService:
                 created_at=datetime.now(UTC),
                 expires_at=datetime.now(UTC) + timedelta(days=7),
             )
-            # Logic to resend the invitation (e.g., send an email) goes here
-            # For example, you might call an email service to send the invitation
-    
             invitation = await self.repository.create(invitation)
+
+            url = f"{frontend_url}/invitations/{token}"
+
+            message = MailMessage(
+                subject="You're invited to join a team!",
+                body=(
+                    "Hello,\n\n"
+                    "You have been invited to join the team. "
+                    f"Please use the following link to accept the invitation: {url}\n\n"
+                    "Best regards,\nTeam"
+                ),
+                recipient=email,
+            )
+            try:
+                mail_sender.send(message)
+
+                invitation.delivery_status = (
+                    TeamInvitation.delivery_status.ACCEPTED
+                )
+
+            except MailDeliveryError:
+                invitation.delivery_status = (
+                    TeamInvitation.delivery_status.FAILED
+                )
+
+            await self.repository.update(invitation)
+
             return invitation
 
 
@@ -80,20 +110,53 @@ class TeamInvitationService:
         invitations = await self.repository.list_by_team(team_id, cursor=cursor, limit=limit)
         return invitations
 
-    async def resend_invitation(self, team_id: UUID, invitation_id: UUID):
+    async def resend_invitation(self, team_id: UUID
+                                , invitation_id: UUID
+                                , frontend_url: str
+                                , mail_sender: MailSender):
         invitation = await self.repository.get_by_id(invitation_id)
         if invitation is None or invitation.team_id != team_id:
             raise TeamInvitationNotFoundError(f"Invitation with ID {invitation_id} not found for team {team_id}")
         if invitation.status != TeamInvitation.status.PENDING:
             raise ValueError("Only pending invitations can be resent.")
 
-        # Logic to resend the invitation (e.g., send an email) goes here
-        # For example, you might call an email service to send the invitation again
+        token = secrets.token_urlsafe(32)
 
-        # Update the delivery status and attempts
-        invitation.delivery_status = TeamInvitation.delivery_status.QUEUED
+        invitation.token_hash = hashlib.sha256(
+            token.encode()
+        ).hexdigest()
+
         invitation.delivery_attempts += 1
+        invitation.delivery_status = DeliveryStatus.QUEUED
+
         await self.repository.update(invitation)
+        url = f"{frontend_url}/invitations/{token}"
+        
+        message = MailMessage(
+            subject="You're invited to join a team!",
+            body=(
+                "Hello,\n\n"
+                "You have been invited to join the team. "
+                f"Please use the following link to accept the invitation: {url}\n\n"
+                "Best regards,\nTeam"
+            ),
+            recipient=invitation.email,
+        )
+        try:
+            mail_sender.send(message)
+
+            invitation.delivery_status = (
+                TeamInvitation.delivery_status.ACCEPTED
+            )
+
+        except MailDeliveryError:
+            invitation.delivery_status = (
+                TeamInvitation.delivery_status.FAILED
+            )
+
+        await self.repository.update(invitation)
+
+        return invitation
 
     async def revoke_invitation(self, team_id: UUID, invitation_id: UUID):
         invitation = await self.repository.get_by_id(invitation_id)
@@ -112,14 +175,22 @@ class TeamInvitationService:
         self,
         token: str,
     ):
-        result = await self.repository.get_invitation_by_token(token)
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        result = await self.repository.get_invitation_by_token(token_hash)
 
         if result is None:
             raise TeamInvitationNotFoundError(
                 f"Invitation with token {token} not found"
             )
-
         team_name, owner_name, invitation = result
+
+        if invitation.status != InvitationStatus.PENDING:
+            if invitation.status == InvitationStatus.REVOKED:
+                raise TeamInvitationNotFoundError()
+
+            if invitation.status == InvitationStatus.ACCEPTED:
+                raise AlreadyConsumedInvitationError()
+        
 
         if invitation.expires_at <= datetime.utcnow():
             invitation.status = InvitationStatus.EXPIRED
@@ -136,7 +207,8 @@ class TeamInvitationService:
         token: str,
         user_id: UUID,
     ) -> TeamMember:
-        result = await self.repository.get_invitation_by_token(token)
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        result = await self.repository.get_invitation_by_token(token_hash)
 
         if result is None:
             raise TeamInvitationNotFoundError(

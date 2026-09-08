@@ -4,8 +4,10 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, 
 from httpx import request
 
 from app.api.dependencies.auth import get_current_user
-from app.api.dependencies.services import get_TeamInvitation_service, get_team_service
+from app.api.dependencies.services import get_TeamInvitation_service, get_mail_sender, get_team_service
+from app.api.dependencies.settings import get_settings
 from app.api.dependencies.teamAuthorization import get_team_member, get_team_owner
+from app.api.schemas import mail
 from app.api.schemas.mail import (InvitationPageResponse, InviteMemberRequest, InviteMemberResponse)
 from app.api.schemas.team import (
     TeamMembershipPage,
@@ -15,6 +17,7 @@ from app.api.schemas.team import (
     TeamRequest,
     TeamResponse,
 )
+from app.application.mail import MailSender
 from app.application.services.teamService import (
     IdempotencyConflict,
     TeamMemberNotFound,
@@ -28,6 +31,7 @@ from app.application.services.teamInvitationService import AlreadyConsumedInvita
 from app.domain.team import Team
 from app.domain.team_member import TeamMember
 from app.domain.user import User
+from app.infrastructure.settings import Settings
 
 router = APIRouter(
     prefix="/api/v1",
@@ -175,9 +179,14 @@ async def invite_team_member(
     _owner: TeamMember = Depends(get_team_owner),
     service: TeamInvitationService = Depends(get_TeamInvitation_service),
     idempotency_key: str = Header(min_length=1, max_length=255),
+    mail_sender: MailSender = Depends(get_mail_sender),
+    settings: Settings = Depends(get_settings),
 ) -> InviteMemberResponse:
     try:
-        invitation = await service.invite_member(team_id, request.email, request.role, idempotency_key=idempotency_key)
+        invitation = await service.invite_member(team_id, request.email, request.role
+                                                , idempotency_key=idempotency_key
+                                                , mail_sender=mail_sender
+                                                , frontend_url= Settings.frontend_url)
     except AlreadyTeamMemberError as error:
         raise HTTPException(status_code=409, detail="already_team_member") from error
     except InvitationAlreadyExistsError as error:
@@ -204,9 +213,13 @@ async def resend_team_invitation(
     id: UUID,
     _owner: TeamMember = Depends(get_team_owner),
     service: TeamInvitationService = Depends(get_TeamInvitation_service),
+    mail_sender: MailSender = Depends(get_mail_sender),
+    settings: Settings = Depends(get_settings),
 ) -> InviteMemberResponse:
     try:
-        invitation = await service.resend_invitation(team_id, id)
+        invitation = await service.resend_invitation(team_id, id
+                                                    ,mail_sender
+                                                    ,frontend_url= Settings.frontend_url)
     except TeamInvitationNotFoundError as error:
         raise HTTPException(status_code=404, detail="team_not_found") from error
     return InviteMemberResponse.model_validate(invitation, from_attributes=True)

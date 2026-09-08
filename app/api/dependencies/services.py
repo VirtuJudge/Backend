@@ -4,6 +4,7 @@ from typing import Any, cast
 from fastapi import Depends, Request
 
 from app.application.interfaces.teamMemberRepository import TeamMemberRepository
+from app.application.mail import MailSender
 from app.application.services.projectService import ProjectService
 from app.application.services.teamService import TeamService
 from app.application.services.userService import UserService
@@ -45,3 +46,6 @@ def get_team_member_repository(
     session: Any = Depends(get_session),
 ) -> TeamMemberRepository:
     return cast(TeamMemberRepository, request.app.state.team_member_repository_factory(session))
+
+def get_mail_sender(request: Request) -> MailSender:
+    return cast(MailSender, request.app.state.mail_sender)

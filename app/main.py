@@ -3,6 +3,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.routes import routers
 from app.api.routes.health import router as health_router
+from app.application.mail import MailSender
 from app.application.services.projectService import ProjectService
 from app.application.services.teamService import TeamService
 from app.application.services.userService import UserService
