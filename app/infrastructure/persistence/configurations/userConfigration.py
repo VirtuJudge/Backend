@@ -35,9 +35,11 @@ class UserModel(Base):
         nullable=False,
     )
 
-    display_name: Mapped[str | None] = mapped_column(
+    display_name: Mapped[str] = mapped_column(
         String(255),
-        nullable=True,
+        nullable=False,
+        default="",
+        server_default="",
     )
 
     team_memberships: Mapped[list["TeamMemberModel"]] = relationship(back_populates="user")

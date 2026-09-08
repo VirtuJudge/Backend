@@ -42,7 +42,7 @@ class SqlAlchemyUserRepository(UserRepository):
             issuer=user.issuer,
             subject=user.subject,
             email=user.email,
-            display_name=user.display_name,
+            display_name=user.display_name or "",
             created_at=user.created_at,
         )
 

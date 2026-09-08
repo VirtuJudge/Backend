@@ -64,3 +64,54 @@ async def test_get_me_handles_optional_email() -> None:
     assert "username" not in data
     assert data["email"] is None
     assert "created_at" in data
+
+
+@pytest.mark.anyio
+async def test_get_me_extracts_display_name_from_token_claims() -> None:
+    settings = Settings(app_env="test", database_url="sqlite+aiosqlite:///:memory:")
+    app = create_app(settings)
+
+    class FakeVerifier:
+        def verify(self, token: str) -> dict[str, object]:
+            return {
+                "iss": "https://identity.example.com",
+                "sub": "user-sub-123",
+                "email": "charlie@example.com",
+                "user_metadata": {"display_name": "Charlie Chaplin"},
+            }
+
+    app.state.token_verifier = FakeVerifier()
+
+    from app.api.dependencies.services import get_user_service
+    from app.application.interfaces.userRepository import UserRepository
+    from app.application.services.userService import UserService
+
+    class FakeUserRepository(UserRepository):
+        def __init__(self) -> None:
+            self.user: User | None = None
+
+        async def get_by_identity(self, issuer: str, subject: str) -> User | None:
+            return self.user
+
+        async def create(self, user: User) -> User:
+            self.user = user
+            return user
+
+    fake_repo = FakeUserRepository()
+    user_service = UserService(fake_repo)
+    app.dependency_overrides[get_user_service] = lambda: user_service
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        response = await client.get(
+            "/api/v1/me",
+            headers={"Authorization": "Bearer fake-token"},
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["display_name"] == "Charlie Chaplin"
+    assert data["email"] == "charlie@example.com"
+    assert fake_repo.user is not None
+    assert fake_repo.user.display_name == "Charlie Chaplin"
+

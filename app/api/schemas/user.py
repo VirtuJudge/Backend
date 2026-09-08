@@ -23,4 +23,3 @@ class UserResponse(BaseModel):
     display_name: str
     email: EmailStr | None = None
     created_at: str
-    display_name: str | None = None

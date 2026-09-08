@@ -25,12 +25,18 @@ class UserService:
         if user is not None:
             return user
 
+        resolved_display_name = (
+            display_name
+            or (email.split("@")[0] if email else subject)
+            or ""
+        )
+
         user = User(
             id=uuid4(),
             issuer=issuer,
             subject=subject,
             email=email,
-            display_name=display_name,
+            display_name=resolved_display_name,
             created_at=datetime.now(UTC),
         )
 
