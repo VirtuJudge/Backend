@@ -26,3 +26,10 @@ class InviteMemberResponse(BaseModel):
 class InvitationPageResponse(BaseModel):
     items: list[InviteMemberResponse]
     next_cursor: str | None = None
+
+class InvitationPreview(BaseModel):
+    team_name: str
+    invited_email: EmailStr
+    role: str
+    invited_by_name: str
+    expires_at: datetime

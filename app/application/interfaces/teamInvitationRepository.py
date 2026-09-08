@@ -32,3 +32,7 @@ class TeamInvitationRepository(ABC):
     @abstractmethod
     async def update(self, invitation: TeamInvitation) -> TeamInvitation:
         pass
+
+    @abstractmethod
+    async def get_invitation_by_token(self, token: str) -> tuple[str, str, TeamInvitation] | None:
+        pass

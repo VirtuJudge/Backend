@@ -4,7 +4,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.application.interfaces.userRepository import UserRepository
 from app.domain.user import User
 from app.infrastructure.persistence.configurations.userConfigration import UserModel
-
+from uuid import UUID
 
 class SqlAlchemyUserRepository(UserRepository):
     def __init__(self, session: AsyncSession):
@@ -51,3 +51,24 @@ class SqlAlchemyUserRepository(UserRepository):
         await self.session.execute(stmt)
 
         return user
+
+    async def get_by_id(self,user_id: UUID) -> User | None: 
+        stmt = select(UserModel).where(
+            UserModel.id == user_id,
+        )
+
+        result = await self.session.execute(stmt)
+
+        row = result.mappings().first()
+
+        if row is None:
+            return None
+
+        return User(
+            id=row["id"],
+            display_name=row["display_name"],
+            issuer=row["issuer"],
+            subject=row["subject"],
+            email=row["email"],
+            created_at=row["created_at"],
+        )

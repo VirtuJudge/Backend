@@ -53,7 +53,7 @@ def project_service_factory(session: AsyncSession) -> ProjectService:
     )
 
 def team_invitation_service_factory(session: AsyncSession) -> TeamInvitationService:
-    return TeamInvitationService(SqlAlchemyTeamInvitationRepository(session), SqlAlchemyTeamRepository(session), SqlAlchemyTeamMemberRepository(session))
+    return TeamInvitationService(SqlAlchemyTeamInvitationRepository(session), SqlAlchemyTeamRepository(session), SqlAlchemyTeamMemberRepository(session), SqlAlchemyUserRepository(session))
 
 def team_member_repository_factory(session: AsyncSession) -> TeamMemberRepository:
     return SqlAlchemyTeamMemberRepository(session)
