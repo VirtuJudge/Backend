@@ -1,4 +1,5 @@
 from fastapi import FastAPI
+from psycopg import sql
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.routes import routers
@@ -12,12 +13,14 @@ from app.infrastructure.auth.provider import create_token_verifier
 from app.infrastructure.database import create_database_engine
 from app.infrastructure.database import get_session as infrastructure_get_session
 from app.infrastructure.mail import create_mail_sender
+from app.infrastructure.repositories import sqlalchemyInvitationResendKeyRepository
 from app.infrastructure.repositories.sqlalchemyProjectRepository import SqlAlchemyProjectRepository
 from app.infrastructure.repositories.sqlalchemyTeamMemberRepository import SqlAlchemyTeamMemberRepository
 from app.infrastructure.repositories.sqlalchemyTeamRepository import SqlAlchemyTeamRepository
 from app.infrastructure.repositories.sqlalchemyUserRepositories import SqlAlchemyUserRepository
 from app.infrastructure.repositories.sqlalchemyTeamInvitationRepository import SqlAlchemyTeamInvitationRepository
 from app.infrastructure.repositories.sqlalchemyTeamMemberRepository import TeamMemberRepository
+from app.infrastructure.repositories.sqlalchemyInvitationResendKeyRepository import SqlalchemyInvitationResendKeyRepository
 from app.infrastructure.settings import Settings
 
 
@@ -54,7 +57,11 @@ def project_service_factory(session: AsyncSession) -> ProjectService:
     )
 
 def team_invitation_service_factory(session: AsyncSession) -> TeamInvitationService:
-    return TeamInvitationService(SqlAlchemyTeamInvitationRepository(session), SqlAlchemyTeamRepository(session), SqlAlchemyTeamMemberRepository(session), SqlAlchemyUserRepository(session))
+    return TeamInvitationService(SqlAlchemyTeamInvitationRepository(session)
+                                , SqlAlchemyTeamRepository(session)
+                                , SqlAlchemyTeamMemberRepository(session)
+                                , SqlAlchemyUserRepository(session)
+                                ,SqlalchemyInvitationResendKeyRepository(session))
 
 def team_member_repository_factory(session: AsyncSession) -> TeamMemberRepository:
     return SqlAlchemyTeamMemberRepository(session)

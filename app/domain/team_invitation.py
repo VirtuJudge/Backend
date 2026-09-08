@@ -4,6 +4,8 @@ from datetime import datetime
 import enum
 from uuid import UUID
 
+from app.domain.invitation_resend_idompotency_key import InvitationResendIdempotency
+
 
 class InvitationStatus(str ,enum.Enum):
     PENDING = "pending"
@@ -30,3 +32,4 @@ class TeamInvitation:
     created_at: datetime
     expires_at: datetime
     idempotency_key: str
+    resend_idempotency_keys: list["InvitationResendIdempotency"]  # Forward reference to InvitationResendIdempotency

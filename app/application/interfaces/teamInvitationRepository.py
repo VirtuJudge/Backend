@@ -36,3 +36,10 @@ class TeamInvitationRepository(ABC):
     @abstractmethod
     async def get_invitation_by_token(self, token: str) -> tuple[str, str, TeamInvitation] | None:
         pass
+    
+    @abstractmethod
+    async def get_by_resend_idempotency_key(
+        self,
+        resend_idempotency_key: str,
+    ) -> TeamInvitation | None:
+        pass

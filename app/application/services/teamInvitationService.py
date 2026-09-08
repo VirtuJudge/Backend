@@ -8,6 +8,7 @@ from alembic.environment import Optional
 from app.application.interfaces.teamInvitationRepository import TeamInvitationRepository
 from app.application.interfaces.teamRepository import TeamRepository
 from app.application.interfaces.teamMemberRepository import TeamMemberRepository
+from app.application.interfaces.invitationResendKeyRepository import InvitationResendKeyRepository
 from app.application.interfaces.userRepository import UserRepository
 from app.application.mail import MailDeliveryError, MailMessage, MailSender
 from app.domain.team_member import TeamMember
@@ -35,11 +36,16 @@ class InvitationEmailMismatchError(Exception):
     pass
 
 class TeamInvitationService:
-    def __init__(self, repository: TeamInvitationRepository , team_repository: TeamRepository, member_repository: TeamMemberRepository, user_repository: UserRepository):
+    def __init__(self, repository: TeamInvitationRepository 
+                , team_repository: TeamRepository
+                , member_repository: TeamMemberRepository
+                , user_repository: UserRepository
+                , resend_idomkey_repository: InvitationResendKeyRepository):
         self.repository = repository
         self.team_repository = team_repository
         self.member_repository = member_repository
         self.user_repository = user_repository
+        self.resend_idomkey_repository = resend_idomkey_repository
 
     async def invite_member(self, team_id: UUID, email: str
                             , role: str
@@ -113,7 +119,16 @@ class TeamInvitationService:
     async def resend_invitation(self, team_id: UUID
                                 , invitation_id: UUID
                                 , frontend_url: str
-                                , mail_sender: MailSender):
+                                , mail_sender: MailSender
+                                ,resend_idempotency_key: str) -> TeamInvitation:
+
+        existing = await self.resend_idomkey_repository.get_by_resend_idempotency_key(
+                    resend_idempotency_key
+                )
+        existing_invitation = await self.repository.get_by_id(existing.invitation_id) if existing else None
+        if existing_invitation is not None:
+            return existing_invitation
+        
         invitation = await self.repository.get_by_id(invitation_id)
         if invitation is None or invitation.team_id != team_id:
             raise TeamInvitationNotFoundError(f"Invitation with ID {invitation_id} not found for team {team_id}")
@@ -125,11 +140,12 @@ class TeamInvitationService:
         invitation.token_hash = hashlib.sha256(
             token.encode()
         ).hexdigest()
+        
+        await self.resend_idomkey_repository.create(invitation, resend_idempotency_key)
 
         invitation.delivery_attempts += 1
         invitation.delivery_status = DeliveryStatus.QUEUED
 
-        await self.repository.update(invitation)
         url = f"{frontend_url}/invitations/{token}"
         
         message = MailMessage(

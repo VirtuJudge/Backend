@@ -8,6 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column , relationship
 
 from app.infrastructure.database import Base
 
+from app.infrastructure.persistence.configurations.invitationResendIdompotancyConfiguration import InvitationResendIdempotencyModel
 from app.infrastructure.persistence.configurations.teamConfigration import TeamModel
 
 
@@ -88,5 +89,3 @@ class TeamInvitationModel(Base):
         nullable=False,
         unique=True,
     )
-
-    

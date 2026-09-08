@@ -154,3 +154,18 @@ class SqlAlchemyTeamInvitationRepository(TeamInvitationRepository):
         invitation = self._invitation(model)
 
         return team.name, owner_name, invitation
+
+    async def get_by_resend_idempotency_key(
+        self,
+        resend_idempotency_key: str,
+    ) -> TeamInvitation | None:
+        stmt = select(TeamInvitationModel).where(
+            TeamInvitationModel.resend_idempotency_key == resend_idempotency_key
+        )
+
+        model = await self.session.scalar(stmt)
+
+        if model is None:
+            return None
+
+        return self._invitation(model)

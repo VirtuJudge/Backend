@@ -215,11 +215,13 @@ async def resend_team_invitation(
     service: TeamInvitationService = Depends(get_TeamInvitation_service),
     mail_sender: MailSender = Depends(get_mail_sender),
     settings: Settings = Depends(get_settings),
+    resend_idempotency_key: str = Header(min_length=1, max_length=255),
 ) -> InviteMemberResponse:
     try:
         invitation = await service.resend_invitation(team_id, id
                                                     ,mail_sender
-                                                    ,frontend_url= Settings.frontend_url)
+                                                    ,frontend_url= Settings.frontend_url
+                                                    ,resend_idempotency_key=resend_idempotency_key)
     except TeamInvitationNotFoundError as error:
         raise HTTPException(status_code=404, detail="team_not_found") from error
     return InviteMemberResponse.model_validate(invitation, from_attributes=True)
