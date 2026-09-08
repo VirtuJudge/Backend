@@ -35,6 +35,11 @@ class UserModel(Base):
         nullable=False,
     )
 
+    display_name: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
     team_memberships: Mapped[list["TeamMemberModel"]] = relationship(back_populates="user")
 
     __table_args__ = (

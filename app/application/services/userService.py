@@ -14,6 +14,7 @@ class UserService:
         issuer: str,
         subject: str,
         email: str | None,
+        display_name: str | None = None,
     ) -> User:
 
         user = await self.repository.get_by_identity(
@@ -29,6 +30,7 @@ class UserService:
             issuer=issuer,
             subject=subject,
             email=email,
+            display_name=display_name,
             created_at=datetime.now(UTC),
         )
 
