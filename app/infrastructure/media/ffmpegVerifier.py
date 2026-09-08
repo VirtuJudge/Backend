@@ -149,11 +149,11 @@ MEDIA_RULES: dict[str, dict[str, Any]] = {
 class FFmpegMediaVerifier(MediaVerifierPort):
     def __init__(
         self,
-        timeout_seconds: float = 30.0,
+        timeout_seconds: float = 900.0,
         ffprobe_path: str = "ffprobe",
         ffmpeg_path: str = "ffmpeg",
         max_memory_mb: int = 1024,
-        max_cpu_seconds: int = 60,
+        max_cpu_seconds: int = 660,
         max_fsize_mb: int = 10,
     ) -> None:
         self.timeout_seconds = timeout_seconds

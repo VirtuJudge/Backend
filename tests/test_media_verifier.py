@@ -360,6 +360,14 @@ def verifier() -> FFmpegMediaVerifier:
     return FFmpegMediaVerifier(timeout_seconds=15.0)
 
 
+def test_default_verification_budget_exceeds_maximum_media_duration() -> None:
+    default_verifier = FFmpegMediaVerifier()
+    maximum_duration_seconds = max(rule["max_duration_ms"] for rule in MEDIA_RULES.values()) / 1000
+
+    assert default_verifier.timeout_seconds > maximum_duration_seconds
+    assert default_verifier.max_cpu_seconds > maximum_duration_seconds
+
+
 def test_installed_tools_and_flags_supported() -> None:
     assert shutil.which("ffmpeg") is not None
     assert shutil.which("ffprobe") is not None
