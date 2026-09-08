@@ -1,4 +1,5 @@
 import json
+import logging
 import re
 import tempfile
 from datetime import UTC, datetime, timedelta
@@ -41,6 +42,8 @@ SUPPORTED_DOCUMENT_TYPES = {
     ".pptx": "application/vnd.openxmlformats-officedocument.presentationml.presentation",
 }
 
+logger = logging.getLogger(__name__)
+
 ALLOWED_ASSET_TYPES: dict[str, dict[str, str]] = {
     "supporting_document": {
         ".pdf": "application/pdf",
@@ -77,6 +80,14 @@ ASSET_KIND_LIMITS: dict[str, dict[str, Any]] = {
 
 def clamp_ttl(ttl: int) -> int:
     return max(MIN_TTL_SECONDS, min(MAX_TTL_SECONDS, ttl))
+
+
+def _to_utc(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
 
 
 def compute_upload_fingerprint(
@@ -162,7 +173,7 @@ class AssetStore:
 
     async def _authorize_asset(self, asset_id: UUID, user_id: UUID) -> Asset:
         asset = await self.repository.get_asset(asset_id)
-        if asset is None:
+        if asset is None or asset.state == "deleted":
             raise AssetNotFound
         await self._authorize_project(asset.project_id, user_id)
         return asset
@@ -174,6 +185,41 @@ class AssetStore:
             asset.state = "rejected"
             asset.rejection_reason = reason
         await self.repository.save_version_rejection(version, asset)
+
+    def _build_upload_intent(
+        self,
+        asset_id: UUID,
+        version: AssetVersion,
+        max_size_bytes: int,
+    ) -> UploadIntent:
+        now = datetime.now(UTC)
+        if version.state != "pending_upload":
+            raise AssetIdempotencyConflict(
+                f"Cannot replay upload intent for version in state '{version.state}'"
+            )
+        exp_utc = _to_utc(version.upload_expires_at)
+        if exp_utc is not None and exp_utc <= now:
+            raise AssetIdempotencyConflict("Upload intent has expired")
+        remaining_seconds = (
+            int((exp_utc - now).total_seconds()) if exp_utc else self.upload_ttl_seconds
+        )
+        if remaining_seconds <= 0:
+            raise AssetIdempotencyConflict("Upload intent has expired")
+        upload_url, headers, _ = self.storage.generate_upload_url(
+            version.storage_key,
+            version.declared_media_type,
+            version.declared_size_bytes,
+            remaining_seconds,
+        )
+        return UploadIntent(
+            asset_id=asset_id,
+            asset_version_id=version.id,
+            upload_url=upload_url,
+            method="PUT",
+            required_headers=headers,
+            expires_at=exp_utc or (now + timedelta(seconds=remaining_seconds)),
+            maximum_size_bytes=max_size_bytes,
+        )
 
     async def create_upload_intent(
         self,
@@ -221,25 +267,14 @@ class AssetStore:
                 )
             existing_version = await self.repository.get_version(previous.version_id)
             if existing_version is not None:
-                upload_url, headers, expires_at = self.storage.generate_upload_url(
-                    existing_version.storage_key,
-                    existing_version.declared_media_type,
-                    existing_version.declared_size_bytes,
-                    self.upload_ttl_seconds,
-                )
-                return UploadIntent(
-                    asset_id=existing_version.asset_id,
-                    asset_version_id=existing_version.id,
-                    upload_url=upload_url,
-                    method="PUT",
-                    required_headers=headers,
-                    expires_at=expires_at,
-                    maximum_size_bytes=max_size_bytes,
+                return self._build_upload_intent(
+                    existing_version.asset_id, existing_version, max_size_bytes
                 )
 
         asset_id = uuid4()
         version_id = uuid4()
         now = datetime.now(UTC)
+        upload_expires_at = now + timedelta(seconds=self.upload_ttl_seconds)
         storage_key = f"teams/{team_id}/projects/{project_id}/assets/{asset_id}/{version_id}{ext}"
         retention_expires_at = (
             now + timedelta(days=30) if kind in ("presentation_video", "answer_audio") else None
@@ -267,6 +302,7 @@ class AssetStore:
             declared_size_bytes=declared_size_bytes,
             created_by=user_id,
             created_at=now,
+            upload_expires_at=upload_expires_at,
         )
         idempotency = AssetUploadIdempotency(
             user_id=user_id,
@@ -282,22 +318,7 @@ class AssetStore:
             asset, version, idempotency
         )
 
-        upload_url, headers, expires_at = self.storage.generate_upload_url(
-            saved_version.storage_key,
-            saved_version.declared_media_type,
-            saved_version.declared_size_bytes,
-            self.upload_ttl_seconds,
-        )
-
-        return UploadIntent(
-            asset_id=saved_asset.id,
-            asset_version_id=saved_version.id,
-            upload_url=upload_url,
-            method="PUT",
-            required_headers=headers,
-            expires_at=expires_at,
-            maximum_size_bytes=max_size_bytes,
-        )
+        return self._build_upload_intent(saved_asset.id, saved_version, max_size_bytes)
 
     async def create_version_upload_intent(
         self,
@@ -344,24 +365,13 @@ class AssetStore:
                 )
             existing_version = await self.repository.get_version(previous.version_id)
             if existing_version is not None:
-                upload_url, headers, expires_at = self.storage.generate_upload_url(
-                    existing_version.storage_key,
-                    existing_version.declared_media_type,
-                    existing_version.declared_size_bytes,
-                    self.upload_ttl_seconds,
-                )
-                return UploadIntent(
-                    asset_id=existing_version.asset_id,
-                    asset_version_id=existing_version.id,
-                    upload_url=upload_url,
-                    method="PUT",
-                    required_headers=headers,
-                    expires_at=expires_at,
-                    maximum_size_bytes=max_size_bytes,
+                return self._build_upload_intent(
+                    existing_version.asset_id, existing_version, max_size_bytes
                 )
 
         version_id = uuid4()
         now = datetime.now(UTC)
+        upload_expires_at = now + timedelta(seconds=self.upload_ttl_seconds)
         project = await self.repository.get_project(asset.project_id)
         team_id = project.team_id if project is not None else uuid4()
         storage_key = (
@@ -379,6 +389,7 @@ class AssetStore:
             declared_size_bytes=declared_size_bytes,
             created_by=user_id,
             created_at=now,
+            upload_expires_at=upload_expires_at,
         )
         idempotency = AssetUploadIdempotency(
             user_id=user_id,
@@ -394,22 +405,7 @@ class AssetStore:
             asset.id, version, idempotency
         )
 
-        upload_url, headers, expires_at = self.storage.generate_upload_url(
-            saved_version.storage_key,
-            saved_version.declared_media_type,
-            saved_version.declared_size_bytes,
-            self.upload_ttl_seconds,
-        )
-
-        return UploadIntent(
-            asset_id=saved_asset.id,
-            asset_version_id=saved_version.id,
-            upload_url=upload_url,
-            method="PUT",
-            required_headers=headers,
-            expires_at=expires_at,
-            maximum_size_bytes=MAX_DOCUMENT_SIZE_BYTES,
-        )
+        return self._build_upload_intent(saved_asset.id, saved_version, MAX_DOCUMENT_SIZE_BYTES)
 
     async def complete_upload(
         self,
@@ -455,8 +451,14 @@ class AssetStore:
                 )
             raise AssetCompletionConflict("Checksum or size does not match verified version")
 
+        if version.state in ("deleting", "deleted"):
+            raise AssetCompletionConflict("Asset version is being deleted or has been deleted")
+
         if version.state == "rejected":
             raise AssetCompletionConflict("Asset version has already been rejected")
+
+        if version.state != "pending_upload":
+            raise AssetCompletionConflict("Asset version cannot be completed in current state")
 
         if size_bytes != version.declared_size_bytes:
             await self._reject_version(version, locked_asset, "size_mismatch")
@@ -652,3 +654,58 @@ class AssetStore:
             size_bytes=version.size_bytes or 0,
             file_name=version.file_name,
         )
+
+    async def cleanup_abandoned_uploads(
+        self,
+        batch_size: int = 100,
+        retention_seconds: int = 86400,
+        lease_seconds: int = 300,
+        tombstone_delay_seconds: int = 86400,
+    ) -> int:
+        now = datetime.now(UTC)
+        cutoff_created_at = now - timedelta(seconds=retention_seconds)
+        cutoff_expires_at = now
+
+        candidates = await self.repository.find_cleanup_candidate_versions(
+            cutoff_created_at=cutoff_created_at,
+            cutoff_expires_at=cutoff_expires_at,
+            now=now,
+            limit=batch_size,
+        )
+
+        cleaned_count = 0
+        for asset_id, version_id in candidates:
+            claim_now = datetime.now(UTC)
+            claimed = await self.repository.claim_version_for_cleanup(
+                asset_id=asset_id,
+                version_id=version_id,
+                now=claim_now,
+                lease_seconds=lease_seconds,
+                tombstone_delay_seconds=tombstone_delay_seconds,
+                cutoff_created_at=cutoff_created_at,
+                cutoff_expires_at=cutoff_expires_at,
+            )
+            if claimed is None:
+                continue
+
+            try:
+                await self.storage.delete_object(claimed.storage_key)
+            except Exception:
+                retry_at = datetime.now(UTC) + timedelta(seconds=lease_seconds)
+                await self.repository.record_cleanup_failure(
+                    asset_id=asset_id,
+                    version_id=version_id,
+                    next_attempt_at=retry_at,
+                )
+                logger.warning("Asset cleanup storage deletion failed; retry scheduled")
+                continue
+
+            next_sweep_at = datetime.now(UTC) + timedelta(seconds=tombstone_delay_seconds)
+            await self.repository.finalize_version_cleanup(
+                asset_id=asset_id,
+                version_id=version_id,
+                next_attempt_at=next_sweep_at,
+            )
+            cleaned_count += 1
+
+        return cleaned_count

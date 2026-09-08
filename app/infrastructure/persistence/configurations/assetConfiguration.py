@@ -77,6 +77,10 @@ class AssetVersionModel(Base):
     )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    upload_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    cleanup_next_attempt_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True, index=True
+    )
 
     __table_args__ = (
         UniqueConstraint("asset_id", "version_number", name="uq_asset_versions_asset_version"),

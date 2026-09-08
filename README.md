@@ -92,3 +92,37 @@ uv run alembic downgrade -1
 ```
 
 Repository checks cover lint, formatting, strict types, and tests without running external services. The explicit stack smoke check covers the real service boundaries.
+
+## Asset uploads and abandoned cleanup
+
+Assets support direct private uploads for documents and media with immutable versions.
+
+### Upload lifetime and idempotency
+
+- Upload intents persist an absolute `upload_expires_at` deadline at creation using clamped TTL (`OBJECT_STORAGE_UPLOAD_URL_TTL_SECONDS`, default 900s).
+- First creation and replayed intents sign only the floored remaining seconds before `upload_expires_at`. Replays never renew beyond the deadline.
+- Replaying an expired intent or an intent for a non-pending version (`verified`, `rejected`, `deleting`, `deleted`) returns safe `409 conflict`.
+- Completing a valid `pending_upload` version succeeds after URL expiry until cleanup claims the version. A claimed version returns `409 conflict`; if cleanup deletes the logical asset because no usable version survives, later access is concealed with `404 not found`. Repeated completion of verified versions remains idempotent.
+
+### Automated cleanup lifecycle
+
+A background periodic task in the FastAPI lifespan automatically claims and cleans abandoned uploads:
+- **Eligibility**: Requires both the upload deadline to have expired (`upload_expires_at <= now`) and a retention grace period to have passed (`created_at <= now - retention_seconds`). Verified objects are never eligible.
+- **State transitions**: Short transaction locks asset and version (PostgreSQL `SKIP LOCKED`), marks version `deleting` with a lease (`ASSET_CLEANUP_LEASE_SECONDS`, default 300s), deletes object from storage (missing object is treated as success), and finalizes version state to `deleted`.
+- **Tombstone re-sweep**: Finalized `deleted` versions schedule `cleanup_next_attempt_at` for delayed re-sweep (`ASSET_CLEANUP_TOMBSTONE_DELAY_SECONDS`, default 86400s) to catch late-arriving PUT requests without starving fresh candidates.
+- **Preservation**: If a replacement version is abandoned, surviving verified document current version pointers are preserved. If a newer pending replacement still exists, it becomes current; the logical asset is marked `deleted` only when no verified or pending version survives.
+- **Scheduler**: Enabled by default in development/production, disabled in test (`app_env == "test"` unless `ASSET_CLEANUP_ENABLED=true`). Runs every `ASSET_CLEANUP_INTERVAL_SECONDS` (default 300s) in batches of `ASSET_CLEANUP_BATCH_SIZE` (default 100) using independent database sessions.
+
+### Schema migration
+
+Migration `d5e6f7a8b9c0` adds `upload_expires_at` and `cleanup_next_attempt_at` with indices to `asset_versions`. Existing rows are backfilled to `migration_time + 3600s` before applying `NOT NULL` to preserve legacy replays during rollout. Downgrade safely removes the columns and indices.
+
+### Explicit smoke check
+
+To run real PostgreSQL and MinIO integration checks against an isolated disposable database and bucket:
+
+```bash
+uv run python scripts/smoke-assets.py --env-file .env.local
+```
+
+The script requires an explicit `--env-file`, provisions unique resources, exercises concurrent uploads, fail-closed signature enforcement, media verification, and cleanup transitions, and drops all created resources upon completion without modifying application data.

@@ -209,3 +209,20 @@ class S3ObjectStorage(ObjectStoragePort):
             with contextlib.suppress(Exception):
                 transfer.result()
             raise
+
+    async def delete_object(self, storage_key: str) -> None:
+        def _delete_sync() -> None:
+            try:
+                self.internal_client.delete_object(
+                    Bucket=self.bucket,
+                    Key=storage_key,
+                )
+            except botocore.exceptions.ClientError as err:
+                code = err.response.get("Error", {}).get("Code")
+                if code in ("NoSuchKey", "404", "NotFound"):
+                    return
+                raise StorageUnavailable("Storage service unavailable") from err
+            except (botocore.exceptions.BotoCoreError, OSError) as err:
+                raise StorageUnavailable("Failed to connect to storage service") from err
+
+        await asyncio.to_thread(_delete_sync)

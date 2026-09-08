@@ -37,6 +37,14 @@ class AssetIdempotencyConflict(AssetConflict):
     pass
 
 
+class AssetIntentExpired(AssetConflict):
+    pass
+
+
+class AssetIntentConflict(AssetConflict):
+    pass
+
+
 class AssetCompletionConflict(AssetConflict):
     pass
 
@@ -94,6 +102,8 @@ class AssetVersion:
     duration_ms: int | None = None
     rejection_reason: str | None = None
     completed_at: datetime | None = None
+    upload_expires_at: datetime | None = None
+    cleanup_next_attempt_at: datetime | None = None
 
 
 @dataclass(frozen=True, slots=True)

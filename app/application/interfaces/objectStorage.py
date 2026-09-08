@@ -30,3 +30,7 @@ class ObjectStoragePort(ABC):
         max_bytes: int,
     ) -> tuple[int, str, str]:
         pass
+
+    @abstractmethod
+    async def delete_object(self, storage_key: str) -> None:
+        pass

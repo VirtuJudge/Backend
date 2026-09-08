@@ -1,3 +1,9 @@
+import asyncio
+import contextlib
+import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+
 from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -20,12 +26,64 @@ from app.infrastructure.repositories.sqlalchemyUserRepositories import SqlAlchem
 from app.infrastructure.settings import Settings
 from app.infrastructure.storage.s3ObjectStorage import S3ObjectStorage
 
+logger = logging.getLogger(__name__)
+
 
 def create_app(settings: Settings | None = None) -> FastAPI:
     resolved_settings = settings or Settings()
-    application = FastAPI(title=resolved_settings.app_name)
     engine = create_database_engine(resolved_settings)
-    application.state.session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    cleanup_enabled = (
+        resolved_settings.asset_cleanup_enabled
+        if resolved_settings.asset_cleanup_enabled is not None
+        else (resolved_settings.app_env != "test")
+    )
+
+    @asynccontextmanager
+    async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+        cleanup_task: asyncio.Task[None] | None = None
+        if cleanup_enabled:
+
+            async def _cleanup_loop() -> None:
+                while True:
+                    try:
+                        await asyncio.sleep(resolved_settings.asset_cleanup_interval_seconds)
+                        async with session_factory() as session:
+                            factory = getattr(app.state, "asset_store_factory", None)
+                            store = (
+                                factory(session)
+                                if factory is not None
+                                else asset_store_factory(session, resolved_settings)
+                            )
+                            await store.cleanup_abandoned_uploads(
+                                batch_size=resolved_settings.asset_cleanup_batch_size,
+                                retention_seconds=resolved_settings.asset_cleanup_retention_seconds,
+                                lease_seconds=resolved_settings.asset_cleanup_lease_seconds,
+                                tombstone_delay_seconds=resolved_settings.asset_cleanup_tombstone_delay_seconds,
+                            )
+                    except asyncio.CancelledError:
+                        break
+                    except Exception as exc:
+                        logger.warning(
+                            "Periodic asset cleanup encountered error: %s",
+                            type(exc).__name__,
+                        )
+
+            cleanup_task = asyncio.create_task(_cleanup_loop())
+
+        try:
+            yield
+        finally:
+            if cleanup_task is not None:
+                cleanup_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await cleanup_task
+
+            await engine.dispose()
+
+    application = FastAPI(title=resolved_settings.app_name, lifespan=lifespan)
+    application.state.session_factory = session_factory
     application.state.session_dependency = infrastructure_get_session
     application.state.token_verifier = create_token_verifier(resolved_settings)
     application.state.user_service_factory = user_service_factory

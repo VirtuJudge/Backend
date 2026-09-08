@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from datetime import datetime
 from uuid import UUID
 
 from app.domain.asset import Asset, AssetVersion
@@ -87,4 +88,45 @@ class AssetRepository(ABC):
         kind: str | None,
         state: str | None,
     ) -> tuple[list[Asset], UUID | None]:
+        pass
+
+    @abstractmethod
+    async def find_cleanup_candidate_versions(
+        self,
+        cutoff_created_at: datetime,
+        cutoff_expires_at: datetime,
+        now: datetime,
+        limit: int,
+    ) -> list[tuple[UUID, UUID]]:
+        pass
+
+    @abstractmethod
+    async def claim_version_for_cleanup(
+        self,
+        asset_id: UUID,
+        version_id: UUID,
+        now: datetime,
+        lease_seconds: int,
+        tombstone_delay_seconds: int,
+        cutoff_created_at: datetime,
+        cutoff_expires_at: datetime,
+    ) -> AssetVersion | None:
+        pass
+
+    @abstractmethod
+    async def record_cleanup_failure(
+        self,
+        asset_id: UUID,
+        version_id: UUID,
+        next_attempt_at: datetime,
+    ) -> None:
+        pass
+
+    @abstractmethod
+    async def finalize_version_cleanup(
+        self,
+        asset_id: UUID,
+        version_id: UUID,
+        next_attempt_at: datetime,
+    ) -> None:
         pass

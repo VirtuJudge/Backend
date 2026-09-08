@@ -21,6 +21,7 @@ from app.application.services.assetStore import AssetStore
 from app.domain.asset import (
     Asset,
     AssetCompletionConflict,
+    AssetConflict,
     AssetCorrupt,
     AssetDomainError,
     AssetIdempotencyConflict,
@@ -140,6 +141,14 @@ def handle_asset_error(err: AssetDomainError, path: str) -> JSONResponse:
             "completion_conflict",
             "Completion conflict",
             "The asset completion conflicts with existing verified or rejected state.",
+            path,
+        )
+    if isinstance(err, AssetConflict):
+        return problem_response(
+            status.HTTP_409_CONFLICT,
+            "conflict",
+            "Resource conflict",
+            "The requested operation conflicts with the current resource state.",
             path,
         )
     if isinstance(err, StorageUnavailable):

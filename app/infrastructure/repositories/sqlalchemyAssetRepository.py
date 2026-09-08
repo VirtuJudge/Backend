@@ -1,3 +1,4 @@
+from datetime import UTC, datetime, timedelta
 from uuid import UUID
 
 from sqlalchemy import func, select, update
@@ -20,12 +21,22 @@ from app.infrastructure.persistence.configurations.projectErasureRequest import 
 from app.infrastructure.persistence.configurations.teamMemberCongfigration import TeamMemberModel
 
 
+def _to_utc(dt: datetime | None) -> datetime | None:
+    if dt is None:
+        return None
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=UTC)
+    return dt.astimezone(UTC)
+
+
 class SqlAlchemyAssetRepository(AssetRepository):
     def __init__(self, session: AsyncSession):
         self.session = session
 
     @staticmethod
     def _to_asset(model: AssetModel) -> Asset:
+        created_utc = _to_utc(model.created_at)
+        assert created_utc is not None
         return Asset(
             id=model.id,
             project_id=model.project_id,
@@ -34,17 +45,19 @@ class SqlAlchemyAssetRepository(AssetRepository):
             file_name=model.file_name,
             current_version_id=model.current_version_id,
             created_by=model.created_by,
-            created_at=model.created_at,
+            created_at=created_utc,
             media_type=model.media_type,
             size_bytes=model.size_bytes,
             checksum=model.checksum,
             duration_ms=model.duration_ms,
-            retention_expires_at=model.retention_expires_at,
+            retention_expires_at=_to_utc(model.retention_expires_at),
             rejection_reason=model.rejection_reason,
         )
 
     @staticmethod
     def _to_version(model: AssetVersionModel) -> AssetVersion:
+        created_utc = _to_utc(model.created_at)
+        assert created_utc is not None
         return AssetVersion(
             id=model.id,
             asset_id=model.asset_id,
@@ -55,13 +68,15 @@ class SqlAlchemyAssetRepository(AssetRepository):
             declared_media_type=model.declared_media_type,
             declared_size_bytes=model.declared_size_bytes,
             created_by=model.created_by,
-            created_at=model.created_at,
+            created_at=created_utc,
             media_type=model.media_type,
             size_bytes=model.size_bytes,
             checksum=model.checksum,
             duration_ms=model.duration_ms,
             rejection_reason=model.rejection_reason,
-            completed_at=model.completed_at,
+            completed_at=_to_utc(model.completed_at),
+            upload_expires_at=_to_utc(model.upload_expires_at),
+            cleanup_next_attempt_at=_to_utc(model.cleanup_next_attempt_at),
         )
 
     async def get_project(self, project_id: UUID) -> Project | None:
@@ -140,6 +155,9 @@ class SqlAlchemyAssetRepository(AssetRepository):
             declared_size_bytes=version.declared_size_bytes,
             created_by=version.created_by,
             created_at=version.created_at,
+            upload_expires_at=version.upload_expires_at
+            or (version.created_at + timedelta(seconds=3600)),
+            cleanup_next_attempt_at=version.cleanup_next_attempt_at,
         )
         idempotency_model = AssetUploadIdempotencyModel(
             user_id=idempotency.user_id,
@@ -174,6 +192,15 @@ class SqlAlchemyAssetRepository(AssetRepository):
                 existing_asset = await self.get_asset(existing.asset_id)
                 existing_version = await self.get_version(existing.version_id)
                 if existing_asset is not None and existing_version is not None:
+                    now = datetime.now(UTC)
+                    if existing_version.state != "pending_upload":
+                        st = existing_version.state
+                        raise AssetIdempotencyConflict(
+                            f"Cannot replay upload intent for version in state '{st}'"
+                        ) from exc
+                    exp_utc = _to_utc(existing_version.upload_expires_at)
+                    if exp_utc is not None and exp_utc <= now:
+                        raise AssetIdempotencyConflict("Upload intent has expired") from exc
                     return existing_asset, existing_version
             raise
 
@@ -210,7 +237,7 @@ class SqlAlchemyAssetRepository(AssetRepository):
             .execution_options(populate_existing=True)
         )
         asset_model = await self.session.scalar(stmt)
-        if asset_model is None:
+        if asset_model is None or asset_model.state == "deleted":
             raise AssetNotFound
 
         existing = await self.get_upload_idempotency(
@@ -226,6 +253,14 @@ class SqlAlchemyAssetRepository(AssetRepository):
                 )
             existing_ver = await self.get_version(existing.version_id)
             if existing_ver is not None:
+                now = datetime.now(UTC)
+                if existing_ver.state != "pending_upload":
+                    raise AssetIdempotencyConflict(
+                        f"Cannot replay upload intent for version in state '{existing_ver.state}'"
+                    )
+                exp_utc = _to_utc(existing_ver.upload_expires_at)
+                if exp_utc is not None and exp_utc <= now:
+                    raise AssetIdempotencyConflict("Upload intent has expired")
                 return self._to_asset(asset_model), existing_ver
 
         max_v_stmt = select(func.coalesce(func.max(AssetVersionModel.version_number), 0)).where(
@@ -246,6 +281,9 @@ class SqlAlchemyAssetRepository(AssetRepository):
             declared_size_bytes=version.declared_size_bytes,
             created_by=version.created_by,
             created_at=version.created_at,
+            upload_expires_at=version.upload_expires_at
+            or (version.created_at + timedelta(seconds=3600)),
+            cleanup_next_attempt_at=version.cleanup_next_attempt_at,
         )
         idempotency_model = AssetUploadIdempotencyModel(
             user_id=idempotency.user_id,
@@ -278,6 +316,15 @@ class SqlAlchemyAssetRepository(AssetRepository):
                     ) from exc
                 existing_ver = await self.get_version(existing.version_id)
                 if existing_ver is not None:
+                    now = datetime.now(UTC)
+                    if existing_ver.state != "pending_upload":
+                        st = existing_ver.state
+                        raise AssetIdempotencyConflict(
+                            f"Cannot replay upload intent for version in state '{st}'"
+                        ) from exc
+                    exp_utc = _to_utc(existing_ver.upload_expires_at)
+                    if exp_utc is not None and exp_utc <= now:
+                        raise AssetIdempotencyConflict("Upload intent has expired") from exc
                     return self._to_asset(asset_model), existing_ver
             raise
 
@@ -423,9 +470,206 @@ class SqlAlchemyAssetRepository(AssetRepository):
             stmt = stmt.where(AssetModel.kind == kind)
         if state is not None:
             stmt = stmt.where(AssetModel.state == state)
+        else:
+            stmt = stmt.where(AssetModel.state != "deleted")
 
         rows = list((await self.session.scalars(stmt)).all())
         has_more = len(rows) > limit
         rows = rows[:limit]
         next_cursor = rows[-1].id if has_more else None
         return [self._to_asset(row) for row in rows], next_cursor
+
+    async def find_cleanup_candidate_versions(
+        self,
+        cutoff_created_at: datetime,
+        cutoff_expires_at: datetime,
+        now: datetime,
+        limit: int,
+    ) -> list[tuple[UUID, UUID]]:
+        stmt = (
+            select(AssetVersionModel.asset_id, AssetVersionModel.id)
+            .where(
+                AssetVersionModel.state.in_(["pending_upload", "rejected", "deleting", "deleted"]),
+                AssetVersionModel.upload_expires_at <= cutoff_expires_at,
+                AssetVersionModel.created_at <= cutoff_created_at,
+                (
+                    AssetVersionModel.cleanup_next_attempt_at.is_(None)
+                    | (AssetVersionModel.cleanup_next_attempt_at <= now)
+                ),
+            )
+            .order_by(
+                AssetVersionModel.cleanup_next_attempt_at.asc().nulls_first(),
+                AssetVersionModel.created_at.asc(),
+            )
+            .limit(limit)
+        )
+        rows = (await self.session.execute(stmt)).all()
+        return [(row[0], row[1]) for row in rows]
+
+    async def claim_version_for_cleanup(
+        self,
+        asset_id: UUID,
+        version_id: UUID,
+        now: datetime,
+        lease_seconds: int,
+        tombstone_delay_seconds: int,
+        cutoff_created_at: datetime,
+        cutoff_expires_at: datetime,
+    ) -> AssetVersion | None:
+        bind = self.session.bind
+        is_pg = bind is not None and bind.dialect.name == "postgresql"
+
+        asset_stmt = (
+            select(AssetModel)
+            .where(AssetModel.id == asset_id)
+            .with_for_update(skip_locked=is_pg)
+            .execution_options(populate_existing=True)
+        )
+        asset_model = await self.session.scalar(asset_stmt)
+        if asset_model is None:
+            return None
+
+        ver_stmt = (
+            select(AssetVersionModel)
+            .where(AssetVersionModel.id == version_id)
+            .with_for_update(skip_locked=is_pg)
+            .execution_options(populate_existing=True)
+        )
+        ver_model = await self.session.scalar(ver_stmt)
+        if ver_model is None or ver_model.asset_id != asset_id:
+            return None
+
+        if ver_model.state not in ("pending_upload", "rejected", "deleting", "deleted"):
+            return None
+        exp_utc = _to_utc(ver_model.upload_expires_at)
+        created_utc = _to_utc(ver_model.created_at)
+        cleanup_next_utc = _to_utc(ver_model.cleanup_next_attempt_at)
+        if exp_utc is not None and exp_utc > cutoff_expires_at:
+            return None
+        if created_utc is not None and created_utc > cutoff_created_at:
+            return None
+        if cleanup_next_utc is not None and cleanup_next_utc > now:
+            return None
+
+        if ver_model.state in ("pending_upload", "rejected", "deleting"):
+            ver_model.state = "deleting"
+            ver_model.cleanup_next_attempt_at = now + timedelta(seconds=lease_seconds)
+        elif ver_model.state == "deleted":
+            ver_model.cleanup_next_attempt_at = now + timedelta(seconds=tombstone_delay_seconds)
+
+        await self.session.commit()
+        return self._to_version(ver_model)
+
+    async def record_cleanup_failure(
+        self,
+        asset_id: UUID,
+        version_id: UUID,
+        next_attempt_at: datetime,
+    ) -> None:
+        bind = self.session.bind
+        is_pg = bind is not None and bind.dialect.name == "postgresql"
+
+        asset_stmt = (
+            select(AssetModel)
+            .where(AssetModel.id == asset_id)
+            .with_for_update(skip_locked=is_pg)
+            .execution_options(populate_existing=True)
+        )
+        asset_model = await self.session.scalar(asset_stmt)
+        if asset_model is None:
+            return
+
+        ver_stmt = (
+            select(AssetVersionModel)
+            .where(AssetVersionModel.id == version_id)
+            .with_for_update(skip_locked=is_pg)
+            .execution_options(populate_existing=True)
+        )
+        ver_model = await self.session.scalar(ver_stmt)
+        if (
+            ver_model is not None
+            and ver_model.asset_id == asset_id
+            and ver_model.state in ("deleting", "deleted")
+        ):
+            ver_model.cleanup_next_attempt_at = next_attempt_at
+            await self.session.commit()
+
+    async def finalize_version_cleanup(
+        self,
+        asset_id: UUID,
+        version_id: UUID,
+        next_attempt_at: datetime,
+    ) -> None:
+        bind = self.session.bind
+        is_pg = bind is not None and bind.dialect.name == "postgresql"
+
+        asset_stmt = (
+            select(AssetModel)
+            .where(AssetModel.id == asset_id)
+            .with_for_update(skip_locked=is_pg)
+            .execution_options(populate_existing=True)
+        )
+        asset_model = await self.session.scalar(asset_stmt)
+        if asset_model is None:
+            return
+
+        ver_stmt = (
+            select(AssetVersionModel)
+            .where(AssetVersionModel.id == version_id)
+            .with_for_update(skip_locked=is_pg)
+            .execution_options(populate_existing=True)
+        )
+        ver_model = await self.session.scalar(ver_stmt)
+        if ver_model is None or ver_model.asset_id != asset_id:
+            return
+        if ver_model.state not in ("deleting", "deleted"):
+            return
+
+        ver_model.state = "deleted"
+        ver_model.cleanup_next_attempt_at = next_attempt_at
+
+        if asset_model.current_version_id == version_id:
+            verified_stmt = (
+                select(AssetVersionModel)
+                .where(
+                    AssetVersionModel.asset_id == asset_id,
+                    AssetVersionModel.state == "verified",
+                    AssetVersionModel.id != version_id,
+                )
+                .order_by(AssetVersionModel.version_number.desc())
+                .limit(1)
+            )
+            latest_verified = await self.session.scalar(verified_stmt)
+            if latest_verified is not None:
+                asset_model.current_version_id = latest_verified.id
+                asset_model.state = "verified"
+                asset_model.file_name = latest_verified.file_name
+                asset_model.media_type = latest_verified.media_type
+                asset_model.size_bytes = latest_verified.size_bytes
+                asset_model.checksum = latest_verified.checksum
+                asset_model.duration_ms = latest_verified.duration_ms
+            else:
+                pending_stmt = (
+                    select(AssetVersionModel)
+                    .where(
+                        AssetVersionModel.asset_id == asset_id,
+                        AssetVersionModel.state == "pending_upload",
+                        AssetVersionModel.id != version_id,
+                    )
+                    .order_by(AssetVersionModel.version_number.desc())
+                    .limit(1)
+                )
+                latest_pending = await self.session.scalar(pending_stmt)
+                if latest_pending is not None:
+                    asset_model.current_version_id = latest_pending.id
+                    asset_model.state = "pending_upload"
+                    asset_model.file_name = latest_pending.file_name
+                    asset_model.media_type = None
+                    asset_model.size_bytes = None
+                    asset_model.checksum = None
+                    asset_model.duration_ms = None
+                    asset_model.rejection_reason = None
+                else:
+                    asset_model.state = "deleted"
+
+        await self.session.commit()

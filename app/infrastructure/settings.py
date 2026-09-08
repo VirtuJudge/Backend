@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import SecretStr
+from pydantic import Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -24,6 +24,12 @@ class Settings(BaseSettings):
     object_storage_secret_key: SecretStr | None = None
     object_storage_upload_url_ttl_seconds: int = 900
     object_storage_download_url_ttl_seconds: int = 900
+    asset_cleanup_enabled: bool | None = None
+    asset_cleanup_interval_seconds: float = Field(default=300.0, ge=0.001)
+    asset_cleanup_batch_size: int = Field(default=100, ge=1, le=1000)
+    asset_cleanup_retention_seconds: int = Field(default=86400, ge=0)
+    asset_cleanup_lease_seconds: int = Field(default=300, ge=1)
+    asset_cleanup_tombstone_delay_seconds: int = Field(default=86400, ge=1)
     oidc_issuer: str | None = None
     oidc_audience: str | None = None
     oidc_jwks_url: str | None = None
