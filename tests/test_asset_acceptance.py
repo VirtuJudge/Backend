@@ -392,7 +392,13 @@ class FakeUserService:
     def __init__(self, user: User):
         self.user = user
 
-    async def get_or_create_user(self, issuer: str, subject: str, email: str | None = None) -> User:
+    async def get_or_create_user(
+        self,
+        issuer: str,
+        subject: str,
+        email: str | None = None,
+        display_name: str | None = None,
+    ) -> User:
         return self.user
 
 
