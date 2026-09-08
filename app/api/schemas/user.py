@@ -20,7 +20,7 @@ class UpdateUserRequest(BaseModel):
 
 class UserResponse(BaseModel):
     id: UUID
-    username: str
+    display_name: str
     email: EmailStr | None = None
     created_at: str
     display_name: str | None = None
