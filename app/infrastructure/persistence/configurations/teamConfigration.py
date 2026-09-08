@@ -13,6 +13,9 @@ if TYPE_CHECKING:
     from app.infrastructure.persistence.configurations.teamMemberCongfigration import (
         TeamMemberModel,
     )
+    from app.infrastructure.persistence.configurations.teamInvitationConfigurations import (
+        TeamInvitationModel,
+    )
 
 
 class TeamModel(Base):
@@ -45,6 +48,11 @@ class TeamModel(Base):
     )
 
     projects: Mapped[list["ProjectModel"]] = relationship(
+        back_populates="team",
+        cascade="all, delete-orphan",
+    )
+
+    invitations: Mapped[list["TeamInvitationModel"]] = relationship(
         back_populates="team",
         cascade="all, delete-orphan",
     )

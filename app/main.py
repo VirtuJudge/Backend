@@ -6,13 +6,17 @@ from app.api.routes.health import router as health_router
 from app.application.services.projectService import ProjectService
 from app.application.services.teamService import TeamService
 from app.application.services.userService import UserService
+from app.application.services.teamInvitationService import TeamInvitationService
 from app.infrastructure.auth.provider import create_token_verifier
 from app.infrastructure.database import create_database_engine
 from app.infrastructure.database import get_session as infrastructure_get_session
 from app.infrastructure.mail import create_mail_sender
 from app.infrastructure.repositories.sqlalchemyProjectRepository import SqlAlchemyProjectRepository
+from app.infrastructure.repositories.sqlalchemyTeamMemberRepository import SqlAlchemyTeamMemberRepository
 from app.infrastructure.repositories.sqlalchemyTeamRepository import SqlAlchemyTeamRepository
 from app.infrastructure.repositories.sqlalchemyUserRepositories import SqlAlchemyUserRepository
+from app.infrastructure.repositories.sqlalchemyTeamInvitationRepository import SqlAlchemyTeamInvitationRepository
+from app.infrastructure.repositories.sqlalchemyTeamMemberRepository import TeamMemberRepository
 from app.infrastructure.settings import Settings
 
 
@@ -26,6 +30,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.state.user_service_factory = user_service_factory
     application.state.team_service_factory = team_service_factory
     application.state.project_service_factory = project_service_factory
+    application.state.team_invitation_service_factory = team_invitation_service_factory
     for router in routers:
         application.include_router(router)
     application.state.mail_sender = create_mail_sender(resolved_settings)
@@ -47,5 +52,10 @@ def project_service_factory(session: AsyncSession) -> ProjectService:
         SqlAlchemyTeamRepository(session),
     )
 
+def team_invitation_service_factory(session: AsyncSession) -> TeamInvitationService:
+    return TeamInvitationService(SqlAlchemyTeamInvitationRepository(session), SqlAlchemyTeamRepository(session), SqlAlchemyTeamMemberRepository(session))
+
+def team_member_repository_factory(session: AsyncSession) -> TeamMemberRepository:
+    return SqlAlchemyTeamMemberRepository(session)
 
 app = create_app()
