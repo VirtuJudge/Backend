@@ -21,6 +21,7 @@ async def test_get_me_returns_display_name() -> None:
         subject="alice-subject",
         email="alice@example.com",
         created_at=datetime.now(UTC),
+        display_name="alice-subject",
     )
 
     app.dependency_overrides[get_current_user] = lambda: user
@@ -49,6 +50,7 @@ async def test_get_me_handles_optional_email() -> None:
         subject="bob-subject",
         email=None,
         created_at=datetime.now(UTC),
+        display_name="bob-subject",
     )
 
     app.dependency_overrides[get_current_user] = lambda: user
@@ -114,4 +116,3 @@ async def test_get_me_extracts_display_name_from_token_claims() -> None:
     assert data["email"] == "charlie@example.com"
     assert fake_repo.user is not None
     assert fake_repo.user.display_name == "Charlie Chaplin"
-
