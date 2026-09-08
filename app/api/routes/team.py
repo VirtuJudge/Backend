@@ -168,7 +168,7 @@ async def delete_team_member(
 
 
 
-@router.post("teams/{team_id}/invitations",response_model=InviteMemberResponse,status_code=status.HTTP_201_CREATED, tags=["teams"])
+@router.post("/teams/{team_id}/invitations",response_model=InviteMemberResponse,status_code=status.HTTP_201_CREATED, tags=["teams"])
 async def invite_team_member(
     team_id: UUID,
     request: InviteMemberRequest,
@@ -184,7 +184,7 @@ async def invite_team_member(
         raise HTTPException(status_code=409, detail="invitation_already_exists") from error 
     return InviteMemberResponse.model_validate(invitation, from_attributes=True)
 
-@router.get("teams/{team_id}/invitations",response_model=InvitationPageResponse,status_code=status.HTTP_200_OK, tags=["teams"])
+@router.get("/teams/{team_id}/invitations",response_model=InvitationPageResponse,status_code=status.HTTP_200_OK, tags=["teams"])
 async def list_team_invitations(
     team_id: UUID,
     _owner: TeamMember = Depends(get_team_owner),
