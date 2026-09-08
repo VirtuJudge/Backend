@@ -4,7 +4,7 @@ from fastapi import Depends, HTTPException
 
 from app.api.dependencies.auth import get_current_user
 from app.api.dependencies.redis import get_redis
-from app.application.interfaces.rate_limiter import RateLimiter, RateLimitExceeded
+from app.application.ports.rate_limiter import RateLimiter, RateLimitExceeded
 from app.domain.user import User
 
 

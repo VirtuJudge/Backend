@@ -19,7 +19,7 @@ from app.api.dependencies.services import (
     get_team_service,
 )
 from app.api.dependencies.settings import get_settings
-from app.api.dependencies.teamAuthorization import get_team_member, get_team_owner
+from app.api.dependencies.team_authorization import get_team_member, get_team_owner
 from app.api.schemas.mail import InvitationPageResponse, InviteMemberRequest, InviteMemberResponse
 from app.api.schemas.team import (
     TeamMembershipPage,
@@ -30,7 +30,7 @@ from app.api.schemas.team import (
     TeamResponse,
 )
 from app.application.mail import MailSender
-from app.application.services.teamInvitationService import (
+from app.application.services.team_invitation_service import (
     AlreadyConsumedInvitationError,
     AlreadyTeamMemberError,
     InvitationAlreadyExistsError,
@@ -40,7 +40,7 @@ from app.application.services.teamInvitationService import (
     TeamInvitationService,
     invitation_etag,
 )
-from app.application.services.teamService import (
+from app.application.services.team_service import (
     IdempotencyConflict,
     TeamMemberNotFound,
     TeamNameConflict,

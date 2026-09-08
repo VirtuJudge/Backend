@@ -12,7 +12,7 @@ from app.api.schemas.project import (
     ProjectResponse,
     ProjectUpdateRequest,
 )
-from app.application.services.projectService import (
+from app.application.services.project_service import (
     ProjectConfirmationRequired,
     ProjectForbidden,
     ProjectNotFound,

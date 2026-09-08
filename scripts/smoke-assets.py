@@ -36,7 +36,7 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from app.infrastructure.persistence.configurations import AssetVersionModel  # noqa: E402
-from app.infrastructure.storage.s3ObjectStorage import S3ObjectStorage  # noqa: E402
+from app.infrastructure.storage.s3_object_storage import S3ObjectStorage  # noqa: E402
 from app.main import create_app  # noqa: E402
 from app.settings import Settings  # noqa: E402
 
