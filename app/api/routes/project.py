@@ -69,7 +69,17 @@ async def create_project(
     return project_response(project)
 
 
-@router.get("/projects/{project_id}", response_model=ProjectResponse, tags=["projects"])
+
+@router.get("/projects/{project_id}", response_model=ProjectResponse, tags=["projects"], responses={
+        200: {
+            "headers": {
+                "ETag": {
+                    "description": "Entity tag for optimistic concurrency control",
+                    "schema": {"type": "string"},
+                }
+            }
+        }
+    },)
 async def get_project(
     project_id: UUID,
     response: Response,

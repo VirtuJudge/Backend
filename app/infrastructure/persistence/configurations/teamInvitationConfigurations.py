@@ -89,3 +89,9 @@ class TeamInvitationModel(Base):
         nullable=False,
         unique=True,
     )
+
+    version: Mapped[int] = mapped_column(
+        Integer,
+        default=1,
+        nullable=False,
+    )

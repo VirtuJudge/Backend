@@ -35,6 +35,11 @@ class TeamInvitationExpiredError(Exception):
 class InvitationEmailMismatchError(Exception):
     pass
 
+class InvitationPreconditionFailed(Exception):
+    pass
+
+def invitation_etag(invitation: TeamInvitation) -> str:
+    return hashlib.sha256(f"{invitation.id}:{invitation.version}".encode()).hexdigest()
 class TeamInvitationService:
     def __init__(self, repository: TeamInvitationRepository 
                 , team_repository: TeamRepository
@@ -140,7 +145,7 @@ class TeamInvitationService:
         invitation.token_hash = hashlib.sha256(
             token.encode()
         ).hexdigest()
-        
+
         await self.resend_idomkey_repository.create(invitation, resend_idempotency_key)
 
         invitation.delivery_attempts += 1
@@ -174,7 +179,8 @@ class TeamInvitationService:
 
         return invitation
 
-    async def revoke_invitation(self, team_id: UUID, invitation_id: UUID):
+    async def revoke_invitation(self, team_id: UUID
+                                , invitation_id: UUID, if_match: str):
         invitation = await self.repository.get_by_id(invitation_id)
         if invitation is None or invitation.team_id != team_id:
             raise TeamInvitationNotFoundError(f"Invitation with ID {invitation_id} not found for team {team_id}")
@@ -183,6 +189,9 @@ class TeamInvitationService:
         if invitation.status != TeamInvitation.status.PENDING:
             raise ValueError("Only pending invitations can be revoked.")
 
+        if if_match is None or if_match.strip('"') != invitation_etag(invitation):
+            raise InvitationPreconditionFailed("ETag does not match. The invitation may have been modified by another process.")
+        
         # Update the status to revoked
         invitation.status = TeamInvitation.status.REVOKED
         await self.repository.update(invitation)
@@ -223,49 +232,60 @@ class TeamInvitationService:
         token: str,
         user_id: UUID,
     ) -> TeamMember:
+        
         token_hash = hashlib.sha256(token.encode()).hexdigest()
+
         result = await self.repository.get_invitation_by_token(token_hash)
 
         if result is None:
-            raise TeamInvitationNotFoundError(
-                f"Invitation with token {token} not found"
+            raise TeamInvitationNotFoundError("Invitation not found")
+
+        team_name, team_owner, invitation = result
+
+        
+        if invitation.status == InvitationStatus.REVOKED:
+            raise TeamInvitationNotFoundError("Invitation not found")
+
+        if invitation.status == InvitationStatus.ACCEPTED:
+            raise AlreadyConsumedInvitationError(
+                "Invitation has already been accepted"
             )
 
-        team_name, owner_name, invitation = result
+        if invitation.status == InvitationStatus.EXPIRED:
+            raise TeamInvitationExpiredError(
+                "Invitation has expired"
+            )
 
-        if invitation.expires_at <= datetime.utcnow():
+        if invitation.status != InvitationStatus.PENDING:
+            raise ValueError("Invitation cannot be accepted")
+
+        now = datetime.now(UTC)
+
+        if invitation.expires_at <= now:
             invitation.status = InvitationStatus.EXPIRED
             await self.repository.update(invitation)
 
             raise TeamInvitationExpiredError(
-                f"Invitation with token {token} has expired"
+                "Invitation has expired"
             )
 
-        # Make sure the authenticated user matches the invitation
         user = await self.user_repository.get_by_id(user_id)
 
         if user is None or user.email != invitation.email:
             raise InvitationEmailMismatchError()
-        if invitation.expires_at <= datetime.utcnow():
-            invitation.status = InvitationStatus.EXPIRED
-            await self.repository.update(invitation)
-
-            raise TeamInvitationExpiredError(
-                f"Invitation with token {token} has expired"
-            )
 
         membership = TeamMember(
             id=uuid4(),
             team_id=invitation.team_id,
             user_id=user_id,
             role=invitation.role,
-            joined_at=datetime.utcnow()
+            joined_at=now,
         )
 
         await self.member_repository.create(membership)
 
         invitation.status = InvitationStatus.ACCEPTED
+
         await self.repository.update(invitation)
 
         return membership
-        

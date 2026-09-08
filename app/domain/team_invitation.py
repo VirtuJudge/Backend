@@ -32,4 +32,5 @@ class TeamInvitation:
     created_at: datetime
     expires_at: datetime
     idempotency_key: str
-    resend_idempotency_keys: list["InvitationResendIdempotency"]  # Forward reference to InvitationResendIdempotency
+    resend_idempotency_keys: list["InvitationResendIdempotency"]
+    version: int

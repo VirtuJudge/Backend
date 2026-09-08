@@ -27,7 +27,7 @@ from app.application.services.teamService import (
     TeamService,
     team_etag,
 )
-from app.application.services.teamInvitationService import AlreadyConsumedInvitationError, AlreadyTeamMemberError, InvitationAlreadyExistsError, TeamInvitationService, TeamInvitationNotFoundError
+from app.application.services.teamInvitationService import AlreadyConsumedInvitationError, AlreadyTeamMemberError, InvitationAlreadyExistsError, TeamInvitationService, TeamInvitationNotFoundError, invitation_etag
 from app.domain.team import Team
 from app.domain.team_member import TeamMember
 from app.domain.user import User
@@ -186,7 +186,7 @@ async def invite_team_member(
         invitation = await service.invite_member(team_id, request.email, request.role
                                                 , idempotency_key=idempotency_key
                                                 , mail_sender=mail_sender
-                                                , frontend_url= Settings.frontend_url)
+                                                , frontend_url= settings.frontend_url)
     except AlreadyTeamMemberError as error:
         raise HTTPException(status_code=409, detail="already_team_member") from error
     except InvitationAlreadyExistsError as error:
@@ -207,15 +207,29 @@ async def list_team_invitations(
         next_cursor=str(next_cursor) if next_cursor else None,
     )
 
-@router.post("/teams/{team_id}/invitations/{id}/Resend",response_model=InviteMemberResponse ,status_code=status.HTTP_202_ACCEPTED, tags=["teams"])
+@router.post("/teams/{team_id}/invitations/{id}/Resend",response_model=InviteMemberResponse 
+            ,status_code=status.HTTP_202_ACCEPTED
+            , tags=["teams"]
+            , responses={
+        200: {
+            "headers": {
+                "ETag": {
+                    "description": "Entity tag for optimistic concurrency control",
+                    "schema": {"type": "string"},
+                }
+            }
+        }
+    },)
 async def resend_team_invitation(
     team_id: UUID,
     id: UUID,
+    response: Response,
     _owner: TeamMember = Depends(get_team_owner),
     service: TeamInvitationService = Depends(get_TeamInvitation_service),
     mail_sender: MailSender = Depends(get_mail_sender),
     settings: Settings = Depends(get_settings),
     resend_idempotency_key: str = Header(min_length=1, max_length=255),
+    Etag: str = Header(min_length=1, max_length=255),
 ) -> InviteMemberResponse:
     try:
         invitation = await service.resend_invitation(team_id, id
@@ -224,6 +238,7 @@ async def resend_team_invitation(
                                                     ,resend_idempotency_key=resend_idempotency_key)
     except TeamInvitationNotFoundError as error:
         raise HTTPException(status_code=404, detail="team_not_found") from error
+    response.headers["ETag"] = f'"{invitation_etag(invitation)}"'
     return InviteMemberResponse.model_validate(invitation, from_attributes=True)
 
 @router.delete("/teams/{team_id}/invitations/{id}", status_code=status.HTTP_204_NO_CONTENT, tags=["teams"])
@@ -232,9 +247,10 @@ async def revoke_team_invitation(
     id: UUID,
     _owner: TeamMember = Depends(get_team_owner),
     service: TeamInvitationService = Depends(get_TeamInvitation_service),
+    if_match: str = Header(min_length=1, max_length=255),
 ) -> Response:
     try:
-        await service.revoke_invitation(team_id, id)
+        await service.revoke_invitation(team_id, id, if_match)
     except TeamInvitationNotFoundError as error:
         raise HTTPException(status_code=404, detail="team_invitation_not_found") from error
     except AlreadyConsumedInvitationError as error:

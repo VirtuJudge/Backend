@@ -111,11 +111,15 @@ class SqlAlchemyTeamInvitationRepository(TeamInvitationRepository):
     async def update(self, invitation: TeamInvitation) -> TeamInvitation:
         stmt = (
             update(TeamInvitationModel)
-            .where(TeamInvitationModel.id == invitation.id)
+            .where(
+                TeamInvitationModel.id == invitation.id,
+                TeamInvitationModel.version == invitation.version,
+            )
             .values(
                 status=invitation.status,
                 delivery_status=invitation.delivery_status,
                 delivery_attempts=invitation.delivery_attempts,
+                version=invitation.version + 1,
             )
             .returning(TeamInvitationModel)
         )
