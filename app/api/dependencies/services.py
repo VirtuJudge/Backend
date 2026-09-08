@@ -3,6 +3,7 @@ from typing import Any, cast
 
 from fastapi import Depends, Request
 
+from app.application.services.assetStore import AssetStore
 from app.application.services.projectService import ProjectService
 from app.application.services.teamService import TeamService
 from app.application.services.userService import UserService
@@ -32,3 +33,10 @@ def get_project_service(
     session: Any = Depends(get_session),
 ) -> ProjectService:
     return cast(ProjectService, request.app.state.project_service_factory(session))
+
+
+def get_asset_store(
+    request: Request,
+    session: Any = Depends(get_session),
+) -> AssetStore:
+    return cast(AssetStore, request.app.state.asset_store_factory(session))

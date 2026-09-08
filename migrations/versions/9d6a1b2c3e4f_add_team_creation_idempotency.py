@@ -17,7 +17,8 @@ depends_on: str | Sequence[str] | None = None
 
 def upgrade() -> None:
     op.add_column("teams", sa.Column("version", sa.Integer(), nullable=False, server_default="1"))
-    op.alter_column("teams", "version", server_default=None)
+    with op.batch_alter_table("teams") as batch_op:
+        batch_op.alter_column("version", server_default=None)
     op.create_table(
         "team_creation_idempotency",
         sa.Column("user_id", sa.UUID(), nullable=False),

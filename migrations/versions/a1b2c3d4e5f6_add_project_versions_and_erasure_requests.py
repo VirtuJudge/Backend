@@ -20,7 +20,8 @@ def upgrade() -> None:
         "projects",
         sa.Column("version", sa.Integer(), nullable=False, server_default="1"),
     )
-    op.alter_column("projects", "version", server_default=None)
+    with op.batch_alter_table("projects") as batch_op:
+        batch_op.alter_column("version", server_default=None)
     op.create_table(
         "project_erasure_requests",
         sa.Column("id", sa.UUID(), nullable=False),
