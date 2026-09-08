@@ -33,16 +33,11 @@ async def get_current_user(
     if not isinstance(metadata, dict):
         metadata = {}
 
-    display_name = (
-        metadata.get("display_name")
-        or (claims.get("email", "").split("@")[0])
-    )
-
     user = await user_service.get_or_create_user(
         issuer=claims["iss"],
         subject=claims["sub"],
         email=claims.get("email"),
-        display_name=display_name,
+        display_name=metadata.get("display_name"),
     )
 
     return user
