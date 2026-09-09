@@ -47,13 +47,14 @@ REL_SLIDE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships
 
 def apply_resource_limits() -> None:
     if resource is not None:
+        resource_api = vars(resource)
         with contextlib.suppress(ValueError, OSError):
-            resource.setrlimit(  # type: ignore[attr-defined]
-                resource.RLIMIT_AS,  # type: ignore[attr-defined]
+            resource_api["setrlimit"](
+                resource_api["RLIMIT_AS"],
                 (256 * 1024 * 1024, 256 * 1024 * 1024),
             )
         with contextlib.suppress(ValueError, OSError):
-            resource.setrlimit(resource.RLIMIT_CPU, (5, 5))  # type: ignore[attr-defined]
+            resource_api["setrlimit"](resource_api["RLIMIT_CPU"], (5, 5))
 
 
 def validate_pdf(target: Path) -> int:
