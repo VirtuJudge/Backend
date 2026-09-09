@@ -27,7 +27,6 @@ class UserService:
 
         user = User(
             id=uuid4(),
-            display_name=name,
             issuer=issuer,
             subject=subject,
             email=email,

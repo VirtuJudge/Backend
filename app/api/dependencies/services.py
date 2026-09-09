@@ -3,12 +3,9 @@ from typing import Any, cast
 
 from fastapi import Depends, Request
 
-<<<<<<< HEAD
 from app.application.interfaces.teamMemberRepository import TeamMemberRepository
 from app.application.mail import MailSender
-=======
 from app.application.services.assetStore import AssetStore
->>>>>>> main
 from app.application.services.projectService import ProjectService
 from app.application.services.teamService import TeamService
 from app.application.services.userService import UserService
@@ -39,7 +36,7 @@ def get_project_service(
 ) -> ProjectService:
     return cast(ProjectService, request.app.state.project_service_factory(session))
 
-<<<<<<< HEAD
+
 def get_TeamInvitation_service(
     request: Request,
     session: Any = Depends(get_session),
@@ -54,26 +51,10 @@ def get_team_member_repository(
 
 def get_mail_sender(request: Request) -> MailSender:
     return cast(MailSender, request.app.state.mail_sender)
-=======
+
 
 def get_asset_store(
     request: Request,
     session: Any = Depends(get_session),
 ) -> AssetStore:
     return cast(AssetStore, request.app.state.asset_store_factory(session))
->>>>>>> main
-
-def get_TeamInvitation_service(
-    request: Request,
-    session: Any = Depends(get_session),
-) -> TeamInvitationService:
-    return cast(TeamInvitationService, request.app.state.team_invitation_service_factory(session))
-
-def get_team_member_repository(
-    request: Request,
-    session: Any = Depends(get_session),
-) -> TeamMemberRepository:
-    return cast(TeamMemberRepository, request.app.state.team_member_repository_factory(session))
-
-def get_mail_sender(request: Request) -> MailSender:
-    return cast(MailSender, request.app.state.mail_sender)

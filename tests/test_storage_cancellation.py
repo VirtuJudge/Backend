@@ -6,7 +6,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from app.infrastructure.settings import Settings
+from app.settings import Settings
 from app.infrastructure.storage.s3ObjectStorage import S3ObjectStorage
 
 

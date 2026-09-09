@@ -16,8 +16,8 @@ class UserModel(Base):
     )
 
     display_name: Mapped[str | None] = mapped_column(
-            String(255),
-            nullable=False,
+        String(255),
+        nullable=True,
     )
 
     issuer: Mapped[str] = mapped_column(
@@ -33,19 +33,12 @@ class UserModel(Base):
 
     email: Mapped[str | None] = mapped_column(
         String(320),
-        nullable=False,
+        nullable=True,
     )
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-    )
-
-    display_name: Mapped[str] = mapped_column(
-        String(255),
-        nullable=False,
-        default="",
-        server_default="",
     )
 
     team_memberships: Mapped[list["TeamMemberModel"]] = relationship(back_populates="user")
