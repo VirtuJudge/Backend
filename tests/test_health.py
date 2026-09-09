@@ -2,8 +2,8 @@ import asyncio
 
 from httpx import ASGITransport, AsyncClient, Response
 
-from app.settings import Settings
 from app.main import create_app
+from app.settings import Settings
 
 
 def test_health_endpoint() -> None:

@@ -2,10 +2,9 @@ from datetime import datetime
 from uuid import UUID
 
 from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy.orm import Mapped, mapped_column
 
 from app.infrastructure.database import Base
-
 
 
 class InvitationResendIdempotencyModel(Base):
@@ -30,7 +29,6 @@ class InvitationResendIdempotencyModel(Base):
         DateTime(timezone=True),
         nullable=False,
     )
-
 
     __table_args__ = (
         UniqueConstraint(

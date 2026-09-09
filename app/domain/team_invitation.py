@@ -1,23 +1,23 @@
-
+import enum
 from dataclasses import dataclass
 from datetime import datetime
-import enum
 from uuid import UUID
 
 from app.domain.invitation_resend_idompotency_key import InvitationResendIdempotency
 
 
-class InvitationStatus(str ,enum.Enum):
+class InvitationStatus(enum.StrEnum):
     PENDING = "pending"
     ACCEPTED = "accepted"
     REVOKED = "revoked"
     EXPIRED = "expired"
 
 
-class DeliveryStatus(str ,enum.Enum):
+class DeliveryStatus(enum.StrEnum):
     QUEUED = "queued"
     ACCEPTED = "accepted_by_gmail"
     FAILED = "failed"
+
 
 @dataclass(frozen=True, slots=True)
 class TeamInvitation:

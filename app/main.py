@@ -5,36 +5,39 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
-from psycopg import sql
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from redis.asyncio import Redis
-from app.api.dependencies import settings
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+
 from app.api.routes import routers
 from app.api.routes.health import router as health_router
 from app.application.services.assetStore import AssetStore
-from app.application.mail import MailSender
 from app.application.services.projectService import ProjectService
+from app.application.services.teamInvitationService import TeamInvitationService
 from app.application.services.teamService import TeamService
 from app.application.services.userService import UserService
-from app.application.services.teamInvitationService import TeamInvitationService
 from app.infrastructure.auth.provider import create_token_verifier
 from app.infrastructure.database import create_database_engine
 from app.infrastructure.database import get_session as infrastructure_get_session
 from app.infrastructure.documents.document_verifier import DocumentVerifier
 from app.infrastructure.mail import create_mail_sender
 from app.infrastructure.media.ffmpegVerifier import FFmpegMediaVerifier
-from app.infrastructure.repositories.sqlalchemyAssetRepository import SqlAlchemyAssetRepository
 from app.infrastructure.redis.rate_limiter import RedisRateLimiter
-from app.infrastructure.repositories import sqlalchemyInvitationResendKeyRepository
+from app.infrastructure.repositories.sqlalchemyAssetRepository import SqlAlchemyAssetRepository
+from app.infrastructure.repositories.sqlalchemyInvitationResendKeyRepository import (
+    SqlalchemyInvitationResendKeyRepository,
+)
 from app.infrastructure.repositories.sqlalchemyProjectRepository import SqlAlchemyProjectRepository
-from app.infrastructure.repositories.sqlalchemyTeamMemberRepository import SqlAlchemyTeamMemberRepository
+from app.infrastructure.repositories.sqlalchemyTeamInvitationRepository import (
+    SqlAlchemyTeamInvitationRepository,
+)
+from app.infrastructure.repositories.sqlalchemyTeamMemberRepository import (
+    SqlAlchemyTeamMemberRepository,
+    TeamMemberRepository,
+)
 from app.infrastructure.repositories.sqlalchemyTeamRepository import SqlAlchemyTeamRepository
 from app.infrastructure.repositories.sqlalchemyUserRepositories import SqlAlchemyUserRepository
-from app.infrastructure.repositories.sqlalchemyTeamInvitationRepository import SqlAlchemyTeamInvitationRepository
-from app.infrastructure.repositories.sqlalchemyTeamMemberRepository import TeamMemberRepository
-from app.infrastructure.repositories.sqlalchemyInvitationResendKeyRepository import SqlalchemyInvitationResendKeyRepository
-from app.settings import Settings
 from app.infrastructure.storage.s3ObjectStorage import S3ObjectStorage
+from app.settings import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -104,9 +107,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     application.state.team_invitation_service_factory = team_invitation_service_factory
     redis = Redis.from_url(
-            resolved_settings.redis_url,
-            decode_responses=True,
-        )
+        resolved_settings.redis_url,
+        decode_responses=True,
+    )
     application.state.redis = RedisRateLimiter(redis)
     for router in routers:
         application.include_router(router)
@@ -165,14 +168,19 @@ def asset_store_factory(session: AsyncSession, settings: Settings) -> AssetStore
         download_ttl_seconds=settings.object_storage_download_url_ttl_seconds,
     )
 
+
 def team_invitation_service_factory(session: AsyncSession) -> TeamInvitationService:
-    return TeamInvitationService(SqlAlchemyTeamInvitationRepository(session)
-                                , SqlAlchemyTeamRepository(session)
-                                , SqlAlchemyTeamMemberRepository(session)
-                                , SqlAlchemyUserRepository(session)
-                                ,SqlalchemyInvitationResendKeyRepository(session))
+    return TeamInvitationService(
+        SqlAlchemyTeamInvitationRepository(session),
+        SqlAlchemyTeamRepository(session),
+        SqlAlchemyTeamMemberRepository(session),
+        SqlAlchemyUserRepository(session),
+        SqlalchemyInvitationResendKeyRepository(session),
+    )
+
 
 def team_member_repository_factory(session: AsyncSession) -> TeamMemberRepository:
     return SqlAlchemyTeamMemberRepository(session)
+
 
 app = create_app()

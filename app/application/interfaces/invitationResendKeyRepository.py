@@ -1,4 +1,3 @@
-
 from abc import ABC, abstractmethod
 
 from app.domain.invitation_resend_idompotency_key import InvitationResendIdempotency
@@ -14,5 +13,7 @@ class InvitationResendKeyRepository(ABC):
         pass
 
     @abstractmethod
-    async def create(self, invitation: TeamInvitation, resend_idempotency_key: str) -> InvitationResendIdempotency:
+    async def create(
+        self, invitation: TeamInvitation, resend_idempotency_key: str
+    ) -> InvitationResendIdempotency:
         pass

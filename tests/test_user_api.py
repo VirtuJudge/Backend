@@ -6,8 +6,8 @@ from httpx import ASGITransport, AsyncClient
 
 from app.api.dependencies.auth import get_current_user
 from app.domain.user import User
-from app.settings import Settings
 from app.main import create_app
+from app.settings import Settings
 
 
 @pytest.mark.anyio

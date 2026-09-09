@@ -1,12 +1,11 @@
-from pydantic import BaseModel, EmailStr
+from datetime import datetime
 from uuid import UUID
 
-from datetime import datetime
-import enum
+from pydantic import BaseModel, EmailStr
 
-from app.domain.team_invitation import InvitationStatus, DeliveryStatus
+from app.domain.team_invitation import DeliveryStatus, InvitationStatus
 
-    
+
 class InviteMemberRequest(BaseModel):
     email: EmailStr
     role: str
@@ -23,9 +22,11 @@ class InviteMemberResponse(BaseModel):
     created_at: datetime
     expires_at: datetime
 
+
 class InvitationPageResponse(BaseModel):
     items: list[InviteMemberResponse]
     next_cursor: str | None = None
+
 
 class InvitationPreview(BaseModel):
     team_name: str

@@ -263,7 +263,13 @@ def test_oidc_verifier_delegates_signature_issuer_audience_and_expiry_validation
                 "options": options,
             }
         )
-        return {"iss": issuer, "aud": audience, "sub": "subject", "exp": 9999999999 , "name": "User Name"}
+        return {
+            "iss": issuer,
+            "aud": audience,
+            "sub": "subject",
+            "exp": 9999999999,
+            "name": "User Name",
+        }
 
     monkeypatch.setattr("app.infrastructure.auth.oidc.jwt.decode", decode)
     verifier = OIDCTokenVerifier("issuer", "audience", "https://issuer/jwks")
@@ -278,7 +284,7 @@ def test_oidc_verifier_delegates_signature_issuer_audience_and_expiry_validation
             "algorithms": ["RS256", "ES256"],
             "issuer": "issuer",
             "audience": "audience",
-            "options": {"require": ["exp", "sub" , "name"]},
+            "options": {"require": ["exp", "sub", "name"]},
         }
     ]
 

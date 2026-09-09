@@ -1,10 +1,10 @@
-import pytest
 import fakeredis.aioredis
+import pytest
 
+from app.application.interfaces.rate_limiter import RateLimitExceeded
 from app.infrastructure.redis.rate_limiter import (
     RedisRateLimiter,
 )
-from app.application.interfaces.rate_limiter import RateLimitExceeded
 
 
 @pytest.mark.asyncio

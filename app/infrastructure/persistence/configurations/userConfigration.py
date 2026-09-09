@@ -30,7 +30,6 @@ class UserModel(Base):
         nullable=False,
     )
 
-
     email: Mapped[str | None] = mapped_column(
         String(320),
         nullable=True,

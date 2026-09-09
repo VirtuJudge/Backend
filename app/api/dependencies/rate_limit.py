@@ -15,7 +15,7 @@ def rate_limit(
 ):
     async def dependency(
         current_user: User = Depends(get_current_user),
-        redis = Depends(get_redis),
+        redis=Depends(get_redis),
     ) -> None:
 
         key = f"rate_limit:{name}:user:{current_user.id}"

@@ -16,8 +16,8 @@ from app.infrastructure.mail import (
     GmailMailSender,
     create_mail_sender,
 )
-from app.settings import Settings
 from app.main import create_app
+from app.settings import Settings
 
 
 def test_mail_message_and_fake_sender() -> None:

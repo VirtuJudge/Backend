@@ -4,11 +4,9 @@ from uuid import UUID
 
 from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
-from sqlalchemy.orm import Mapped, mapped_column , relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.database import Base
-
-from app.infrastructure.persistence.configurations.invitationResendIdompotancyConfiguration import InvitationResendIdempotencyModel
 from app.infrastructure.persistence.configurations.teamConfigration import TeamModel
 
 
@@ -72,8 +70,8 @@ class TeamInvitationModel(Base):
     )
 
     expires_at: Mapped[datetime] = mapped_column(
-            DateTime(timezone=True),
-            nullable=False,
+        DateTime(timezone=True),
+        nullable=False,
     )
 
     created_at: Mapped[datetime] = mapped_column(

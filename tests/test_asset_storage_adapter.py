@@ -15,8 +15,8 @@ from app.domain.asset import (
     StorageUnavailable,
 )
 from app.infrastructure.documents.document_verifier import DocumentVerifier
-from app.settings import Settings
 from app.infrastructure.storage.s3ObjectStorage import S3ObjectStorage
+from app.settings import Settings
 
 PPTX_TYPE = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
 

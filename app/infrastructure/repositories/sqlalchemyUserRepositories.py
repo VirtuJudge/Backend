@@ -1,10 +1,13 @@
+from uuid import UUID
+
 from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
-from uuid import UUID
 
 from app.application.interfaces.userRepository import UserRepository
 from app.domain.user import User
 from app.infrastructure.persistence.configurations.userConfigration import UserModel
+
+
 class SqlAlchemyUserRepository(UserRepository):
     def __init__(self, session: AsyncSession):
         self.session = session

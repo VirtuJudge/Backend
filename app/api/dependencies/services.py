@@ -7,9 +7,10 @@ from app.application.interfaces.teamMemberRepository import TeamMemberRepository
 from app.application.mail import MailSender
 from app.application.services.assetStore import AssetStore
 from app.application.services.projectService import ProjectService
+from app.application.services.teamInvitationService import TeamInvitationService
 from app.application.services.teamService import TeamService
 from app.application.services.userService import UserService
-from app.application.services.teamInvitationService import TeamInvitationService
+
 
 async def get_session(request: Request) -> AsyncIterator[Any]:
     async for session in request.app.state.session_dependency(request):
@@ -43,11 +44,13 @@ def get_TeamInvitation_service(
 ) -> TeamInvitationService:
     return cast(TeamInvitationService, request.app.state.team_invitation_service_factory(session))
 
+
 def get_team_member_repository(
     request: Request,
     session: Any = Depends(get_session),
 ) -> TeamMemberRepository:
     return cast(TeamMemberRepository, request.app.state.team_member_repository_factory(session))
+
 
 def get_mail_sender(request: Request) -> MailSender:
     return cast(MailSender, request.app.state.mail_sender)

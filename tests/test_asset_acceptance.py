@@ -27,8 +27,8 @@ from app.domain.idempotency import AssetUploadIdempotency
 from app.domain.project import Project
 from app.domain.user import User
 from app.infrastructure.documents.document_verifier import DocumentVerifier
-from app.settings import Settings
 from app.main import create_app
+from app.settings import Settings
 
 TEAM_ID = uuid4()
 PROJECT_ID = uuid4()

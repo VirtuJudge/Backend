@@ -29,8 +29,8 @@ from app.infrastructure.persistence.configurations import (
     UserModel,
 )
 from app.infrastructure.repositories.sqlalchemyAssetRepository import SqlAlchemyAssetRepository
-from app.settings import Settings
 from app.main import create_app
+from app.settings import Settings
 from tests.test_asset_acceptance import (
     MEMBER_ID,
     PROJECT_ID,

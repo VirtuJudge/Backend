@@ -6,8 +6,8 @@ from unittest.mock import Mock
 
 import pytest
 
-from app.settings import Settings
 from app.infrastructure.storage.s3ObjectStorage import S3ObjectStorage
+from app.settings import Settings
 
 
 @pytest.mark.anyio

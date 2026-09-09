@@ -1,22 +1,19 @@
-
-from datetime import datetime, timedelta
-
-from alembic.environment import Optional
+from uuid import UUID
 
 from sqlalchemy import insert, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from uuid import UUID
-
 from app.application.interfaces.teamInvitationRepository import TeamInvitationRepository
 from app.domain.team_invitation import TeamInvitation
-from app.infrastructure.persistence.configurations.teamInvitationConfigurations import TeamInvitationModel
+from app.infrastructure.persistence.configurations.teamInvitationConfigurations import (
+    TeamInvitationModel,
+)
 
 
 class SqlAlchemyTeamInvitationRepository(TeamInvitationRepository):
     def __init__(self, session: AsyncSession):
-            self.session = session
+        self.session = session
 
     @staticmethod
     def _invitation(model: TeamInvitationModel) -> TeamInvitation:
@@ -34,11 +31,10 @@ class SqlAlchemyTeamInvitationRepository(TeamInvitationRepository):
             expires_at=model.expires_at,
         )
 
-
     async def create(self, invitation: TeamInvitation) -> TeamInvitation:
-        
+
         stmt = insert(TeamInvitationModel).values(
-            id=invitation.id, 
+            id=invitation.id,
             role=invitation.role,
             team_id=invitation.team_id,
             email=invitation.email,
@@ -62,14 +58,17 @@ class SqlAlchemyTeamInvitationRepository(TeamInvitationRepository):
         result = await self.session.execute(stmt)
         return result.scalars().first() is not None
 
-    async def list_by_team(self, team_id: UUID,limit: int = 20,cursor: UUID | None = None) -> tuple[list[TeamInvitation],UUID | None]:
-        stmt = (select(TeamInvitationModel)
-                .where(
-                    TeamInvitationModel.team_id == team_id,
-                )
-                .order_by(TeamInvitationModel.id)
-                .limit(limit + 1)
-                )
+    async def list_by_team(
+        self, team_id: UUID, limit: int = 20, cursor: UUID | None = None
+    ) -> tuple[list[TeamInvitation], UUID | None]:
+        stmt = (
+            select(TeamInvitationModel)
+            .where(
+                TeamInvitationModel.team_id == team_id,
+            )
+            .order_by(TeamInvitationModel.id)
+            .limit(limit + 1)
+        )
 
         if cursor is not None:
             stmt = stmt.where(TeamInvitationModel.id > cursor)
@@ -78,7 +77,7 @@ class SqlAlchemyTeamInvitationRepository(TeamInvitationRepository):
         rows = rows[:limit]
         next_cursor = rows[-1].id if has_more else None
 
-        return  [self._invitation(invitation) for invitation in rows],next_cursor
+        return [self._invitation(invitation) for invitation in rows], next_cursor
 
     async def get_by_idempotency_key(
         self,
@@ -97,9 +96,7 @@ class SqlAlchemyTeamInvitationRepository(TeamInvitationRepository):
         return self._invitation(model)
 
     async def get_by_id(self, invitation_id: UUID) -> TeamInvitation | None:
-        stmt = select(TeamInvitationModel).where(
-            TeamInvitationModel.id == invitation_id
-        )
+        stmt = select(TeamInvitationModel).where(TeamInvitationModel.id == invitation_id)
 
         model = await self.session.scalar(stmt)
 
@@ -134,13 +131,8 @@ class SqlAlchemyTeamInvitationRepository(TeamInvitationRepository):
 
         return self._invitation(updated_model)
 
-    async def get_invitation_by_token(
-    self, token: str
-    ) -> tuple[str, str, TeamInvitation] | None:
-        stmt = (
-            select(TeamInvitationModel)
-            .where(TeamInvitationModel.token_hash == token)
-        )
+    async def get_invitation_by_token(self, token: str) -> tuple[str, str, TeamInvitation] | None:
+        stmt = select(TeamInvitationModel).where(TeamInvitationModel.token_hash == token)
 
         model = await self.session.scalar(stmt)
 
@@ -149,11 +141,7 @@ class SqlAlchemyTeamInvitationRepository(TeamInvitationRepository):
 
         team = model.team
 
-        owner_name = next(
-            member.name
-            for member in team.members
-            if member.role == "owner"
-        )
+        owner_name = next(member.name for member in team.members if member.role == "owner")
 
         invitation = self._invitation(model)
 

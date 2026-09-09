@@ -10,11 +10,11 @@ from app.infrastructure.database import Base
 
 if TYPE_CHECKING:
     from app.infrastructure.persistence.configurations.projectConfigration import ProjectModel
-    from app.infrastructure.persistence.configurations.teamMemberCongfigration import (
-        TeamMemberModel,
-    )
     from app.infrastructure.persistence.configurations.teamInvitationConfigurations import (
         TeamInvitationModel,
+    )
+    from app.infrastructure.persistence.configurations.teamMemberCongfigration import (
+        TeamMemberModel,
     )
 
 

@@ -69,8 +69,11 @@ async def create_project(
     return project_response(project)
 
 
-
-@router.get("/projects/{project_id}", response_model=ProjectResponse, tags=["projects"], responses={
+@router.get(
+    "/projects/{project_id}",
+    response_model=ProjectResponse,
+    tags=["projects"],
+    responses={
         200: {
             "headers": {
                 "ETag": {
@@ -79,7 +82,8 @@ async def create_project(
                 }
             }
         }
-    },)
+    },
+)
 async def get_project(
     project_id: UUID,
     response: Response,
@@ -96,8 +100,11 @@ async def get_project(
     return project_response(project)
 
 
-@router.patch("/projects/{project_id}", response_model=ProjectResponse, tags=["projects"]
-            , responses={
+@router.patch(
+    "/projects/{project_id}",
+    response_model=ProjectResponse,
+    tags=["projects"],
+    responses={
         200: {
             "headers": {
                 "ETag": {
@@ -106,7 +113,8 @@ async def get_project(
                 }
             }
         }
-    },)
+    },
+)
 async def update_project(
     project_id: UUID,
     request: ProjectUpdateRequest,
