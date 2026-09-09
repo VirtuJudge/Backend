@@ -29,11 +29,15 @@ async def get_current_user(
             detail="Invalid authentication credentials",
         ) from error
 
+    metadata = claims.get("user_metadata")
+    if not isinstance(metadata, dict):
+        metadata = {}
+
     user = await user_service.get_or_create_user(
         issuer=claims["iss"],
         subject=claims["sub"],
         email=claims.get("email"),
-        name=claims.get("name")
+        display_name=metadata.get("display_name"),
     )
 
     return user

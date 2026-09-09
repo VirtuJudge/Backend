@@ -237,6 +237,15 @@ wheels = [
 ]
 
 [[package]]
+name = "defusedxml"
+version = "0.7.1"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/0f/d5/c66da9b79e5bdb124974bfe172b4daf3c984ebd9c2a06e2b8a4dc7331c72/defusedxml-0.7.1.tar.gz", hash = "sha256:1bb3032db185915b62d7c6209c5a8792be6a32ab2fedacc84e01b52c51aa3e69", size = 75520, upload-time = "2021-03-08T10:59:26.269Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/07/6c/aa3f2f849e01cb6a001cd8554a88d4c77c5c1a31c95bdf1cf9301e6d9ef4/defusedxml-0.7.1-py2.py3-none-any.whl", hash = "sha256:a352e7e428770286cc899e2542b6cdaedb2b4953ff269a210103ec58f6198a61", size = 25604, upload-time = "2021-03-08T10:59:24.45Z" },
+]
+
+[[package]]
 name = "dnspython"
 version = "2.8.0"
 source = { registry = "https://pypi.org/simple" }
@@ -1040,6 +1049,15 @@ wheels = [
 ]
 
 [[package]]
+name = "pypdf"
+version = "6.17.0"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/5d/dc/34857a5e31cf708c163929f61a9ba4bd357a8850e49fc4e846ced527b51f/pypdf-6.17.0.tar.gz", hash = "sha256:097ad0d829778ec5b615aeaa5c6da4b6cac4992f8fd80b56f98a1a8c006573bb", size = 7018352, upload-time = "2026-09-04T11:30:44.256Z" }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/c1/08/1e9731038124a9127e1d27848952b86fb32b2f45f8f1b94adc7f0817a6ac/pypdf-6.17.0-py3-none-any.whl", hash = "sha256:5bd827266a21553b74d910e350131a6227b72f2ab4209bf372814b8195fa11c5", size = 388051, upload-time = "2026-09-04T11:30:42.681Z" },
+]
+
+[[package]]
 name = "pytest"
 version = "9.1.1"
 source = { registry = "https://pypi.org/simple" }
@@ -1379,6 +1397,8 @@ dependencies = [
     { name = "alembic" },
     { name = "asyncpg" },
     { name = "boto3" },
+    { name = "defusedxml" },
+    { name = "email-validator" },
     { name = "email-validator" },
     { name = "fastapi" },
     { name = "psycopg", extra = ["binary"] },
@@ -1386,6 +1406,7 @@ dependencies = [
     { name = "pydantic" },
     { name = "pydantic-settings" },
     { name = "pyjwt" },
+    { name = "pypdf" },
     { name = "pytest-asyncio" },
     { name = "redis" },
     { name = "sqlalchemy", extra = ["asyncio"] },
@@ -1407,6 +1428,8 @@ requires-dist = [
     { name = "alembic", specifier = "==1.19.1" },
     { name = "asyncpg", specifier = "==0.31.0" },
     { name = "boto3", specifier = "==1.43.88" },
+    { name = "defusedxml", specifier = ">=0.7.1" },
+    { name = "email-validator", specifier = ">=2.3.0" },
     { name = "email-validator", specifier = ">=2.3.0" },
     { name = "fastapi", specifier = "==0.141.1" },
     { name = "psycopg", extras = ["binary"], specifier = "==3.3.5" },
@@ -1414,6 +1437,7 @@ requires-dist = [
     { name = "pydantic", specifier = "==2.13.5" },
     { name = "pydantic-settings", specifier = "==2.15.0" },
     { name = "pyjwt", specifier = ">=2.13.0" },
+    { name = "pypdf", specifier = ">=5.0.0" },
     { name = "pytest-asyncio", specifier = ">=1.4.0" },
     { name = "redis", specifier = "==8.1.0" },
     { name = "sqlalchemy", extras = ["asyncio"], specifier = "==2.0.52" },

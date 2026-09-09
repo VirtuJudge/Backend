@@ -10,10 +10,12 @@ class OIDCTokenVerifier:
         issuer: str,
         audience: str,
         jwks_url: str,
+        algorithms: list[str] | None = None,
     ):
         self.issuer = issuer
         self.audience = audience
         self.jwks_client = PyJWKClient(jwks_url)
+        self.algorithms = algorithms or ["RS256", "ES256"]
 
     def verify(self, token: str) -> dict[str, Any]:
         signing_key = self.jwks_client.get_signing_key_from_jwt(token)
@@ -21,7 +23,7 @@ class OIDCTokenVerifier:
         return jwt.decode(
             token,
             signing_key.key,
-            algorithms=["RS256"],
+            algorithms=self.algorithms,
             issuer=self.issuer,
             audience=self.audience,
             options={
