@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.routes import routers
 from app.api.routes.health import router as health_router
+from app.application.interfaces.teamMemberRepository import TeamMemberRepository
 from app.application.services.assetStore import AssetStore
 from app.application.services.projectService import ProjectService
 from app.application.services.teamInvitationService import TeamInvitationService
@@ -32,7 +33,6 @@ from app.infrastructure.repositories.sqlalchemyTeamInvitationRepository import (
 )
 from app.infrastructure.repositories.sqlalchemyTeamMemberRepository import (
     SqlAlchemyTeamMemberRepository,
-    TeamMemberRepository,
 )
 from app.infrastructure.repositories.sqlalchemyTeamRepository import SqlAlchemyTeamRepository
 from app.infrastructure.repositories.sqlalchemyUserRepositories import SqlAlchemyUserRepository

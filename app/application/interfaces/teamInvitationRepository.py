@@ -16,7 +16,7 @@ class TeamInvitationRepository(ABC):
     @abstractmethod
     async def list_by_team(
         self, team_id: UUID, cursor: UUID | None = None, limit: int = 20
-    ) -> list[TeamInvitation]:
+    ) -> tuple[list[TeamInvitation], UUID | None]:
         pass
 
     @abstractmethod

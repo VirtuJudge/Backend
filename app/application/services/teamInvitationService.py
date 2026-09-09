@@ -69,7 +69,7 @@ class TeamInvitationService:
         frontend_url: str,
         mail_sender: MailSender,
     ) -> TeamInvitation:
-        if not await self.member_repository.get_by_team_and_email(team_id, email):
+        if await self.member_repository.get_by_team_and_email(team_id, email):
             raise AlreadyTeamMemberError(f"{email} is already a member of this team")
         if await self.repository.exists_pending_invitation(team_id, email):
             raise InvitationAlreadyExistsError(f"A pending invitation already exists for {email}")
@@ -87,15 +87,17 @@ class TeamInvitationService:
             team_id=team_id,
             email=email,
             role=role,
-            status=TeamInvitation.status.PENDING,
-            delivery_status=TeamInvitation.delivery_status.QUEUED,
+            status=InvitationStatus.PENDING,
+            delivery_status=DeliveryStatus.QUEUED,
             idempotency_key=idempotency_key,
             token_hash=token_hash,
             delivery_attempts=0,
             created_at=datetime.now(UTC),
             expires_at=datetime.now(UTC) + timedelta(days=7),
+            resend_idempotency_keys=[],
+            version=1,
         )
-        invitation = await self.repository.create(invitation)
+        invitation = await self.repository.create(invitation, idempotency_key)
 
         url = f"{frontend_url}/invitations/{token}"
 
@@ -112,16 +114,18 @@ class TeamInvitationService:
         try:
             mail_sender.send(message)
 
-            invitation.delivery_status = TeamInvitation.delivery_status.ACCEPTED
+            invitation.delivery_status = DeliveryStatus.ACCEPTED
 
         except MailDeliveryError:
-            invitation.delivery_status = TeamInvitation.delivery_status.FAILED
+            invitation.delivery_status = DeliveryStatus.FAILED
 
         await self.repository.update(invitation)
 
         return invitation
 
-    async def list_invitations(self, team_id: UUID, cursor: UUID | None = None, limit: int = 20):
+    async def list_invitations(
+        self, team_id: UUID, cursor: UUID | None = None, limit: int = 20
+    ) -> tuple[list[TeamInvitation], UUID | None]:
         invitations = await self.repository.list_by_team(team_id, cursor=cursor, limit=limit)
         return invitations
 
@@ -148,7 +152,7 @@ class TeamInvitationService:
             raise TeamInvitationNotFoundError(
                 f"Invitation with ID {invitation_id} not found for team {team_id}"
             )
-        if invitation.status != TeamInvitation.status.PENDING:
+        if invitation.status != InvitationStatus.PENDING:
             raise ValueError("Only pending invitations can be resent.")
 
         token = secrets.token_urlsafe(32)
@@ -175,26 +179,26 @@ class TeamInvitationService:
         try:
             mail_sender.send(message)
 
-            invitation.delivery_status = TeamInvitation.delivery_status.ACCEPTED
+            invitation.delivery_status = DeliveryStatus.ACCEPTED
 
         except MailDeliveryError:
-            invitation.delivery_status = TeamInvitation.delivery_status.FAILED
+            invitation.delivery_status = DeliveryStatus.FAILED
 
         await self.repository.update(invitation)
 
         return invitation
 
-    async def revoke_invitation(self, team_id: UUID, invitation_id: UUID, if_match: str):
+    async def revoke_invitation(self, team_id: UUID, invitation_id: UUID, if_match: str) -> None:
         invitation = await self.repository.get_by_id(invitation_id)
         if invitation is None or invitation.team_id != team_id:
             raise TeamInvitationNotFoundError(
                 f"Invitation with ID {invitation_id} not found for team {team_id}"
             )
-        if invitation.status == TeamInvitation.status.ACCEPTED:
+        if invitation.status == InvitationStatus.ACCEPTED:
             raise AlreadyConsumedInvitationError(
                 "Cannot revoke an invitation that has already been accepted."
             )
-        if invitation.status != TeamInvitation.status.PENDING:
+        if invitation.status != InvitationStatus.PENDING:
             raise ValueError("Only pending invitations can be revoked.")
 
         if if_match is None or if_match.strip('"') != invitation_etag(invitation):
@@ -203,13 +207,10 @@ class TeamInvitationService:
             )
 
         # Update the status to revoked
-        invitation.status = TeamInvitation.status.REVOKED
+        invitation.status = InvitationStatus.REVOKED
         await self.repository.update(invitation)
 
-    async def get_invitation_preview(
-        self,
-        token: str,
-    ):
+    async def get_invitation_preview(self, token: str) -> tuple[str, str, TeamInvitation]:
         token_hash = hashlib.sha256(token.encode()).hexdigest()
         result = await self.repository.get_invitation_by_token(token_hash)
 

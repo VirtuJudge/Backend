@@ -8,7 +8,7 @@ from app.infrastructure.redis.rate_limiter import (
 
 
 @pytest.mark.asyncio
-async def test_allows_requests_within_limit():
+async def test_allows_requests_within_limit() -> None:
     redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
     limiter = RedisRateLimiter(redis)
 
@@ -21,7 +21,7 @@ async def test_allows_requests_within_limit():
 
 
 @pytest.mark.asyncio
-async def test_rejects_requests_when_limit_is_exceeded():
+async def test_rejects_requests_when_limit_is_exceeded() -> None:
     redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
     limiter = RedisRateLimiter(redis)
 
@@ -41,7 +41,7 @@ async def test_rejects_requests_when_limit_is_exceeded():
 
 
 @pytest.mark.asyncio
-async def test_sets_expiration():
+async def test_sets_expiration() -> None:
     redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
     limiter = RedisRateLimiter(redis)
 
@@ -57,7 +57,7 @@ async def test_sets_expiration():
 
 
 @pytest.mark.asyncio
-async def test_different_users_have_separate_limits():
+async def test_different_users_have_separate_limits() -> None:
     redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
     limiter = RedisRateLimiter(redis)
 

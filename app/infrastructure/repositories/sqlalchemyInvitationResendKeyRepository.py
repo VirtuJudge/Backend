@@ -19,15 +19,21 @@ class SqlalchemyInvitationResendKeyRepository(InvitationResendKeyRepository):
     async def create(
         self, invitation: TeamInvitation, resend_idempotency_key: str
     ) -> InvitationResendIdempotency:
+        record_id = uuid.uuid4()
         stmt = insert(InvitationResendIdempotencyModel).values(
-            id=uuid.uuid4(),
+            id=record_id,
             invitation_id=invitation.id,
             key=resend_idempotency_key,
             created_at=datetime.now(UTC),
         )
-        result = await self.session.execute(stmt)
+        await self.session.execute(stmt)
         await self.session.commit()
-        return result.scalar()
+        return InvitationResendIdempotency(
+            id=record_id,
+            invitation_id=invitation.id,
+            key=resend_idempotency_key,
+            created_at=datetime.now(UTC),
+        )
 
     async def get_by_resend_idempotency_key(
         self,
@@ -38,4 +44,12 @@ class SqlalchemyInvitationResendKeyRepository(InvitationResendKeyRepository):
                 InvitationResendIdempotencyModel.key == resend_idempotency_key
             )
         )
-        return result.scalars().first()
+        model = result.scalars().first()
+        if model is None:
+            return None
+        return InvitationResendIdempotency(
+            id=model.id,
+            invitation_id=model.invitation_id,
+            key=model.key,
+            created_at=model.created_at,
+        )

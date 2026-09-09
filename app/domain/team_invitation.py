@@ -19,7 +19,7 @@ class DeliveryStatus(enum.StrEnum):
     FAILED = "failed"
 
 
-@dataclass(frozen=True, slots=True)
+@dataclass(slots=True)
 class TeamInvitation:
     id: UUID
     team_id: UUID

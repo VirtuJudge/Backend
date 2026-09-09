@@ -1,4 +1,4 @@
-# app/api/dependencies/redis.py
+from typing import cast
 
 from fastapi import Request
 
@@ -6,4 +6,4 @@ from app.application.interfaces.rate_limiter import RateLimiter
 
 
 def get_redis(request: Request) -> RateLimiter:
-    return request.app.state.redis
+    return cast(RateLimiter, request.app.state.redis)

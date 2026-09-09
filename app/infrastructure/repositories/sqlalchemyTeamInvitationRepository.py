@@ -1,11 +1,13 @@
 from uuid import UUID
 
 from sqlalchemy import insert, select, update
-from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.interfaces.teamInvitationRepository import TeamInvitationRepository
-from app.domain.team_invitation import TeamInvitation
+from app.domain.team_invitation import InvitationStatus, TeamInvitation
+from app.infrastructure.persistence.configurations.invitationResendIdompotancyConfiguration import (
+    InvitationResendIdempotencyModel,
+)
 from app.infrastructure.persistence.configurations.teamInvitationConfigurations import (
     TeamInvitationModel,
 )
@@ -29,9 +31,11 @@ class SqlAlchemyTeamInvitationRepository(TeamInvitationRepository):
             delivery_attempts=model.delivery_attempts,
             created_at=model.created_at,
             expires_at=model.expires_at,
+            resend_idempotency_keys=[],
+            version=model.version,
         )
 
-    async def create(self, invitation: TeamInvitation) -> TeamInvitation:
+    async def create(self, invitation: TeamInvitation, idempotency_key: str) -> TeamInvitation:
 
         stmt = insert(TeamInvitationModel).values(
             id=invitation.id,
@@ -45,21 +49,21 @@ class SqlAlchemyTeamInvitationRepository(TeamInvitationRepository):
             created_at=invitation.created_at,
             expires_at=invitation.expires_at,
         )
-        result = await self.session.execute(stmt)
+        await self.session.execute(stmt)
         await self.session.commit()
-        return self._invitation(result.scalar())
+        return invitation
 
     async def exists_pending_invitation(self, team_id: UUID, email: str) -> bool:
         stmt = select(TeamInvitationModel).where(
             TeamInvitationModel.team_id == team_id,
             TeamInvitationModel.email == email,
-            TeamInvitationModel.status == TeamInvitation.status.PENDING,
+            TeamInvitationModel.status == InvitationStatus.PENDING,
         )
         result = await self.session.execute(stmt)
         return result.scalars().first() is not None
 
     async def list_by_team(
-        self, team_id: UUID, limit: int = 20, cursor: UUID | None = None
+        self, team_id: UUID, cursor: UUID | None = None, limit: int = 20
     ) -> tuple[list[TeamInvitation], UUID | None]:
         stmt = (
             select(TeamInvitationModel)
@@ -121,7 +125,7 @@ class SqlAlchemyTeamInvitationRepository(TeamInvitationRepository):
             .returning(TeamInvitationModel)
         )
 
-        result: CursorResult = await self.session.execute(stmt)
+        result = await self.session.execute(stmt)
         await self.session.commit()
 
         updated_model = result.scalar_one_or_none()
@@ -141,7 +145,8 @@ class SqlAlchemyTeamInvitationRepository(TeamInvitationRepository):
 
         team = model.team
 
-        owner_name = next(member.name for member in team.members if member.role == "owner")
+        owner = next(member for member in team.members if member.role == "owner")
+        owner_name = owner.user.display_name or owner.user.email or "Team owner"
 
         invitation = self._invitation(model)
 
@@ -151,8 +156,13 @@ class SqlAlchemyTeamInvitationRepository(TeamInvitationRepository):
         self,
         resend_idempotency_key: str,
     ) -> TeamInvitation | None:
-        stmt = select(TeamInvitationModel).where(
-            TeamInvitationModel.resend_idempotency_key == resend_idempotency_key
+        stmt = (
+            select(TeamInvitationModel)
+            .join(
+                InvitationResendIdempotencyModel,
+                InvitationResendIdempotencyModel.invitation_id == TeamInvitationModel.id,
+            )
+            .where(InvitationResendIdempotencyModel.key == resend_idempotency_key)
         )
 
         model = await self.session.scalar(stmt)

@@ -1,4 +1,3 @@
-import enum
 from datetime import datetime
 from uuid import UUID
 
@@ -6,21 +5,9 @@ from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
+from app.domain.team_invitation import DeliveryStatus, InvitationStatus
 from app.infrastructure.database import Base
 from app.infrastructure.persistence.configurations.teamConfigration import TeamModel
-
-
-class InvitationStatus(enum.Enum):
-    PENDING = "pending"
-    ACCEPTED = "accepted"
-    REVOKED = "revoked"
-    EXPIRED = "expired"
-
-
-class DeliveryStatus(enum.Enum):
-    Queued = "queued"
-    ACCEPTED = "accepted_by_gmail"
-    FAILED = "failed"
 
 
 class TeamInvitationModel(Base):

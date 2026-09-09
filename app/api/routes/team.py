@@ -213,7 +213,7 @@ async def invite_team_member(
             request.role,
             idempotency_key=idempotency_key,
             mail_sender=mail_sender,
-            frontend_url=settings.frontend_url,
+            frontend_url=settings.frontend_url or "",
         )
     except AlreadyTeamMemberError as error:
         raise HTTPException(status_code=409, detail="already_team_member") from error
@@ -285,8 +285,8 @@ async def resend_team_invitation(
         invitation = await service.resend_invitation(
             team_id,
             id,
-            mail_sender,
-            frontend_url=Settings.frontend_url,
+            frontend_url=settings.frontend_url or "",
+            mail_sender=mail_sender,
             resend_idempotency_key=resend_idempotency_key,
         )
     except TeamInvitationNotFoundError as error:

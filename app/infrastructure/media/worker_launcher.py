@@ -38,12 +38,12 @@ def main() -> None:
     if resource is not None:
         with contextlib.suppress(ValueError, OSError):
             mem_bytes = as_mb * 1024 * 1024
-            resource.setrlimit(resource.RLIMIT_AS, (mem_bytes, mem_bytes))
+            resource.setrlimit(resource.RLIMIT_AS, (mem_bytes, mem_bytes))  # type: ignore[attr-defined]
         with contextlib.suppress(ValueError, OSError):
-            resource.setrlimit(resource.RLIMIT_CPU, (cpu_s, cpu_s))
+            resource.setrlimit(resource.RLIMIT_CPU, (cpu_s, cpu_s))  # type: ignore[attr-defined]
         with contextlib.suppress(ValueError, OSError):
             fsize_bytes = fsize_mb * 1024 * 1024
-            resource.setrlimit(resource.RLIMIT_FSIZE, (fsize_bytes, fsize_bytes))
+            resource.setrlimit(resource.RLIMIT_FSIZE, (fsize_bytes, fsize_bytes))  # type: ignore[attr-defined]
 
     try:
         os.execvp(tool_cmd[0], tool_cmd)
