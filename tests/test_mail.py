@@ -16,7 +16,7 @@ from app.infrastructure.mail import (
     GmailMailSender,
     create_mail_sender,
 )
-from app.infrastructure.settings import Settings
+from app.settings import Settings
 from app.main import create_app
 
 

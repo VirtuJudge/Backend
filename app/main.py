@@ -1,7 +1,8 @@
 from fastapi import FastAPI
 from psycopg import sql
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
-
+from redis.asyncio import Redis
+from app.api.dependencies import settings
 from app.api.routes import routers
 from app.api.routes.health import router as health_router
 from app.application.mail import MailSender
@@ -13,6 +14,7 @@ from app.infrastructure.auth.provider import create_token_verifier
 from app.infrastructure.database import create_database_engine
 from app.infrastructure.database import get_session as infrastructure_get_session
 from app.infrastructure.mail import create_mail_sender
+from app.infrastructure.redis.rate_limiter import RedisRateLimiter
 from app.infrastructure.repositories import sqlalchemyInvitationResendKeyRepository
 from app.infrastructure.repositories.sqlalchemyProjectRepository import SqlAlchemyProjectRepository
 from app.infrastructure.repositories.sqlalchemyTeamMemberRepository import SqlAlchemyTeamMemberRepository
@@ -21,7 +23,7 @@ from app.infrastructure.repositories.sqlalchemyUserRepositories import SqlAlchem
 from app.infrastructure.repositories.sqlalchemyTeamInvitationRepository import SqlAlchemyTeamInvitationRepository
 from app.infrastructure.repositories.sqlalchemyTeamMemberRepository import TeamMemberRepository
 from app.infrastructure.repositories.sqlalchemyInvitationResendKeyRepository import SqlalchemyInvitationResendKeyRepository
-from app.infrastructure.settings import Settings
+from app.settings import Settings
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -35,6 +37,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.state.team_service_factory = team_service_factory
     application.state.project_service_factory = project_service_factory
     application.state.team_invitation_service_factory = team_invitation_service_factory
+    redis = Redis.from_url(
+            resolved_settings.redis_url,
+            decode_responses=True,
+        )
+    application.state.redis = RedisRateLimiter(redis)
     for router in routers:
         application.include_router(router)
     application.state.mail_sender = create_mail_sender(resolved_settings)

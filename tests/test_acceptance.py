@@ -218,6 +218,11 @@ class FakeUserRepository(UserRepository):
     async def get_by_identity(self, issuer: str, subject: str) -> User | None:
         return self.user
 
+    async def get_by_id(self, user_id: UUID) -> User | None:
+        if self.user is not None and self.user.id == user_id:
+            return self.user
+        return None
+
     async def create(self, user: User) -> User:
         self.user = user
         return user

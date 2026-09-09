@@ -10,7 +10,7 @@ from app.application.mail import (
     MailMessage,
     MailSender,
 )
-from app.infrastructure.settings import Settings
+from app.settings import Settings
 
 
 class FakeMailSender:

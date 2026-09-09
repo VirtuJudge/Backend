@@ -6,7 +6,7 @@ from sqlalchemy.engine import Connection, engine_from_config, make_url
 
 import app.infrastructure.persistence.configurations  # noqa: F401
 from app.infrastructure.database import metadata
-from app.infrastructure.settings import Settings
+from app.settings import Settings
 
 config = context.config
 

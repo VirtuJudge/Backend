@@ -1,5 +1,5 @@
 from app.infrastructure.auth.oidc import OIDCTokenVerifier
-from app.infrastructure.settings import Settings
+from app.settings import Settings
 
 
 def create_token_verifier(settings: Settings) -> OIDCTokenVerifier | None:
