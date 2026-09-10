@@ -157,7 +157,7 @@ def service(
 async def test_invite_normalizes_email_and_builds_multipart_message() -> None:
     repository = MemoryInvitationRepository()
 
-    created,token = await service(repository).invite_member(
+    created, token = await service(repository).invite_member(
         uuid4(),
         " Invitee@Example.COM ",
         "member",
@@ -166,6 +166,7 @@ async def test_invite_normalizes_email_and_builds_multipart_message() -> None:
 
     assert created.email == "invitee@example.com"
     assert token
+
 
 @pytest.mark.anyio
 async def test_send_invitation_builds_text_and_html_message() -> None:

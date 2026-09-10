@@ -101,7 +101,7 @@ class TeamInvitationService:
         existing = await self.repository.get_by_idempotency_key(idempotency_key)
 
         if existing is not None:
-            return existing ,""
+            return existing, ""
 
         if await self.member_repository.get_by_team_and_email(team_id, email):
             raise AlreadyTeamMemberError(f"{email} is already a member of this team")
@@ -150,7 +150,7 @@ class TeamInvitationService:
             await self.repository.get_by_id(existing.invitation_id) if existing else None
         )
         if existing_invitation is not None:
-            return existing_invitation ,""
+            return existing_invitation, ""
 
         invitation = await self.repository.get_by_id(invitation_id)
         if invitation is None or invitation.team_id != team_id:
