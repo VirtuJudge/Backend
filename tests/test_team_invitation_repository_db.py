@@ -221,7 +221,6 @@ async def test_get_by_idempotency_key_returns_returns_none_when_missing(
     session.add(team)
     await session.commit()
 
-
     result = await repository.get_by_idempotency_key("non-existent-key")
 
     assert result is None

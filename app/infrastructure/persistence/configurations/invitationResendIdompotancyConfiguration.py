@@ -1,7 +1,7 @@
 from datetime import datetime
+from typing import TYPE_CHECKING
 from uuid import UUID
 
-from typing import TYPE_CHECKING
 from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
