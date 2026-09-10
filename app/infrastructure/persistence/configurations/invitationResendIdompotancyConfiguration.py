@@ -1,14 +1,16 @@
 from datetime import datetime
 from uuid import UUID
 
-from alembic.environment import TYPE_CHECKING
+from typing import TYPE_CHECKING
 from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column,relationship
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.database import Base
 
 if TYPE_CHECKING:
-    from app.infrastructure.persistence.configurations.teamInvitationConfigurations import TeamInvitationModel
+    from app.infrastructure.persistence.configurations.teamInvitationConfigurations import (
+        TeamInvitationModel,
+    )
 
 
 class InvitationResendIdempotencyModel(Base):
@@ -34,7 +36,7 @@ class InvitationResendIdempotencyModel(Base):
         nullable=False,
     )
     invitation: Mapped["TeamInvitationModel"] = relationship(
-    back_populates="resend_idempotency_keys"
+        back_populates="resend_idempotency_keys"
     )
 
     __table_args__ = (
@@ -43,4 +45,3 @@ class InvitationResendIdempotencyModel(Base):
             name="uq_invitation_resend_idempotency_key",
         ),
     )
-

@@ -2,16 +2,20 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String
+from sqlalchemy import DateTime, ForeignKey, Integer, String
 from sqlalchemy.dialects.postgresql import UUID as PGUUID
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.domain.team_invitation import DeliveryStatus, InvitationStatus
 from app.infrastructure.database import Base
+
 if TYPE_CHECKING:
-    from app.infrastructure.persistence.configurations.invitationResendIdompotancyConfiguration import InvitationResendIdempotencyModel
-    from app.infrastructure.persistence.configurations.teamConfigration import TeamModel
+    from .invitationResendIdompotancyConfiguration import (
+        InvitationResendIdempotencyModel,
+    )
+    from .teamConfigration import TeamModel
 import sqlalchemy as sa
+
 
 class TeamInvitationModel(Base):
     __tablename__ = "team_invitations"
@@ -54,11 +58,11 @@ class TeamInvitationModel(Base):
 
     delivery_status: Mapped[DeliveryStatus] = mapped_column(
         sa.Enum(
-        DeliveryStatus,
-        values_callable=lambda enum_cls: [e.value for e in enum_cls],
-        name="deliverystatus",
-    ),
-    nullable=False,
+            DeliveryStatus,
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+            name="deliverystatus",
+        ),
+        nullable=False,
     )
 
     delivery_attempts: Mapped[int] = mapped_column(

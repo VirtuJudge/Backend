@@ -1,4 +1,3 @@
-import token
 from uuid import UUID
 
 from sqlalchemy import insert, select, update
@@ -48,7 +47,7 @@ class SqlAlchemyTeamInvitationRepository(TeamInvitationRepository):
             email=invitation.email,
             idempotency_key=invitation.idempotency_key,
             status=invitation.status,
-            token_hash = invitation.token_hash,
+            token_hash=invitation.token_hash,
             delivery_status=invitation.delivery_status,
             delivery_attempts=invitation.delivery_attempts,
             created_at=invitation.created_at,

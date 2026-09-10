@@ -1,10 +1,9 @@
 import os
 from collections.abc import AsyncIterator
 from pathlib import Path
-from uuid import uuid4
 
 import pytest
-from sqlalchemy import UUID, event
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -64,4 +63,3 @@ async def async_db_session(
 ) -> AsyncIterator[AsyncSession]:
     async with db_session_factory() as session:
         yield session
-
