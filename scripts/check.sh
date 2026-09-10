@@ -5,4 +5,5 @@ bash scripts/validate-repository.sh
 uv run ruff check .
 uv run ruff format --check .
 uv run mypy app migrations tests local_stack
+uv run python scripts/ai_contract.py --check
 uv run pytest
