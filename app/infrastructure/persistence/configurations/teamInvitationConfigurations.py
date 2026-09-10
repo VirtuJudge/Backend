@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String
@@ -7,7 +8,9 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.domain.team_invitation import DeliveryStatus, InvitationStatus
 from app.infrastructure.database import Base
-from app.infrastructure.persistence.configurations.teamConfigration import TeamModel
+if TYPE_CHECKING:
+    from app.infrastructure.persistence.configurations.invitationResendIdompotancyConfiguration import InvitationResendIdempotencyModel
+    from app.infrastructure.persistence.configurations.teamConfigration import TeamModel
 import sqlalchemy as sa
 
 class TeamInvitationModel(Base):
@@ -88,4 +91,9 @@ class TeamInvitationModel(Base):
         Integer,
         default=1,
         nullable=False,
+    )
+
+    resend_idempotency_keys: Mapped[list["InvitationResendIdempotencyModel"]] = relationship(
+        back_populates="invitation",
+        cascade="all, delete-orphan",
     )
