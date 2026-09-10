@@ -13,6 +13,7 @@ from app.application.interfaces.userRepository import UserRepository
 from app.application.mail import MailDeliveryError, MailMessage, MailSender
 from app.domain.team_invitation import DeliveryStatus, InvitationStatus, TeamInvitation
 from app.domain.team_member import TeamMember
+from app.application.templates.invitation import (INVITATION_SUBJECT, invitation_html_template, invitation_text_template)
 
 
 class InvitationAlreadyExistsError(Exception):
@@ -63,24 +64,12 @@ def mask_email(email: str) -> str:
 
 
 def invitation_message(recipient: str, url: str) -> MailMessage:
-    escaped_url = html.escape(url, quote=True)
     return MailMessage(
-        subject="You're invited to join a team!",
-        body=(
-            "Hello,\n\n"
-            "You have been invited to join the team. "
-            f"Please use the following link to accept the invitation: {url}\n\n"
-            "Best regards,\nTeam"
-        ),
-        html_body=(
-            "<p>Hello,</p>"
-            "<p>You have been invited to join the team.</p>"
-            f'<p><a href="{escaped_url}">Accept invitation</a></p>'
-            "<p>Best regards,<br>Team</p>"
-        ),
+        subject=INVITATION_SUBJECT,
+        body=invitation_text_template(url),
+        html_body=invitation_html_template(url),
         recipient=recipient,
     )
-
 
 class TeamInvitationService:
     def __init__(
