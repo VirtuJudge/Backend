@@ -59,16 +59,16 @@ class SqlAlchemyUserRepository(UserRepository):
 
         result = await self.session.execute(stmt)
 
-        row = result.mappings().first()
+        model = await self.session.scalar(stmt)
 
-        if row is None:
+        if model is None:
             return None
 
         return User(
-            id=row["id"],
-            display_name=row["display_name"],
-            issuer=row["issuer"],
-            subject=row["subject"],
-            email=row["email"],
-            created_at=row["created_at"],
+            id=model.id,
+            display_name=model.display_name,
+            issuer=model.issuer,
+            subject=model.subject,
+            email=model.email,
+            created_at=model.created_at,
         )
