@@ -69,15 +69,16 @@ class TeamInvitationService:
         frontend_url: str,
         mail_sender: MailSender,
     ) -> TeamInvitation:
+        existing = await self.repository.get_by_idempotency_key(idempotency_key)
+
+        if existing is not None:
+            return existing
+
         if await self.member_repository.get_by_team_and_email(team_id, email):
             raise AlreadyTeamMemberError(f"{email} is already a member of this team")
         if await self.repository.exists_pending_invitation(team_id, email):
             raise InvitationAlreadyExistsError(f"A pending invitation already exists for {email}")
 
-        existing = await self.repository.get_by_idempotency_key(idempotency_key)
-
-        if existing is not None:
-            return existing
 
         token = secrets.token_urlsafe(32)  # send to email
         token_hash = hashlib.sha256(token.encode()).hexdigest()
