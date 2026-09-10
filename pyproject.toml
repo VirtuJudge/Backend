@@ -26,8 +26,12 @@ dependencies = [
 [dependency-groups]
 dev = [
     "aiosqlite==0.22.1",
+    "fakeredis>=2.38.0",
+    "pytest-asyncio>=1.4.0",
     "httpx==0.28.1",
+    "jsonschema==4.26.0",
     "mypy==2.3.1",
+    "openapi-spec-validator==0.9.0",
     "pytest==9.1.1",
     "ruff==0.16.5",
 ]
@@ -53,5 +57,5 @@ strict = true
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = "alembic.*"
+module = ["alembic.*", "jsonschema", "jsonschema.*"]
 ignore_missing_imports = true

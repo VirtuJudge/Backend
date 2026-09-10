@@ -7,6 +7,7 @@ class MailMessage:
     recipient: str
     subject: str
     body: str
+    html_body: str | None = None
 
 
 class MailSender(Protocol):

@@ -10,7 +10,7 @@ from app.application.mail import (
     MailMessage,
     MailSender,
 )
-from app.infrastructure.settings import Settings
+from app.settings import Settings
 
 
 class FakeMailSender:
@@ -77,6 +77,8 @@ class GmailMailSender:
             email_message["To"] = message.recipient
             email_message["Subject"] = message.subject
             email_message.set_content(message.body)
+            if message.html_body is not None:
+                email_message.add_alternative(message.html_body, subtype="html")
 
             with smtplib.SMTP(self.host, self.port, timeout=self.timeout) as client:
                 context = ssl.create_default_context()

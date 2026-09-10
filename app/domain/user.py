@@ -6,8 +6,8 @@ from uuid import UUID
 @dataclass(frozen=True, slots=True)
 class User:
     id: UUID
+    display_name: str | None
     issuer: str
     subject: str
     email: str | None
     created_at: datetime
-    display_name: str | None = None

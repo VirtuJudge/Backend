@@ -12,7 +12,7 @@ from app.api.schemas.project import (
     ProjectResponse,
     ProjectUpdateRequest,
 )
-from app.application.services.projectService import (
+from app.application.services.project_service import (
     ProjectConfirmationRequired,
     ProjectForbidden,
     ProjectNotFound,
@@ -69,7 +69,21 @@ async def create_project(
     return project_response(project)
 
 
-@router.get("/projects/{project_id}", response_model=ProjectResponse, tags=["projects"])
+@router.get(
+    "/projects/{project_id}",
+    response_model=ProjectResponse,
+    tags=["projects"],
+    responses={
+        200: {
+            "headers": {
+                "ETag": {
+                    "description": "Entity tag for optimistic concurrency control",
+                    "schema": {"type": "string"},
+                }
+            }
+        }
+    },
+)
 async def get_project(
     project_id: UUID,
     response: Response,
@@ -86,7 +100,21 @@ async def get_project(
     return project_response(project)
 
 
-@router.patch("/projects/{project_id}", response_model=ProjectResponse, tags=["projects"])
+@router.patch(
+    "/projects/{project_id}",
+    response_model=ProjectResponse,
+    tags=["projects"],
+    responses={
+        200: {
+            "headers": {
+                "ETag": {
+                    "description": "Entity tag for optimistic concurrency control",
+                    "schema": {"type": "string"},
+                }
+            }
+        }
+    },
+)
 async def update_project(
     project_id: UUID,
     request: ProjectUpdateRequest,

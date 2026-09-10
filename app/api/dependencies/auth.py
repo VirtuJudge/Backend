@@ -2,7 +2,7 @@ from fastapi import Depends, HTTPException, Request, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 
 from app.api.dependencies.services import get_user_service
-from app.application.services.userService import UserService
+from app.application.services.user_service import UserService
 from app.domain.user import User
 
 security = HTTPBearer()

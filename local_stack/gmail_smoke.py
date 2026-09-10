@@ -7,7 +7,7 @@ from app.application.mail import (
     MailMessage,
 )
 from app.infrastructure.mail import GmailMailSender
-from app.infrastructure.settings import Settings
+from app.settings import Settings
 
 SYNTHETIC_SUBJECT = "VirtuJudge Gmail Smoke Test"
 SYNTHETIC_BODY = "This is a synthetic smoke test message from VirtuJudge local stack."
