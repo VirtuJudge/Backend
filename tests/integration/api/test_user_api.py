@@ -105,7 +105,11 @@ async def test_get_me_extracts_display_name_from_token_claims() -> None:
 
     fake_repo = FakeUserRepository()
     user_service = UserService(fake_repo)
-    app.dependency_overrides[get_user_service] = lambda: user_service
+
+    async def get_fake_user_service() -> UserService:
+        return user_service
+
+    app.dependency_overrides[get_user_service] = get_fake_user_service
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
