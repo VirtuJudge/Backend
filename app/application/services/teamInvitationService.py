@@ -215,7 +215,7 @@ class TeamInvitationService:
         result = await self.repository.get_invitation_by_token(token_hash)
 
         if result is None:
-            raise TeamInvitationNotFoundError(f"Invitation with token {token} not found")
+            raise TeamInvitationNotFoundError(f"Invitation not found")
         team_name, owner_name, invitation = result
 
         if invitation.status != InvitationStatus.PENDING:
@@ -229,7 +229,7 @@ class TeamInvitationService:
             invitation.status = InvitationStatus.EXPIRED
             await self.repository.update(invitation)
 
-            raise TeamInvitationExpiredError(f"Invitation with token {token} has expired")
+            raise TeamInvitationExpiredError(f"Invitation not found")
 
         return team_name, owner_name, invitation
 
