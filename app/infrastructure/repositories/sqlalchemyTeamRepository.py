@@ -4,6 +4,8 @@ from uuid import UUID
 from sqlalchemy import delete, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import joinedload
+from sqlalchemy.orm.attributes import NO_VALUE
 
 from app.application.interfaces.teamRepository import TeamRepository
 from app.domain.idempotency import TeamCreationIdempotency
@@ -31,12 +33,17 @@ class SqlAlchemyTeamRepository(TeamRepository):
 
     @staticmethod
     def _member(model: TeamMemberModel) -> TeamMember:
+        user = model.__dict__.get("user")
+        if user is NO_VALUE:
+            user = None
+        display_name = getattr(user, "display_name", None) if user else None
         return TeamMember(
             id=model.id,
             team_id=model.team_id,
             user_id=model.user_id,
             role=model.role,
             joined_at=model.joined_at,
+            display_name=display_name,
         )
 
     async def list_for_user(
@@ -145,9 +152,13 @@ class SqlAlchemyTeamRepository(TeamRepository):
         return membership is not None and membership.role == "owner"
 
     async def get_membership(self, team_id: UUID, user_id: UUID) -> TeamMember | None:
-        stmt = select(TeamMemberModel).where(
-            TeamMemberModel.team_id == team_id,
-            TeamMemberModel.user_id == user_id,
+        stmt = (
+            select(TeamMemberModel)
+            .options(joinedload(TeamMemberModel.user))
+            .where(
+                TeamMemberModel.team_id == team_id,
+                TeamMemberModel.user_id == user_id,
+            )
         )
         model = await self.session.scalar(stmt)
         return self._member(model) if model is not None else None
@@ -157,6 +168,7 @@ class SqlAlchemyTeamRepository(TeamRepository):
     ) -> tuple[list[TeamMember], UUID | None]:
         stmt = (
             select(TeamMemberModel)
+            .options(joinedload(TeamMemberModel.user))
             .where(TeamMemberModel.team_id == team_id)
             .order_by(TeamMemberModel.id)
             .limit(limit + 1)
