@@ -9,7 +9,6 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.routes import routers
-from app.api.routes.health import router as health_router
 from app.application.interfaces.teamMemberRepository import TeamMemberRepository
 from app.application.services.assetStore import AssetStore
 from app.application.services.projectService import ProjectService
