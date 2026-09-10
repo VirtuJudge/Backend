@@ -153,7 +153,9 @@ class TeamInvitationService:
                 f"Invitation with ID {invitation_id} not found for team {team_id}"
             )
         if invitation.status != InvitationStatus.PENDING:
-            raise ValueError("Only pending invitations can be resent.")
+            raise AlreadyConsumedInvitationError(
+                "Cannot resend an invitation that is not pending."
+            )
 
         token = secrets.token_urlsafe(32)
 

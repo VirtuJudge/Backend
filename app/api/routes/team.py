@@ -303,6 +303,8 @@ async def resend_team_invitation(
         )
     except TeamInvitationNotFoundError as error:
         raise HTTPException(status_code=404, detail="team_not_found") from error
+    except AlreadyConsumedInvitationError as error:
+        raise HTTPException(status_code=409, detail="invitation_not_pending") from error
     response.headers["ETag"] = f'"{invitation_etag(invitation)}"'
     return InviteMemberResponse.model_validate(invitation, from_attributes=True)
 
