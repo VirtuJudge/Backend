@@ -28,6 +28,17 @@ def test_migration_upgrade_and_downgrade(tmp_path: Path) -> None:
     version_columns = [c["name"] for c in inspect(engine).get_columns("asset_versions")]
     assert "upload_expires_at" in version_columns
     assert "cleanup_next_attempt_at" in version_columns
+    invitation_columns = {
+        column["name"]: column for column in inspect(engine).get_columns("team_invitations")
+    }
+    assert "version" in invitation_columns
+    assert invitation_columns["version"]["nullable"] is False
+    invitation_foreign_keys = inspect(engine).get_foreign_keys("team_invitations")
+    assert any(
+        foreign_key["referred_table"] == "teams"
+        and foreign_key["constrained_columns"] == ["team_id"]
+        for foreign_key in invitation_foreign_keys
+    )
 
     command.downgrade(configuration, "base")
     tables_downgraded = inspect(engine).get_table_names()

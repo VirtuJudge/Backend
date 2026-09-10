@@ -218,6 +218,11 @@ class FakeUserRepository(UserRepository):
     async def get_by_identity(self, issuer: str, subject: str) -> User | None:
         return self.user
 
+    async def get_by_id(self, user_id: UUID) -> User | None:
+        if self.user is not None and self.user.id == user_id:
+            return self.user
+        return None
+
     async def create(self, user: User) -> User:
         self.user = user
         return user
@@ -258,7 +263,13 @@ def test_oidc_verifier_delegates_signature_issuer_audience_and_expiry_validation
                 "options": options,
             }
         )
-        return {"iss": issuer, "aud": audience, "sub": "subject", "exp": 9999999999}
+        return {
+            "iss": issuer,
+            "aud": audience,
+            "sub": "subject",
+            "exp": 9999999999,
+            "display_name": "User Name",
+        }
 
     monkeypatch.setattr("app.infrastructure.auth.oidc.jwt.decode", decode)
     verifier = OIDCTokenVerifier("issuer", "audience", "https://issuer/jwks")

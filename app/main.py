@@ -5,11 +5,14 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.routes import routers
+from app.application.interfaces.teamMemberRepository import TeamMemberRepository
 from app.application.services.assetStore import AssetStore
 from app.application.services.projectService import ProjectService
+from app.application.services.teamInvitationService import TeamInvitationService
 from app.application.services.teamService import TeamService
 from app.application.services.userService import UserService
 from app.infrastructure.auth.provider import create_token_verifier
@@ -18,12 +21,22 @@ from app.infrastructure.database import get_session as infrastructure_get_sessio
 from app.infrastructure.documents.document_verifier import DocumentVerifier
 from app.infrastructure.mail import create_mail_sender
 from app.infrastructure.media.ffmpegVerifier import FFmpegMediaVerifier
+from app.infrastructure.redis.rate_limiter import RedisRateLimiter
 from app.infrastructure.repositories.sqlalchemyAssetRepository import SqlAlchemyAssetRepository
+from app.infrastructure.repositories.sqlalchemyInvitationResendKeyRepository import (
+    SqlalchemyInvitationResendKeyRepository,
+)
 from app.infrastructure.repositories.sqlalchemyProjectRepository import SqlAlchemyProjectRepository
+from app.infrastructure.repositories.sqlalchemyTeamInvitationRepository import (
+    SqlAlchemyTeamInvitationRepository,
+)
+from app.infrastructure.repositories.sqlalchemyTeamMemberRepository import (
+    SqlAlchemyTeamMemberRepository,
+)
 from app.infrastructure.repositories.sqlalchemyTeamRepository import SqlAlchemyTeamRepository
 from app.infrastructure.repositories.sqlalchemyUserRepositories import SqlAlchemyUserRepository
-from app.infrastructure.settings import Settings
 from app.infrastructure.storage.s3ObjectStorage import S3ObjectStorage
+from app.settings import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +92,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 with contextlib.suppress(asyncio.CancelledError):
                     await cleanup_task
 
+            await redis.aclose()
             await engine.dispose()
 
     application = FastAPI(title=resolved_settings.app_name, lifespan=lifespan)
@@ -88,9 +102,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.state.user_service_factory = user_service_factory
     application.state.team_service_factory = team_service_factory
     application.state.project_service_factory = project_service_factory
+    application.state.settings = resolved_settings
     application.state.asset_store_factory = lambda session: asset_store_factory(
         session, resolved_settings
     )
+    application.state.team_invitation_service_factory = team_invitation_service_factory
+    redis = Redis.from_url(
+        resolved_settings.redis_url,
+        decode_responses=True,
+    )
+    application.state.redis = RedisRateLimiter(redis)
     for router in routers:
         application.include_router(router)
     application.state.mail_sender = create_mail_sender(resolved_settings)
@@ -146,6 +167,20 @@ def asset_store_factory(session: AsyncSession, settings: Settings) -> AssetStore
         upload_ttl_seconds=settings.object_storage_upload_url_ttl_seconds,
         download_ttl_seconds=settings.object_storage_download_url_ttl_seconds,
     )
+
+
+def team_invitation_service_factory(session: AsyncSession) -> TeamInvitationService:
+    return TeamInvitationService(
+        SqlAlchemyTeamInvitationRepository(session),
+        SqlAlchemyTeamRepository(session),
+        SqlAlchemyTeamMemberRepository(session),
+        SqlAlchemyUserRepository(session),
+        SqlalchemyInvitationResendKeyRepository(session),
+    )
+
+
+def team_member_repository_factory(session: AsyncSession) -> TeamMemberRepository:
+    return SqlAlchemyTeamMemberRepository(session)
 
 
 app = create_app()

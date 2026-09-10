@@ -19,7 +19,7 @@ from app.domain.asset import (
     StorageObjectNotFound,
     StorageUnavailable,
 )
-from app.infrastructure.settings import Settings
+from app.settings import Settings
 
 os.environ.setdefault("AWS_EC2_METADATA_DISABLED", "true")
 

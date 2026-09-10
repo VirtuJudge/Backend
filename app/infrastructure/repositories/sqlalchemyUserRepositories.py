@@ -1,3 +1,5 @@
+from uuid import UUID
+
 from sqlalchemy import insert, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -42,10 +44,28 @@ class SqlAlchemyUserRepository(UserRepository):
             issuer=user.issuer,
             subject=user.subject,
             email=user.email,
-            display_name=user.display_name or "",
+            display_name=user.display_name,
             created_at=user.created_at,
         )
 
         await self.session.execute(stmt)
 
         return user
+
+    async def get_by_id(self, user_id: UUID) -> User | None:
+        stmt = select(UserModel).where(
+            UserModel.id == user_id,
+        )
+
+        model = await self.session.scalar(stmt)
+        if model is None:
+            return None
+
+        return User(
+            id=model.id,
+            display_name=model.display_name,
+            issuer=model.issuer,
+            subject=model.subject,
+            email=model.email,
+            created_at=model.created_at,
+        )

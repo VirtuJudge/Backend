@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pydantic import SecretStr
 
-from app.infrastructure.settings import Settings
+from app.settings import Settings
 from local_stack.gmail_smoke import (
     SYNTHETIC_BODY,
     SYNTHETIC_SUBJECT,

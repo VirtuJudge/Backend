@@ -18,7 +18,12 @@ def test_existing_identity_survives_a_new_session(tmp_path: Path) -> None:
                 await connection.run_sync(Base.metadata.create_all)
             sessions = async_sessionmaker(engine)
             user = User(
-                uuid4(), "https://identity.example", "synthetic-subject", None, datetime.now(UTC)
+                uuid4(),
+                None,
+                "https://identity.example",
+                "synthetic-subject",
+                None,
+                datetime.now(UTC),
             )
             async with sessions() as session:
                 await SqlAlchemyUserRepository(session).create(user)
@@ -34,6 +39,8 @@ def test_existing_identity_survives_a_new_session(tmp_path: Path) -> None:
                     None,
                 )
                 assert await repository.get_by_identity(user.issuer, "another-subject") is None
+                found_by_id = await repository.get_by_id(user.id)
+                assert found_by_id == found
         finally:
             await engine.dispose()
 

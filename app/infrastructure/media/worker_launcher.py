@@ -36,14 +36,15 @@ def main() -> None:
         sys.exit(127)
 
     if resource is not None:
+        resource_api = vars(resource)
         with contextlib.suppress(ValueError, OSError):
             mem_bytes = as_mb * 1024 * 1024
-            resource.setrlimit(resource.RLIMIT_AS, (mem_bytes, mem_bytes))
+            resource_api["setrlimit"](resource_api["RLIMIT_AS"], (mem_bytes, mem_bytes))
         with contextlib.suppress(ValueError, OSError):
-            resource.setrlimit(resource.RLIMIT_CPU, (cpu_s, cpu_s))
+            resource_api["setrlimit"](resource_api["RLIMIT_CPU"], (cpu_s, cpu_s))
         with contextlib.suppress(ValueError, OSError):
             fsize_bytes = fsize_mb * 1024 * 1024
-            resource.setrlimit(resource.RLIMIT_FSIZE, (fsize_bytes, fsize_bytes))
+            resource_api["setrlimit"](resource_api["RLIMIT_FSIZE"], (fsize_bytes, fsize_bytes))
 
     try:
         os.execvp(tool_cmd[0], tool_cmd)

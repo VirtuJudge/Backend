@@ -6,8 +6,8 @@ from httpx import ASGITransport, AsyncClient
 
 from app.api.dependencies.auth import get_current_user
 from app.domain.user import User
-from app.infrastructure.settings import Settings
 from app.main import create_app
+from app.settings import Settings
 
 
 @pytest.mark.anyio
@@ -94,6 +94,11 @@ async def test_get_me_extracts_display_name_from_token_claims() -> None:
 
         async def get_by_identity(self, issuer: str, subject: str) -> User | None:
             return self.user
+
+        async def get_by_id(self, user_id: object) -> User | None:
+            if self.user is not None and self.user.id == user_id:
+                return self.user
+            return None
 
         async def create(self, user: User) -> User:
             self.user = user

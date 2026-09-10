@@ -15,6 +15,11 @@ class UserModel(Base):
         primary_key=True,
     )
 
+    display_name: Mapped[str | None] = mapped_column(
+        String(255),
+        nullable=True,
+    )
+
     issuer: Mapped[str] = mapped_column(
         String(255),
         nullable=False,
@@ -33,13 +38,6 @@ class UserModel(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
-    )
-
-    display_name: Mapped[str] = mapped_column(
-        String(255),
-        nullable=False,
-        default="",
-        server_default="",
     )
 
     team_memberships: Mapped[list["TeamMemberModel"]] = relationship(back_populates="user")

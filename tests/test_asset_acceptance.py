@@ -27,8 +27,8 @@ from app.domain.idempotency import AssetUploadIdempotency
 from app.domain.project import Project
 from app.domain.user import User
 from app.infrastructure.documents.document_verifier import DocumentVerifier
-from app.infrastructure.settings import Settings
 from app.main import create_app
+from app.settings import Settings
 
 TEAM_ID = uuid4()
 PROJECT_ID = uuid4()
@@ -406,6 +406,7 @@ class FakeUserService:
 def member_user() -> User:
     return User(
         id=MEMBER_ID,
+        display_name="Member User",
         issuer="https://auth.example",
         subject="member-sub",
         email="member@example.com",
@@ -417,6 +418,7 @@ def member_user() -> User:
 def outsider_user() -> User:
     return User(
         id=OUTSIDER_ID,
+        display_name="Outsider User",
         issuer="https://auth.example",
         subject="outsider-sub",
         email="outsider@example.com",

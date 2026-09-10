@@ -16,8 +16,8 @@ from app.infrastructure.mail import (
     GmailMailSender,
     create_mail_sender,
 )
-from app.infrastructure.settings import Settings
 from app.main import create_app
+from app.settings import Settings
 
 
 def test_mail_message_and_fake_sender() -> None:
@@ -75,6 +75,7 @@ def test_gmail_sender_sends_via_starttls() -> None:
         recipient="recipient@example.com",
         subject="Subject line",
         body="Message body text",
+        html_body="<p>Message body HTML</p>",
     )
 
     mock_smtp_instance = MagicMock()
@@ -98,7 +99,13 @@ def test_gmail_sender_sends_via_starttls() -> None:
         assert sent_msg["From"] == "sender@gmail.com"
         assert sent_msg["To"] == "recipient@example.com"
         assert sent_msg["Subject"] == "Subject line"
-        assert sent_msg.get_content().strip() == "Message body text"
+        assert sent_msg.is_multipart()
+        plain_body = sent_msg.get_body(preferencelist=("plain",))
+        html_body = sent_msg.get_body(preferencelist=("html",))
+        assert plain_body is not None
+        assert html_body is not None
+        assert plain_body.get_content().strip() == "Message body text"
+        assert html_body.get_content().strip() == "<p>Message body HTML</p>"
 
 
 def test_gmail_sender_safe_delivery_error_on_smtp_failure() -> None:

@@ -68,6 +68,9 @@ def test_routes_and_classifications_present() -> None:
         "/health",
         "/api/v1/me",
         "/api/v1/teams",
+        "/api/v1/invitations/{token}",
+        "/api/v1/invitations/{token}/accept",
+        "/api/v1/teams/{team_id}/invitations/{id}/resend",
         "/api/v1/projects/{project_id}",
         "/api/v1/projects/{project_id}/assets",
     ]
