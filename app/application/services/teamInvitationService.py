@@ -225,7 +225,7 @@ class TeamInvitationService:
             if invitation.status == InvitationStatus.ACCEPTED:
                 raise AlreadyConsumedInvitationError()
 
-        if invitation.expires_at <= datetime.utcnow():
+        if invitation.expires_at <= datetime.now(UTC):
             invitation.status = InvitationStatus.EXPIRED
             await self.repository.update(invitation)
 
@@ -240,51 +240,52 @@ class TeamInvitationService:
     ) -> TeamMember:
 
         token_hash = hashlib.sha256(token.encode()).hexdigest()
+        async with self.session.begin():
 
-        result = await self.repository.get_invitation_by_token(token_hash)
+            result = await self.repository.get_invitation_by_token(token_hash)
 
-        if result is None:
-            raise TeamInvitationNotFoundError("Invitation not found")
+            if result is None:
+                raise TeamInvitationNotFoundError("Invitation not found")
 
-        team_name, team_owner, invitation = result
+            team_name, team_owner, invitation = result
 
-        if invitation.status == InvitationStatus.REVOKED:
-            raise TeamInvitationNotFoundError("Invitation not found")
+            if invitation.status == InvitationStatus.REVOKED:
+                raise TeamInvitationNotFoundError("Invitation not found")
 
-        if invitation.status == InvitationStatus.ACCEPTED:
-            raise AlreadyConsumedInvitationError("Invitation has already been accepted")
+            if invitation.status == InvitationStatus.ACCEPTED:
+                raise AlreadyConsumedInvitationError("Invitation has already been accepted")
 
-        if invitation.status == InvitationStatus.EXPIRED:
-            raise TeamInvitationExpiredError("Invitation has expired")
+            if invitation.status == InvitationStatus.EXPIRED:
+                raise TeamInvitationExpiredError("Invitation has expired")
 
-        if invitation.status != InvitationStatus.PENDING:
-            raise ValueError("Invitation cannot be accepted")
+            if invitation.status != InvitationStatus.PENDING:
+                raise ValueError("Invitation cannot be accepted")
 
-        now = datetime.now(UTC)
+            now = datetime.now(UTC)
 
-        if invitation.expires_at <= now:
-            invitation.status = InvitationStatus.EXPIRED
-            await self.repository.update(invitation)
+            if invitation.expires_at <= now:
+                invitation.status = InvitationStatus.EXPIRED
+                await self.repository.update(invitation)
 
-            raise TeamInvitationExpiredError("Invitation has expired")
+                raise TeamInvitationExpiredError("Invitation has expired")
 
-        user = await self.user_repository.get_by_id(user_id)
+            user = await self.user_repository.get_by_id(user_id)
 
-        if user is None or user.email != invitation.email:
-            raise InvitationEmailMismatchError()
+            if user is None or user.email.strip().casefold() != invitation.email.strip().casefold():
+                raise InvitationEmailMismatchError()
 
-        membership = TeamMember(
-            id=uuid4(),
-            team_id=invitation.team_id,
-            user_id=user_id,
-            role=invitation.role,
-            joined_at=now,
-        )
+            membership = TeamMember(
+                id=uuid4(),
+                team_id=invitation.team_id,
+                user_id=user_id,
+                role=invitation.role,
+                joined_at=now,
+            )
 
-        await self.member_repository.create(membership)
+            await self.member_repository.create_with_same_transaction(membership)
 
-        invitation.status = InvitationStatus.ACCEPTED
+            invitation.status = InvitationStatus.ACCEPTED
 
-        await self.repository.update(invitation)
+            await self.repository.update_with_same_transaction(invitation)
 
         return membership

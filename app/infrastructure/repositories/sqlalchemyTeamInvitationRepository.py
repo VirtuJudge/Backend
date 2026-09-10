@@ -14,6 +14,8 @@ from app.infrastructure.persistence.configurations.teamInvitationConfigurations 
     TeamInvitationModel,
 )
 from app.infrastructure.persistence.configurations.teamMemberCongfigration import TeamMemberModel
+from app.infrastructure.persistence.configurations.userConfigration import UserModel
+from app.infrastructure.persistence.configurations.userConfigration import UserModel
 
 
 class SqlAlchemyTeamInvitationRepository(TeamInvitationRepository):
@@ -140,10 +142,37 @@ class SqlAlchemyTeamInvitationRepository(TeamInvitationRepository):
 
         return self._invitation(updated_model)
 
+    async def update_with_same_transaction(self, invitation: TeamInvitation) -> TeamInvitation:
+            stmt = (
+                update(TeamInvitationModel)
+                .where(
+                    TeamInvitationModel.id == invitation.id,
+                    TeamInvitationModel.version == invitation.version,
+                )
+                .values(
+                    status=invitation.status,
+                    delivery_status=invitation.delivery_status,
+                    delivery_attempts=invitation.delivery_attempts,
+                    token_hash=invitation.token_hash,
+                    version=invitation.version + 1,
+                )
+                .returning(TeamInvitationModel)
+            )
+    
+            result = await self.session.execute(stmt)
+    
+            updated_model = result.scalar_one_or_none()
+    
+            if updated_model is None:
+                raise ValueError(f"Invitation with ID {invitation.id} not found.")
+    
+            return self._invitation(updated_model)
+
     async def get_invitation_by_token(self, token: str) -> tuple[str, str, TeamInvitation] | None:
         stmt = (
             select(TeamInvitationModel)
             .where(TeamInvitationModel.token_hash == token)
+            .with_for_update() # make it atomic
             .options(
                 selectinload(TeamInvitationModel.team)
                 .selectinload(TeamModel.members)

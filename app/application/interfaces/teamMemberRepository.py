@@ -13,6 +13,6 @@ class TeamMemberRepository(ABC):
         pass
 
     @abstractmethod
-    async def create(self, team_member: TeamMember) -> TeamMember:
+    async def create_with_same_transaction(self, team_member: TeamMember) -> TeamMember:
         """Create a new team member."""
         pass

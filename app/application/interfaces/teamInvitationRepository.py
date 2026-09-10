@@ -44,3 +44,7 @@ class TeamInvitationRepository(ABC):
         resend_idempotency_key: str,
     ) -> TeamInvitation | None:
         pass
+
+    @abstractmethod
+    async def update_with_same_transaction(self, invitation: TeamInvitation) -> TeamInvitation:
+        pass
