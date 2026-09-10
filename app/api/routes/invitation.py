@@ -64,4 +64,10 @@ async def accept_invitation(
         raise HTTPException(
             status_code=409, detail="Invitation email does not match the authenticated user"
         ) from None
+    except TeamInvitationNotFoundError:
+        raise HTTPException(status_code=404, detail="Invitation not found") from None
+    except AlreadyConsumedInvitationError:
+        raise HTTPException(
+            status_code=409, detail="Invitation has already been accepted"
+        ) from None
     return TeamMembershipResponse.model_validate(membership, from_attributes=True)
