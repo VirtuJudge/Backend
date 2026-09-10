@@ -8,7 +8,6 @@ from fastapi import FastAPI
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.routes import routers
-from app.api.routes.health import router as health_router
 from app.application.services.assetStore import AssetStore
 from app.application.services.projectService import ProjectService
 from app.application.services.teamService import TeamService
@@ -95,7 +94,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     for router in routers:
         application.include_router(router)
     application.state.mail_sender = create_mail_sender(resolved_settings)
-    application.include_router(health_router)
 
     from fastapi.exception_handlers import request_validation_exception_handler
     from fastapi.exceptions import RequestValidationError
