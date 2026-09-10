@@ -3,13 +3,13 @@ from typing import Any, cast
 
 from fastapi import Depends, Request
 
-from app.application.interfaces.teamMemberRepository import TeamMemberRepository
 from app.application.mail import MailSender
-from app.application.services.assetStore import AssetStore
-from app.application.services.projectService import ProjectService
-from app.application.services.teamInvitationService import TeamInvitationService
-from app.application.services.teamService import TeamService
-from app.application.services.userService import UserService
+from app.application.ports.team_member_repository import TeamMemberRepository
+from app.application.services.asset_store import AssetStore
+from app.application.services.project_service import ProjectService
+from app.application.services.team_invitation_service import TeamInvitationService
+from app.application.services.team_service import TeamService
+from app.application.services.user_service import UserService
 
 
 async def get_session(request: Request) -> AsyncIterator[Any]:

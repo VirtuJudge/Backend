@@ -2,7 +2,7 @@
 
 from redis.asyncio import Redis
 
-from app.application.interfaces.rate_limiter import RateLimiter, RateLimitExceeded
+from app.application.ports.rate_limiter import RateLimiter, RateLimitExceeded
 
 
 class RedisRateLimiter(RateLimiter):

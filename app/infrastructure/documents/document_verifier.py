@@ -2,7 +2,7 @@ import asyncio
 import sys
 from pathlib import Path
 
-from app.application.interfaces.documentVerifier import DocumentVerifierPort
+from app.application.ports.document_verifier import DocumentVerifierPort
 from app.domain.asset import AssetCorrupt, AssetUnsupportedMediaType, StorageUnavailable
 from app.infrastructure.documents.document_worker import (
     EXIT_BROKEN_SLIDES,

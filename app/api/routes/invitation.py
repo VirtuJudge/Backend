@@ -4,7 +4,7 @@ from app.api.dependencies.auth import get_current_user
 from app.api.dependencies.services import get_team_invitation_service
 from app.api.schemas.mail import InvitationPreview
 from app.api.schemas.team import TeamMembershipResponse
-from app.application.services.teamInvitationService import (
+from app.application.services.team_invitation_service import (
     AlreadyConsumedInvitationError,
     InvitationEmailMismatchError,
     InvitationNotPendingError,
