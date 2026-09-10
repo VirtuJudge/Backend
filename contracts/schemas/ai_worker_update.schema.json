@@ -1,0 +1,468 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://virtujudge.net/contracts/schemas/ai_worker_update.schema.json",
+  "title": "AIWorkerUpdate",
+  "description": "Authoritative JSON Schema for VirtuJudge AI worker callback updates",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "sequence",
+    "status",
+    "occurred_at",
+    "trace_id",
+    "payload"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Contract schema version"
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "Monotonically increasing sequence number per job"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "started",
+        "progress",
+        "completed",
+        "failed",
+        "cancelled"
+      ],
+      "description": "Current status of the AI worker job execution"
+    },
+    "occurred_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 UTC timestamp when the update occurred"
+    },
+    "trace_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Distributed trace identifier correlating with the dispatch job"
+    },
+    "payload": {
+      "type": "object",
+      "description": "Status-dependent update payload"
+    }
+  },
+  "$defs": {
+    "ArtifactRef": {
+      "type": "object",
+      "description": "Stored artifact reference",
+      "required": [
+        "artifact_id",
+        "object_key",
+        "checksum"
+      ],
+      "properties": {
+        "artifact_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "object_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "checksum": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-fA-F]{64}$"
+        },
+        "schema_version": {
+          "type": "integer"
+        }
+      }
+    },
+    "Limitation": {
+      "type": "object",
+      "description": "System or analysis limitation record",
+      "required": [
+        "code",
+        "scope",
+        "message"
+      ],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "type": "string",
+          "minLength": 1
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "affected_dimensions": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "PrimaryQuestion": {
+      "type": "object",
+      "description": "Primary grounded question generated from pitch session analysis",
+      "required": [
+        "candidate_id",
+        "text",
+        "reason",
+        "rubric_dimension",
+        "evidence_ids"
+      ],
+      "properties": {
+        "candidate_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rubric_dimension": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "FollowUpQuestion": {
+      "type": "object",
+      "description": "Follow-up question generated during QA rounds",
+      "required": [
+        "text",
+        "reason",
+        "rubric_dimension"
+      ],
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 1
+        },
+        "rubric_dimension": {
+          "type": "string",
+          "minLength": 1
+        },
+        "evidence_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "StartedPayload": {
+      "type": "object",
+      "description": "Payload emitted when a worker starts processing a job",
+      "required": [
+        "pipeline_version"
+      ],
+      "properties": {
+        "pipeline_version": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "ProgressPayload": {
+      "type": "object",
+      "description": "Payload emitted for intermediate job progress",
+      "required": [
+        "stage",
+        "progress",
+        "message"
+      ],
+      "properties": {
+        "stage": {
+          "type": "string",
+          "minLength": 1
+        },
+        "progress": {
+          "type": "number",
+          "minimum": 0.0,
+          "maximum": 1.0
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "FailedPayload": {
+      "type": "object",
+      "description": "Payload emitted when job execution fails",
+      "required": [
+        "stage",
+        "code",
+        "retryable",
+        "attempts",
+        "message"
+      ],
+      "properties": {
+        "stage": {
+          "type": "string",
+          "minLength": 1
+        },
+        "code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "attempts": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "CancelledPayload": {
+      "type": "object",
+      "description": "Payload emitted when a job execution is cancelled (empty payload)",
+      "maxProperties": 0
+    },
+    "SessionAnalysisCompleted": {
+      "type": "object",
+      "description": "Completed payload for session analysis",
+      "additionalProperties": false,
+      "required": [
+        "analysis_artifact",
+        "primary_questions"
+      ],
+      "properties": {
+        "analysis_artifact": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "primary_questions": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": {
+            "$ref": "#/$defs/PrimaryQuestion"
+          }
+        },
+        "speaker_labels": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "limitations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Limitation"
+          }
+        }
+      }
+    },
+    "AnswerAnalysisCompleted": {
+      "type": "object",
+      "description": "Completed payload for answer analysis",
+      "additionalProperties": false,
+      "required": [
+        "answer_id",
+        "transcript_artifact_id",
+        "assessment_artifact_id"
+      ],
+      "properties": {
+        "answer_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "transcript_artifact_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "assessment_artifact_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "follow_up": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FollowUpQuestion"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "ReportCompleted": {
+      "type": "object",
+      "description": "Completed payload for report generation",
+      "additionalProperties": false,
+      "required": [
+        "evaluation_artifact",
+        "report_artifact"
+      ],
+      "properties": {
+        "evaluation_artifact": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "report_artifact": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "member_feedback_user_ids": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "limitations": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/Limitation"
+          }
+        }
+      }
+    },
+    "ErasureCompleted": {
+      "type": "object",
+      "description": "Completed payload for AI data erasure",
+      "additionalProperties": false,
+      "required": [
+        "erasure_request_id",
+        "deleted_records",
+        "deleted_objects"
+      ],
+      "properties": {
+        "erasure_request_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "deleted_records": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "deleted_objects": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "started"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/StartedPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "progress"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/ProgressPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "failed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/FailedPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "cancelled"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/CancelledPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "status": {
+            "const": "completed"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "oneOf": [
+              {
+                "$ref": "#/$defs/SessionAnalysisCompleted"
+              },
+              {
+                "$ref": "#/$defs/AnswerAnalysisCompleted"
+              },
+              {
+                "$ref": "#/$defs/ReportCompleted"
+              },
+              {
+                "$ref": "#/$defs/ErasureCompleted"
+              }
+            ]
+          }
+        }
+      }
+    }
+  ]
+}

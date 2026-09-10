@@ -115,7 +115,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     for router in routers:
         application.include_router(router)
     application.state.mail_sender = create_mail_sender(resolved_settings)
-    application.include_router(health_router)
 
     from fastapi.exception_handlers import request_validation_exception_handler
     from fastapi.exceptions import RequestValidationError

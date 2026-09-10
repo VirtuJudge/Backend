@@ -1,0 +1,385 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://virtujudge.net/contracts/schemas/ai_job.schema.json",
+  "title": "AIJobQueueMessage",
+  "description": "Authoritative JSON Schema for VirtuJudge AI job queue messages",
+  "type": "object",
+  "required": [
+    "schema_version",
+    "job_id",
+    "job_type",
+    "practice_session_id",
+    "analysis_attempt",
+    "created_at",
+    "trace_id",
+    "payload"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "integer",
+      "const": 1,
+      "description": "Contract schema version"
+    },
+    "job_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Unique job identifier"
+    },
+    "job_type": {
+      "type": "string",
+      "enum": [
+        "analyze_session",
+        "analyze_answer",
+        "generate_report",
+        "erase_ai_data"
+      ],
+      "description": "AI job execution type"
+    },
+    "practice_session_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Target practice session identifier"
+    },
+    "analysis_attempt": {
+      "type": "integer",
+      "minimum": 1,
+      "description": "1-based attempt sequence number for this practice session"
+    },
+    "created_at": {
+      "type": "string",
+      "format": "date-time",
+      "description": "RFC 3339 UTC timestamp when the job was enqueued"
+    },
+    "trace_id": {
+      "type": "string",
+      "minLength": 1,
+      "description": "Distributed trace identifier for request correlation"
+    },
+    "payload": {
+      "type": "object",
+      "description": "Job-specific dispatch payload"
+    }
+  },
+  "$defs": {
+    "AssetInput": {
+      "type": "object",
+      "description": "Media asset input reference",
+      "required": [
+        "artifact_id",
+        "object_key",
+        "checksum",
+        "media_type"
+      ],
+      "properties": {
+        "artifact_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "object_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "checksum": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-fA-F]{64}$",
+          "description": "SHA-256 checksum with sha256: prefix"
+        },
+        "media_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "AudioAssetInput": {
+      "type": "object",
+      "description": "Audio media asset input requiring duration in milliseconds",
+      "required": [
+        "artifact_id",
+        "object_key",
+        "checksum",
+        "media_type",
+        "duration_ms"
+      ],
+      "properties": {
+        "artifact_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "object_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "checksum": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-fA-F]{64}$",
+          "description": "SHA-256 checksum with sha256: prefix"
+        },
+        "media_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "duration_ms": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "RubricRef": {
+      "type": "object",
+      "description": "Evaluation rubric definition",
+      "required": [
+        "rubric_id",
+        "version"
+      ],
+      "properties": {
+        "rubric_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "ArtifactRef": {
+      "type": "object",
+      "description": "Stored artifact reference",
+      "required": [
+        "artifact_id",
+        "object_key",
+        "checksum"
+      ],
+      "properties": {
+        "artifact_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "object_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "checksum": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-fA-F]{64}$"
+        },
+        "schema_version": {
+          "type": "integer"
+        }
+      }
+    },
+    "SpeakerMapping": {
+      "type": "object",
+      "description": "Mapping of speaker label to user identity",
+      "required": [
+        "speaker_label",
+        "user_id",
+        "display_name"
+      ],
+      "properties": {
+        "speaker_label": {
+          "type": "string",
+          "minLength": 1
+        },
+        "user_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "display_name": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "AnalyzeSessionPayload": {
+      "type": "object",
+      "description": "Payload for analyze_session jobs",
+      "required": [
+        "presentation",
+        "rubric"
+      ],
+      "properties": {
+        "presentation": {
+          "$ref": "#/$defs/AssetInput"
+        },
+        "supporting_documents": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/AssetInput"
+          }
+        },
+        "rubric": {
+          "$ref": "#/$defs/RubricRef"
+        },
+        "requested_capabilities": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "AnalyzeAnswerPayload": {
+      "type": "object",
+      "description": "Payload for analyze_answer jobs",
+      "required": [
+        "qa_round_id",
+        "question_id",
+        "answer_id",
+        "answered_by",
+        "audio",
+        "remaining_follow_ups"
+      ],
+      "properties": {
+        "qa_round_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "question_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "answer_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "answered_by": {
+          "type": "string",
+          "minLength": 1
+        },
+        "audio": {
+          "$ref": "#/$defs/AudioAssetInput"
+        },
+        "remaining_follow_ups": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "GenerateReportPayload": {
+      "type": "object",
+      "description": "Payload for generate_report jobs",
+      "required": [
+        "report_id",
+        "analysis_artifact",
+        "qa_artifact"
+      ],
+      "properties": {
+        "report_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "analysis_artifact": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "qa_artifact": {
+          "$ref": "#/$defs/ArtifactRef"
+        },
+        "speaker_mappings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/SpeakerMapping"
+          }
+        }
+      }
+    },
+    "EraseAIDataPayload": {
+      "type": "object",
+      "description": "Payload for erase_ai_data jobs",
+      "required": [
+        "erasure_request_id",
+        "scope",
+        "scope_id"
+      ],
+      "properties": {
+        "erasure_request_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "scope": {
+          "type": "string",
+          "enum": [
+            "asset",
+            "practice_session",
+            "project",
+            "team"
+          ]
+        },
+        "scope_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "job_type": {
+            "const": "analyze_session"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/AnalyzeSessionPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "job_type": {
+            "const": "analyze_answer"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/AnalyzeAnswerPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "job_type": {
+            "const": "generate_report"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/GenerateReportPayload"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "job_type": {
+            "const": "erase_ai_data"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/EraseAIDataPayload"
+          }
+        }
+      }
+    }
+  ]
+}
