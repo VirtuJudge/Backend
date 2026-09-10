@@ -15,6 +15,13 @@ from app.domain.user import User
 
 router = APIRouter()
 
+def mask_email(email: str) -> str:
+    local, domain = email.split("@", 1)
+
+    if not local:
+        return f"***@{domain}"
+
+    return f"{local[0]}***@{domain}"
 
 @router.get(
     "/invitations/{token}",
@@ -39,7 +46,7 @@ async def invitation_preview(
     return InvitationPreview(
         team_name=team_name,
         role=invitation.role,
-        invited_email=invitation.email,
+        invited_email=mask_email(invitation.email),
         invited_by_name=owner_name,
         expires_at=invitation.expires_at,
     )
