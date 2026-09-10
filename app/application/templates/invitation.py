@@ -2,7 +2,6 @@
 
 import html
 
-
 INVITATION_SUBJECT = "You're invited to join a team!"
 
 

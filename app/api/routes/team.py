@@ -1,7 +1,15 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status,BackgroundTasks
-from mypy.main import b
+from fastapi import (
+    APIRouter,
+    BackgroundTasks,
+    Depends,
+    Header,
+    HTTPException,
+    Query,
+    Response,
+    status,
+)
 
 from app.api.dependencies.auth import get_current_user
 from app.api.dependencies.rate_limit import rate_limit
@@ -221,13 +229,11 @@ async def invite_team_member(
     settings: Settings = Depends(get_settings),
 ) -> InviteMemberResponse:
     try:
-        invitation,token = await service.invite_member(
+        invitation, token = await service.invite_member(
             team_id,
             request.email,
             request.role,
             idempotency_key=idempotency_key,
-            mail_sender=mail_sender,
-            frontend_url=settings.frontend_url or "",
         )
     except AlreadyTeamMemberError as error:
         raise HTTPException(status_code=409, detail="already_team_member") from error
@@ -308,11 +314,9 @@ async def resend_team_invitation(
     ),
 ) -> InviteMemberResponse:
     try:
-        invitation,token = await service.resend_invitation(
+        invitation, token = await service.resend_invitation(
             team_id,
             id,
-            frontend_url=settings.frontend_url or "",
-            mail_sender=mail_sender,
             resend_idempotency_key=resend_idempotency_key,
         )
     except TeamInvitationNotFoundError as error:

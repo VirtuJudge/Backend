@@ -158,18 +158,40 @@ async def test_invite_normalizes_email_and_builds_multipart_message() -> None:
     repository = MemoryInvitationRepository()
     sender = FakeMailSender()
 
-    created = await service(repository).invite_member(
+    created,token = await service(repository).invite_member(
         uuid4(),
         " Invitee@Example.COM ",
         "member",
         "new-key",
-        "https://app.example",
-        sender,
     )
 
     assert created.email == "invitee@example.com"
+    assert token
+
+@pytest.mark.anyio
+async def test_send_invitation_builds_text_and_html_message() -> None:
+    repository = MemoryInvitationRepository()
+    sender = FakeMailSender()
+
+    created, token = await service(repository).invite_member(
+        uuid4(),
+        "Invitee@Example.COM",
+        "member",
+        "new-key",
+    )
+
+    await service(repository).send_invitation_email(
+        created,
+        token,
+        "https://frontend.example.com",
+        sender,
+    )
+
     assert len(sender.sent_messages) == 1
-    assert sender.sent_messages[0].html_body is not None
+
+    message = sender.sent_messages[0]
+    assert message.body
+    assert message.html_body is not None
 
 
 @pytest.mark.anyio
@@ -207,24 +229,26 @@ async def test_accept_normalizes_email_and_uses_atomic_repository_operation() ->
 @pytest.mark.anyio
 async def test_resend_persists_new_token_hash_and_is_idempotent() -> None:
     pending = invitation()
+
     old_hash = pending.token_hash
+
     repository = MemoryInvitationRepository(pending)
     resend_repository = MemoryResendKeyRepository()
-    sender = FakeMailSender()
-    invitation_service = service(repository, resend_repository=resend_repository)
 
-    resent = await invitation_service.resend_invitation(
+    invitation_service = service(
+        repository,
+        resend_repository=resend_repository,
+    )
+
+    resent, token = await invitation_service.resend_invitation(
         pending.team_id,
         pending.id,
-        "https://app.example",
-        sender,
         "resend-key",
     )
-    repeated = await invitation_service.resend_invitation(
+
+    repeated, repeated_token = await invitation_service.resend_invitation(
         pending.team_id,
         pending.id,
-        "https://app.example",
-        sender,
         "resend-key",
     )
 
@@ -232,4 +256,3 @@ async def test_resend_persists_new_token_hash_and_is_idempotent() -> None:
     assert repository.invitation is not None
     assert repository.invitation.token_hash == resent.token_hash
     assert repeated.id == resent.id
-    assert len(sender.sent_messages) == 1

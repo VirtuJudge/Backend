@@ -17,13 +17,6 @@ from app.domain.user import User
 
 router = APIRouter(prefix="/api/v1")
 
-def mask_email(email: str) -> str:
-    local, domain = email.split("@", 1)
-
-    if not local:
-        return f"***@{domain}"
-
-    return f"{local[0]}***@{domain}"
 
 @router.get(
     "/invitations/{token}",

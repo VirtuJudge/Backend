@@ -1,6 +1,5 @@
 import asyncio
 import hashlib
-import html
 import secrets
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
@@ -11,9 +10,13 @@ from app.application.interfaces.teamMemberRepository import TeamMemberRepository
 from app.application.interfaces.teamRepository import TeamRepository
 from app.application.interfaces.userRepository import UserRepository
 from app.application.mail import MailDeliveryError, MailMessage, MailSender
+from app.application.templates.invitation import (
+    INVITATION_SUBJECT,
+    invitation_html_template,
+    invitation_text_template,
+)
 from app.domain.team_invitation import DeliveryStatus, InvitationStatus, TeamInvitation
 from app.domain.team_member import TeamMember
-from app.application.templates.invitation import (INVITATION_SUBJECT, invitation_html_template, invitation_text_template)
 
 
 class InvitationAlreadyExistsError(Exception):
@@ -71,6 +74,7 @@ def invitation_message(recipient: str, url: str) -> MailMessage:
         recipient=recipient,
     )
 
+
 class TeamInvitationService:
     def __init__(
         self,
@@ -97,7 +101,7 @@ class TeamInvitationService:
         existing = await self.repository.get_by_idempotency_key(idempotency_key)
 
         if existing is not None:
-            return existing
+            return existing ,""
 
         if await self.member_repository.get_by_team_and_email(team_id, email):
             raise AlreadyTeamMemberError(f"{email} is already a member of this team")
@@ -124,7 +128,7 @@ class TeamInvitationService:
         )
         invitation = await self.repository.create(invitation, idempotency_key)
 
-        return invitation,token
+        return invitation, token
 
     async def list_invitations(
         self, team_id: UUID, cursor: UUID | None = None, limit: int = 20
@@ -146,7 +150,7 @@ class TeamInvitationService:
             await self.repository.get_by_id(existing.invitation_id) if existing else None
         )
         if existing_invitation is not None:
-            return existing_invitation
+            return existing_invitation ,""
 
         invitation = await self.repository.get_by_id(invitation_id)
         if invitation is None or invitation.team_id != team_id:
@@ -167,7 +171,7 @@ class TeamInvitationService:
 
         await self.repository.update(invitation)
 
-        return invitation,token
+        return invitation, token
 
     async def revoke_invitation(self, team_id: UUID, invitation_id: UUID, if_match: str) -> None:
         invitation = await self.repository.get_by_id(invitation_id)
