@@ -8,7 +8,7 @@ from sqlalchemy.orm import Mapped, mapped_column, relationship
 from app.domain.team_invitation import DeliveryStatus, InvitationStatus
 from app.infrastructure.database import Base
 from app.infrastructure.persistence.configurations.teamConfigration import TeamModel
-
+import sqlalchemy as sa
 
 class TeamInvitationModel(Base):
     __tablename__ = "team_invitations"
@@ -41,13 +41,21 @@ class TeamInvitationModel(Base):
     )
 
     status: Mapped[InvitationStatus] = mapped_column(
-        Enum(InvitationStatus),
+        sa.Enum(
+            InvitationStatus,
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+            name="invitationstatus",
+        ),
         nullable=False,
     )
 
     delivery_status: Mapped[DeliveryStatus] = mapped_column(
-        Enum(DeliveryStatus),
-        nullable=False,
+        sa.Enum(
+        DeliveryStatus,
+        values_callable=lambda enum_cls: [e.value for e in enum_cls],
+        name="deliverystatus",
+    ),
+    nullable=False,
     )
 
     delivery_attempts: Mapped[int] = mapped_column(

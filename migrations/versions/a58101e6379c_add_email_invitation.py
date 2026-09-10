@@ -27,12 +27,12 @@ def upgrade() -> None:
         sa.Column("role", sa.String(length=50), nullable=False),
         sa.Column(
             "status",
-            sa.Enum("PENDING", "ACCEPTED", "REVOKED", "EXPIRED", name="invitationstatus"),
+            sa.Enum("pending", "accepted", "revoked", "expired", name="invitationstatus"),
             nullable=False,
         ),
         sa.Column(
             "delivery_status",
-            sa.Enum("Queued", "ACCEPTED", "FAILED", name="deliverystatus"),
+            sa.Enum("queued", "accepted_by_gmail", "failed", name="deliverystatus"),
             nullable=False,
         ),
         sa.Column("delivery_attempts", sa.Integer(), nullable=False),
