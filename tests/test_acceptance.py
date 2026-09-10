@@ -268,7 +268,7 @@ def test_oidc_verifier_delegates_signature_issuer_audience_and_expiry_validation
             "aud": audience,
             "sub": "subject",
             "exp": 9999999999,
-            "name": "User Name",
+            "display_name": "User Name",
         }
 
     monkeypatch.setattr("app.infrastructure.auth.oidc.jwt.decode", decode)
@@ -284,7 +284,7 @@ def test_oidc_verifier_delegates_signature_issuer_audience_and_expiry_validation
             "algorithms": ["RS256", "ES256"],
             "issuer": "issuer",
             "audience": "audience",
-            "options": {"require": ["exp", "sub", "name"]},
+            "options": {"require": ["exp", "sub"]},
         }
     ]
 
