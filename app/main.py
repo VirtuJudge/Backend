@@ -102,6 +102,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.state.user_service_factory = user_service_factory
     application.state.team_service_factory = team_service_factory
     application.state.project_service_factory = project_service_factory
+    application.state.settings = resolved_settings
     application.state.asset_store_factory = lambda session: asset_store_factory(
         session, resolved_settings
     )
