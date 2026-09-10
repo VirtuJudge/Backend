@@ -79,7 +79,6 @@ class TeamInvitationService:
         if await self.repository.exists_pending_invitation(team_id, email):
             raise InvitationAlreadyExistsError(f"A pending invitation already exists for {email}")
 
-
         token = secrets.token_urlsafe(32)  # send to email
         token_hash = hashlib.sha256(token.encode()).hexdigest()
 
