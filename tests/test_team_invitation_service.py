@@ -156,7 +156,6 @@ def service(
 @pytest.mark.anyio
 async def test_invite_normalizes_email_and_builds_multipart_message() -> None:
     repository = MemoryInvitationRepository()
-    sender = FakeMailSender()
 
     created,token = await service(repository).invite_member(
         uuid4(),
