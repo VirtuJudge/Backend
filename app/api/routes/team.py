@@ -1,3 +1,4 @@
+from urllib import response
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
@@ -187,6 +188,16 @@ async def delete_team_member(
     response_model=InviteMemberResponse,
     status_code=status.HTTP_201_CREATED,
     tags=["teams"],
+    responses={
+        201: {
+            "headers": {
+                "ETag": {
+                    "description": "Entity tag for optimistic concurrency control",
+                    "schema": {"type": "string"},
+                }
+            }
+        }
+    },
     dependencies=[
         Depends(
             rate_limit(
@@ -199,10 +210,11 @@ async def delete_team_member(
 )
 async def invite_team_member(
     team_id: UUID,
+    response: Response,
     request: InviteMemberRequest,
     _owner: TeamMember = Depends(get_team_owner),
     service: TeamInvitationService = Depends(get_TeamInvitation_service),
-    idempotency_key: str = Header(min_length=1, max_length=255),
+    idempotency_key: str = Header(alias="Idempotency-Key",min_length=1, max_length=255),
     mail_sender: MailSender = Depends(get_mail_sender),
     settings: Settings = Depends(get_settings),
 ) -> InviteMemberResponse:
@@ -219,6 +231,7 @@ async def invite_team_member(
         raise HTTPException(status_code=409, detail="already_team_member") from error
     except InvitationAlreadyExistsError as error:
         raise HTTPException(status_code=409, detail="invitation_already_exists") from error
+    response.headers["ETag"] = f'"{invitation_etag(invitation)}"'
     return InviteMemberResponse.model_validate(invitation, from_attributes=True)
 
 
@@ -246,12 +259,12 @@ async def list_team_invitations(
 
 
 @router.post(
-    "/teams/{team_id}/invitations/{id}/Resend",
+    "/teams/{team_id}/invitations/{id}/resend",
     response_model=InviteMemberResponse,
     status_code=status.HTTP_202_ACCEPTED,
     tags=["teams"],
     responses={
-        200: {
+        202: {
             "headers": {
                 "ETag": {
                     "description": "Entity tag for optimistic concurrency control",
@@ -278,8 +291,7 @@ async def resend_team_invitation(
     service: TeamInvitationService = Depends(get_TeamInvitation_service),
     mail_sender: MailSender = Depends(get_mail_sender),
     settings: Settings = Depends(get_settings),
-    resend_idempotency_key: str = Header(min_length=1, max_length=255),
-    Etag: str = Header(min_length=1, max_length=255),
+    resend_idempotency_key: str = Header(alias="Idempotency-Key",min_length=1, max_length=255),
 ) -> InviteMemberResponse:
     try:
         invitation = await service.resend_invitation(
@@ -303,7 +315,7 @@ async def revoke_team_invitation(
     id: UUID,
     _owner: TeamMember = Depends(get_team_owner),
     service: TeamInvitationService = Depends(get_TeamInvitation_service),
-    if_match: str = Header(min_length=1, max_length=255),
+    if_match: str = Header(alias="If-Match",min_length=1, max_length=255),
 ) -> Response:
     try:
         await service.revoke_invitation(team_id, id, if_match)
