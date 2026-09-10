@@ -92,6 +92,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 with contextlib.suppress(asyncio.CancelledError):
                     await cleanup_task
 
+            await redis.aclose()
             await engine.dispose()
 
     application = FastAPI(title=resolved_settings.app_name, lifespan=lifespan)

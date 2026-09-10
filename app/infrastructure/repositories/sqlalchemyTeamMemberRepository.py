@@ -33,7 +33,7 @@ class SqlAlchemyTeamMemberRepository(TeamMemberRepository):
             joined_at=model.joined_at,
         )
 
-    async def create_with_same_transaction(self, team_member: TeamMember) -> TeamMember:
+    async def create(self, team_member: TeamMember) -> TeamMember:
         stmt = insert(TeamMemberModel).values(
             id=team_member.id,
             team_id=team_member.team_id,
@@ -42,4 +42,5 @@ class SqlAlchemyTeamMemberRepository(TeamMemberRepository):
             joined_at=team_member.joined_at,
         )
         await self.session.execute(stmt)
+        await self.session.commit()
         return team_member

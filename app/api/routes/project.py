@@ -69,21 +69,7 @@ async def create_project(
     return project_response(project)
 
 
-@router.get(
-    "/projects/{project_id}",
-    response_model=ProjectResponse,
-    tags=["projects"],
-    responses={
-        200: {
-            "headers": {
-                "ETag": {
-                    "description": "Entity tag for optimistic concurrency control",
-                    "schema": {"type": "string"},
-                }
-            }
-        }
-    },
-)
+@router.get("/projects/{project_id}", response_model=ProjectResponse, tags=["projects"])
 async def get_project(
     project_id: UUID,
     response: Response,
@@ -100,21 +86,7 @@ async def get_project(
     return project_response(project)
 
 
-@router.patch(
-    "/projects/{project_id}",
-    response_model=ProjectResponse,
-    tags=["projects"],
-    responses={
-        200: {
-            "headers": {
-                "ETag": {
-                    "description": "Entity tag for optimistic concurrency control",
-                    "schema": {"type": "string"},
-                }
-            }
-        }
-    },
-)
+@router.patch("/projects/{project_id}", response_model=ProjectResponse, tags=["projects"])
 async def update_project(
     project_id: UUID,
     request: ProjectUpdateRequest,

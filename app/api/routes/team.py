@@ -1,4 +1,3 @@
-from urllib import response
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
@@ -7,8 +6,8 @@ from app.api.dependencies.auth import get_current_user
 from app.api.dependencies.rate_limit import rate_limit
 from app.api.dependencies.services import (
     get_mail_sender,
+    get_team_invitation_service,
     get_team_service,
-    get_TeamInvitation_service,
 )
 from app.api.dependencies.settings import get_settings
 from app.api.dependencies.teamAuthorization import get_team_member, get_team_owner
@@ -26,6 +25,7 @@ from app.application.services.teamInvitationService import (
     AlreadyConsumedInvitationError,
     AlreadyTeamMemberError,
     InvitationAlreadyExistsError,
+    InvitationNotPendingError,
     InvitationPreconditionFailed,
     TeamInvitationNotFoundError,
     TeamInvitationService,
@@ -213,8 +213,8 @@ async def invite_team_member(
     response: Response,
     request: InviteMemberRequest,
     _owner: TeamMember = Depends(get_team_owner),
-    service: TeamInvitationService = Depends(get_TeamInvitation_service),
-    idempotency_key: str = Header(alias="Idempotency-Key",min_length=1, max_length=255),
+    service: TeamInvitationService = Depends(get_team_invitation_service),
+    idempotency_key: str = Header(alias="Idempotency-Key", min_length=1, max_length=255),
     mail_sender: MailSender = Depends(get_mail_sender),
     settings: Settings = Depends(get_settings),
 ) -> InviteMemberResponse:
@@ -244,7 +244,7 @@ async def invite_team_member(
 async def list_team_invitations(
     team_id: UUID,
     _owner: TeamMember = Depends(get_team_owner),
-    service: TeamInvitationService = Depends(get_TeamInvitation_service),
+    service: TeamInvitationService = Depends(get_team_invitation_service),
     cursor: UUID | None = Query(default=None),
     limit: int = Query(default=20, ge=1, le=100),
 ) -> InvitationPageResponse:
@@ -288,10 +288,14 @@ async def resend_team_invitation(
     id: UUID,
     response: Response,
     _owner: TeamMember = Depends(get_team_owner),
-    service: TeamInvitationService = Depends(get_TeamInvitation_service),
+    service: TeamInvitationService = Depends(get_team_invitation_service),
     mail_sender: MailSender = Depends(get_mail_sender),
     settings: Settings = Depends(get_settings),
-    resend_idempotency_key: str = Header(alias="Idempotency-Key",min_length=1, max_length=255),
+    resend_idempotency_key: str = Header(
+        min_length=1,
+        max_length=255,
+        alias="Idempotency-Key",
+    ),
 ) -> InviteMemberResponse:
     try:
         invitation = await service.resend_invitation(
@@ -302,8 +306,8 @@ async def resend_team_invitation(
             resend_idempotency_key=resend_idempotency_key,
         )
     except TeamInvitationNotFoundError as error:
-        raise HTTPException(status_code=404, detail="team_not_found") from error
-    except AlreadyConsumedInvitationError as error:
+        raise HTTPException(status_code=404, detail="team_invitation_not_found") from error
+    except InvitationNotPendingError as error:
         raise HTTPException(status_code=409, detail="invitation_not_pending") from error
     response.headers["ETag"] = f'"{invitation_etag(invitation)}"'
     return InviteMemberResponse.model_validate(invitation, from_attributes=True)
@@ -316,8 +320,8 @@ async def revoke_team_invitation(
     team_id: UUID,
     id: UUID,
     _owner: TeamMember = Depends(get_team_owner),
-    service: TeamInvitationService = Depends(get_TeamInvitation_service),
-    if_match: str = Header(alias="If-Match",min_length=1, max_length=255),
+    service: TeamInvitationService = Depends(get_team_invitation_service),
+    if_match: str = Header(alias="If-Match", min_length=1, max_length=255),
 ) -> Response:
     try:
         await service.revoke_invitation(team_id, id, if_match)
@@ -327,4 +331,6 @@ async def revoke_team_invitation(
         raise HTTPException(status_code=409, detail="already_consumed") from error
     except InvitationPreconditionFailed as error:
         raise HTTPException(status_code=412, detail="version precondition failed") from error
+    except InvitationNotPendingError as error:
+        raise HTTPException(status_code=409, detail="invitation_not_pending") from error
     return Response(status_code=status.HTTP_204_NO_CONTENT)

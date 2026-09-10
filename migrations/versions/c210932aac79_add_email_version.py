@@ -32,6 +32,12 @@ def upgrade() -> None:
             "teams",
             ["team_id"],
             ["id"],
+            ondelete="CASCADE",
+        )
+        batch_op.alter_column(
+            "version",
+            existing_type=sa.Integer(),
+            server_default=None,
         )
 
     with op.batch_alter_table("users", schema=None) as batch_op:

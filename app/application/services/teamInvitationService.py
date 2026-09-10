@@ -1,4 +1,6 @@
+import asyncio
 import hashlib
+import html
 import secrets
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
@@ -41,8 +43,43 @@ class InvitationPreconditionFailed(Exception):
     pass
 
 
+class InvitationNotPendingError(Exception):
+    pass
+
+
 def invitation_etag(invitation: TeamInvitation) -> str:
     return hashlib.sha256(f"{invitation.id}:{invitation.version}".encode()).hexdigest()
+
+
+def normalize_email(email: str) -> str:
+    return email.strip().casefold()
+
+
+def mask_email(email: str) -> str:
+    local, separator, domain = email.partition("@")
+    if not separator:
+        return "***"
+    return f"{local[:1]}***@{domain}"
+
+
+def invitation_message(recipient: str, url: str) -> MailMessage:
+    escaped_url = html.escape(url, quote=True)
+    return MailMessage(
+        subject="You're invited to join a team!",
+        body=(
+            "Hello,\n\n"
+            "You have been invited to join the team. "
+            f"Please use the following link to accept the invitation: {url}\n\n"
+            "Best regards,\nTeam"
+        ),
+        html_body=(
+            "<p>Hello,</p>"
+            "<p>You have been invited to join the team.</p>"
+            f'<p><a href="{escaped_url}">Accept invitation</a></p>'
+            "<p>Best regards,<br>Team</p>"
+        ),
+        recipient=recipient,
+    )
 
 
 class TeamInvitationService:
@@ -69,6 +106,7 @@ class TeamInvitationService:
         frontend_url: str,
         mail_sender: MailSender,
     ) -> TeamInvitation:
+        email = normalize_email(email)
         existing = await self.repository.get_by_idempotency_key(idempotency_key)
 
         if existing is not None:
@@ -101,18 +139,9 @@ class TeamInvitationService:
 
         url = f"{frontend_url}/invitations/{token}"
 
-        message = MailMessage(
-            subject="You're invited to join a team!",
-            body=(
-                "Hello,\n\n"
-                "You have been invited to join the team. "
-                f"Please use the following link to accept the invitation: {url}\n\n"
-                "Best regards,\nTeam"
-            ),
-            recipient=email,
-        )
+        message = invitation_message(email, url)
         try:
-            mail_sender.send(message)
+            await asyncio.to_thread(mail_sender.send, message)
 
             invitation.delivery_status = DeliveryStatus.ACCEPTED
 
@@ -153,9 +182,7 @@ class TeamInvitationService:
                 f"Invitation with ID {invitation_id} not found for team {team_id}"
             )
         if invitation.status != InvitationStatus.PENDING:
-            raise AlreadyConsumedInvitationError(
-                "Cannot resend an invitation that is not pending."
-            )
+            raise InvitationNotPendingError("Only pending invitations can be resent.")
 
         token = secrets.token_urlsafe(32)
 
@@ -168,18 +195,9 @@ class TeamInvitationService:
 
         url = f"{frontend_url}/invitations/{token}"
 
-        message = MailMessage(
-            subject="You're invited to join a team!",
-            body=(
-                "Hello,\n\n"
-                "You have been invited to join the team. "
-                f"Please use the following link to accept the invitation: {url}\n\n"
-                "Best regards,\nTeam"
-            ),
-            recipient=invitation.email,
-        )
+        message = invitation_message(invitation.email, url)
         try:
-            mail_sender.send(message)
+            await asyncio.to_thread(mail_sender.send, message)
 
             invitation.delivery_status = DeliveryStatus.ACCEPTED
 
@@ -201,7 +219,7 @@ class TeamInvitationService:
                 "Cannot revoke an invitation that has already been accepted."
             )
         if invitation.status != InvitationStatus.PENDING:
-            raise ValueError("Only pending invitations can be revoked.")
+            raise InvitationNotPendingError("Only pending invitations can be revoked.")
 
         if if_match is None or if_match.strip('"') != invitation_etag(invitation):
             raise InvitationPreconditionFailed(
@@ -217,7 +235,7 @@ class TeamInvitationService:
         result = await self.repository.get_invitation_by_token(token_hash)
 
         if result is None:
-            raise TeamInvitationNotFoundError(f"Invitation not found")
+            raise TeamInvitationNotFoundError("Invitation not found")
         team_name, owner_name, invitation = result
 
         if invitation.status != InvitationStatus.PENDING:
@@ -231,7 +249,7 @@ class TeamInvitationService:
             invitation.status = InvitationStatus.EXPIRED
             await self.repository.update(invitation)
 
-            raise TeamInvitationExpiredError(f"Invitation not found")
+            raise TeamInvitationExpiredError("Invitation has expired")
 
         return team_name, owner_name, invitation
 
@@ -240,54 +258,51 @@ class TeamInvitationService:
         token: str,
         user_id: UUID,
     ) -> TeamMember:
-
         token_hash = hashlib.sha256(token.encode()).hexdigest()
-        async with self.session.begin():
+        result = await self.repository.get_invitation_by_token(token_hash)
 
-            result = await self.repository.get_invitation_by_token(token_hash)
+        if result is None:
+            raise TeamInvitationNotFoundError("Invitation not found")
 
-            if result is None:
-                raise TeamInvitationNotFoundError("Invitation not found")
+        _team_name, _team_owner, invitation = result
 
-            team_name, team_owner, invitation = result
+        if invitation.status == InvitationStatus.REVOKED:
+            raise TeamInvitationNotFoundError("Invitation not found")
 
-            if invitation.status == InvitationStatus.REVOKED:
-                raise TeamInvitationNotFoundError("Invitation not found")
+        if invitation.status == InvitationStatus.ACCEPTED:
+            raise AlreadyConsumedInvitationError("Invitation has already been accepted")
 
-            if invitation.status == InvitationStatus.ACCEPTED:
-                raise AlreadyConsumedInvitationError("Invitation has already been accepted")
+        if invitation.status == InvitationStatus.EXPIRED:
+            raise TeamInvitationExpiredError("Invitation has expired")
 
-            if invitation.status == InvitationStatus.EXPIRED:
-                raise TeamInvitationExpiredError("Invitation has expired")
+        if invitation.status != InvitationStatus.PENDING:
+            raise InvitationNotPendingError("Invitation cannot be accepted")
 
-            if invitation.status != InvitationStatus.PENDING:
-                raise ValueError("Invitation cannot be accepted")
+        now = datetime.now(UTC)
 
-            now = datetime.now(UTC)
+        if invitation.expires_at <= now:
+            invitation.status = InvitationStatus.EXPIRED
+            await self.repository.update(invitation)
+            raise TeamInvitationExpiredError("Invitation has expired")
 
-            if invitation.expires_at <= now:
-                invitation.status = InvitationStatus.EXPIRED
-                await self.repository.update(invitation)
+        user = await self.user_repository.get_by_id(user_id)
 
-                raise TeamInvitationExpiredError("Invitation has expired")
+        if (
+            user is None
+            or user.email is None
+            or normalize_email(user.email) != normalize_email(invitation.email)
+        ):
+            raise InvitationEmailMismatchError()
 
-            user = await self.user_repository.get_by_id(user_id)
+        membership = TeamMember(
+            id=uuid4(),
+            team_id=invitation.team_id,
+            user_id=user_id,
+            role=invitation.role,
+            joined_at=now,
+        )
 
-            if user is None or user.email.strip().casefold() != invitation.email.strip().casefold():
-                raise InvitationEmailMismatchError()
-
-            membership = TeamMember(
-                id=uuid4(),
-                team_id=invitation.team_id,
-                user_id=user_id,
-                role=invitation.role,
-                joined_at=now,
-            )
-
-            await self.member_repository.create_with_same_transaction(membership)
-
-            invitation.status = InvitationStatus.ACCEPTED
-
-            await self.repository.update_with_same_transaction(invitation)
+        if not await self.repository.accept(invitation, membership):
+            raise AlreadyConsumedInvitationError("Invitation has already been accepted")
 
         return membership

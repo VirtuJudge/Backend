@@ -1,4 +1,5 @@
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from pydantic import BaseModel, EmailStr
@@ -8,7 +9,7 @@ from app.domain.team_invitation import DeliveryStatus, InvitationStatus
 
 class InviteMemberRequest(BaseModel):
     email: EmailStr
-    role: str
+    role: Literal["member"] = "member"
 
 
 class InviteMemberResponse(BaseModel):
@@ -30,7 +31,8 @@ class InvitationPageResponse(BaseModel):
 
 class InvitationPreview(BaseModel):
     team_name: str
-    invited_email: EmailStr
+    invited_email: str
     role: str
     invited_by_name: str
     expires_at: datetime
+    status: InvitationStatus

@@ -29,7 +29,6 @@ def upgrade() -> None:
             ["team_invitations.id"],
         ),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("key"),
         sa.UniqueConstraint("key", name="uq_invitation_resend_idempotency_key"),
     )
     op.execute("UPDATE users SET display_name = '' WHERE display_name IS NULL")

@@ -57,10 +57,7 @@ class SqlAlchemyUserRepository(UserRepository):
             UserModel.id == user_id,
         )
 
-        result = await self.session.execute(stmt)
-
         model = await self.session.scalar(stmt)
-
         if model is None:
             return None
 
