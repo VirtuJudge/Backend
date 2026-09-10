@@ -13,7 +13,7 @@ from app.infrastructure.persistence.configurations import (
     TeamModel,
     UserModel,
 )
-from app.infrastructure.repositories.sqlalchemyTeamRepository import SqlAlchemyTeamRepository
+from app.infrastructure.repositories.sqlalchemy_team_repository import SqlAlchemyTeamRepository
 
 NOW = datetime.now(UTC)
 

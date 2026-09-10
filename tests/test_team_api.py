@@ -1,17 +1,18 @@
 from datetime import UTC, datetime
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.api.dependencies.services import get_team_service
-from app.api.dependencies.teamAuthorization import get_team_member
-from app.application.interfaces.teamRepository import TeamRepository
-from app.application.services.teamService import TeamService
+from app.api.dependencies.team_authorization import get_team_member
+from app.application.ports.team_repository import TeamRepository
+from app.application.services.team_service import TeamService
+from app.domain.idempotency import TeamCreationIdempotency
 from app.domain.team import Team
 from app.domain.team_member import TeamMember
-from app.infrastructure.settings import Settings
 from app.main import create_app
+from app.settings import Settings
 
 NOW = datetime.now(UTC)
 
@@ -43,38 +44,73 @@ async def test_list_team_members_api_returns_display_name() -> None:
     )
 
     class FakeTeamRepo(TeamRepository):
-        async def list_members(self, t_id, cursor=None, limit=50):
+        async def list_members(
+            self,
+            team_id: UUID,
+            cursor: UUID | None = None,
+            limit: int = 50,
+        ) -> tuple[list[TeamMember], UUID | None]:
             return [member_1, member_2], None
-        async def get_membership(self, t_id, u_id):
+
+        async def get_membership(self, team_id: UUID, user_id: UUID) -> TeamMember | None:
             return member_1
-        async def is_member(self, t_id, u_id):
+
+        async def is_member(self, team_id: UUID, user_id: UUID) -> bool:
             return True
-        async def is_owner(self, t_id, u_id):
+
+        async def is_owner(self, team_id: UUID, user_id: UUID) -> bool:
             return True
-        async def list_for_user(self, user_id, cursor=None, limit=50):
+
+        async def list_for_user(
+            self,
+            user_id: UUID,
+            cursor: UUID | None = None,
+            limit: int = 50,
+        ) -> tuple[list[Team], UUID | None]:
             return [], None
-        async def get_by_id(self, team_id):
+
+        async def get_by_id(self, team_id: UUID) -> Team | None:
             return None
-        async def get_by_name(self, name):
+
+        async def get_by_name(self, name: str) -> Team | None:
             return None
-        async def create(self, team, owner):
+
+        async def create(self, team: Team, owner: TeamMember) -> Team:
             return team
-        async def get_creation_idempotency(self, user_id, key):
+
+        async def get_creation_idempotency(
+            self, user_id: UUID, key: str
+        ) -> TeamCreationIdempotency | None:
             return None
-        async def save_creation_idempotency(self, idempotency):
+
+        async def save_creation_idempotency(self, record: TeamCreationIdempotency) -> None:
             pass
-        async def update_name(self, team_id, name, version):
+
+        async def update_name(self, team_id: UUID, name: str, expected_version: int) -> Team | None:
             return None
-        async def delete_member(self, team_id, user_id):
+
+        async def delete_member(self, team_id: UUID, user_id: UUID) -> bool:
             return True
-        async def transfer_ownership(self, team_id, current_owner_id, new_owner_id):
+
+        async def transfer_ownership(
+            self,
+            team_id: UUID,
+            current_owner_id: UUID,
+            new_owner_id: UUID,
+        ) -> bool:
             return True
 
     fake_repo = FakeTeamRepo()
     team_service = TeamService(fake_repo)
 
-    app.dependency_overrides[get_team_service] = lambda: team_service
-    app.dependency_overrides[get_team_member] = lambda: member_1
+    async def get_fake_team_service() -> TeamService:
+        return team_service
+
+    async def get_fake_team_member() -> TeamMember:
+        return member_1
+
+    app.dependency_overrides[get_team_service] = get_fake_team_service
+    app.dependency_overrides[get_team_member] = get_fake_team_member
 
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:

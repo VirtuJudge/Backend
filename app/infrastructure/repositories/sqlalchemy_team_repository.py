@@ -5,7 +5,7 @@ from sqlalchemy import delete, select, update
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import joinedload
-from sqlalchemy.orm.attributes import NO_VALUE
+from sqlalchemy.orm.base import LoaderCallableStatus
 
 from app.application.ports.team_repository import TeamRepository
 from app.domain.idempotency import TeamCreationIdempotency
@@ -34,7 +34,7 @@ class SqlAlchemyTeamRepository(TeamRepository):
     @staticmethod
     def _member(model: TeamMemberModel) -> TeamMember:
         user = model.__dict__.get("user")
-        if user is NO_VALUE:
+        if user is LoaderCallableStatus.NO_VALUE:
             user = None
         display_name = getattr(user, "display_name", None) if user else None
         return TeamMember(

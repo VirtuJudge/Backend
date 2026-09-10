@@ -752,6 +752,17 @@
       },
       "TeamMembershipResponse": {
         "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
