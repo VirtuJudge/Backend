@@ -1,6 +1,7 @@
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
+from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status,BackgroundTasks
+from mypy.main import b
 
 from app.api.dependencies.auth import get_current_user
 from app.api.dependencies.rate_limit import rate_limit
@@ -211,6 +212,7 @@ async def delete_team_member(
 async def invite_team_member(
     team_id: UUID,
     response: Response,
+    background_tasks: BackgroundTasks,
     request: InviteMemberRequest,
     _owner: TeamMember = Depends(get_team_owner),
     service: TeamInvitationService = Depends(get_team_invitation_service),
@@ -219,7 +221,7 @@ async def invite_team_member(
     settings: Settings = Depends(get_settings),
 ) -> InviteMemberResponse:
     try:
-        invitation = await service.invite_member(
+        invitation,token = await service.invite_member(
             team_id,
             request.email,
             request.role,
@@ -231,6 +233,13 @@ async def invite_team_member(
         raise HTTPException(status_code=409, detail="already_team_member") from error
     except InvitationAlreadyExistsError as error:
         raise HTTPException(status_code=409, detail="invitation_already_exists") from error
+    background_tasks.add_task(
+        service.send_invitation_email,
+        invitation,
+        token,
+        settings.frontend_url or "",
+        mail_sender,
+    )
     response.headers["ETag"] = f'"{invitation_etag(invitation)}"'
     return InviteMemberResponse.model_validate(invitation, from_attributes=True)
 
@@ -286,6 +295,7 @@ async def list_team_invitations(
 async def resend_team_invitation(
     team_id: UUID,
     id: UUID,
+    background_tasks: BackgroundTasks,
     response: Response,
     _owner: TeamMember = Depends(get_team_owner),
     service: TeamInvitationService = Depends(get_team_invitation_service),
@@ -298,7 +308,7 @@ async def resend_team_invitation(
     ),
 ) -> InviteMemberResponse:
     try:
-        invitation = await service.resend_invitation(
+        invitation,token = await service.resend_invitation(
             team_id,
             id,
             frontend_url=settings.frontend_url or "",
@@ -309,6 +319,13 @@ async def resend_team_invitation(
         raise HTTPException(status_code=404, detail="team_invitation_not_found") from error
     except InvitationNotPendingError as error:
         raise HTTPException(status_code=409, detail="invitation_not_pending") from error
+    background_tasks.add_task(
+        service.send_invitation_email,
+        invitation,
+        token,
+        settings.frontend_url or "",
+        mail_sender,
+    )
     response.headers["ETag"] = f'"{invitation_etag(invitation)}"'
     return InviteMemberResponse.model_validate(invitation, from_attributes=True)
 

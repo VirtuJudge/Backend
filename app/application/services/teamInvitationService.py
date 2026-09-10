@@ -103,9 +103,7 @@ class TeamInvitationService:
         email: str,
         role: str,
         idempotency_key: str,
-        frontend_url: str,
-        mail_sender: MailSender,
-    ) -> TeamInvitation:
+    ) -> tuple[TeamInvitation, str]:
         email = normalize_email(email)
         existing = await self.repository.get_by_idempotency_key(idempotency_key)
 
@@ -137,20 +135,7 @@ class TeamInvitationService:
         )
         invitation = await self.repository.create(invitation, idempotency_key)
 
-        url = f"{frontend_url}/invitations/{token}"
-
-        message = invitation_message(email, url)
-        try:
-            await asyncio.to_thread(mail_sender.send, message)
-
-            invitation.delivery_status = DeliveryStatus.ACCEPTED
-
-        except MailDeliveryError:
-            invitation.delivery_status = DeliveryStatus.FAILED
-
-        await self.repository.update(invitation)
-
-        return invitation
+        return invitation,token
 
     async def list_invitations(
         self, team_id: UUID, cursor: UUID | None = None, limit: int = 20
@@ -162,10 +147,8 @@ class TeamInvitationService:
         self,
         team_id: UUID,
         invitation_id: UUID,
-        frontend_url: str,
-        mail_sender: MailSender,
         resend_idempotency_key: str,
-    ) -> TeamInvitation:
+    ) -> tuple[TeamInvitation, str]:
 
         existing = await self.resend_idomkey_repository.get_by_resend_idempotency_key(
             resend_idempotency_key
@@ -193,20 +176,9 @@ class TeamInvitationService:
         invitation.delivery_attempts += 1
         invitation.delivery_status = DeliveryStatus.QUEUED
 
-        url = f"{frontend_url}/invitations/{token}"
-
-        message = invitation_message(invitation.email, url)
-        try:
-            await asyncio.to_thread(mail_sender.send, message)
-
-            invitation.delivery_status = DeliveryStatus.ACCEPTED
-
-        except MailDeliveryError:
-            invitation.delivery_status = DeliveryStatus.FAILED
-
         await self.repository.update(invitation)
 
-        return invitation
+        return invitation,token
 
     async def revoke_invitation(self, team_id: UUID, invitation_id: UUID, if_match: str) -> None:
         invitation = await self.repository.get_by_id(invitation_id)
@@ -306,3 +278,31 @@ class TeamInvitationService:
             raise AlreadyConsumedInvitationError("Invitation has already been accepted")
 
         return membership
+
+    async def send_invitation_email(
+        self,
+        invitation: TeamInvitation,
+        token: str,
+        frontend_url: str,
+        mail_sender: MailSender,
+    ) -> None:
+
+        url = f"{frontend_url}/invitations/{token}"
+
+        message = invitation_message(
+            invitation.email,
+            url,
+        )
+
+        try:
+            await asyncio.to_thread(
+                mail_sender.send,
+                message,
+            )
+
+            invitation.delivery_status = DeliveryStatus.ACCEPTED
+
+        except MailDeliveryError:
+            invitation.delivery_status = DeliveryStatus.FAILED
+
+        await self.repository.update(invitation)
