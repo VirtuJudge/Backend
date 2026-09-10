@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 from uuid import UUID
 
 from app.domain.team_invitation import TeamInvitation
+from app.domain.team_member import TeamMember
 
 
 class TeamInvitationRepository(ABC):
@@ -39,12 +40,13 @@ class TeamInvitationRepository(ABC):
         pass
 
     @abstractmethod
+    async def accept(self, invitation: TeamInvitation, membership: TeamMember) -> bool:
+        """Atomically consume a pending invitation and create its membership."""
+        pass
+
+    @abstractmethod
     async def get_by_resend_idempotency_key(
         self,
         resend_idempotency_key: str,
     ) -> TeamInvitation | None:
-        pass
-
-    @abstractmethod
-    async def update_with_same_transaction(self, invitation: TeamInvitation) -> TeamInvitation:
         pass

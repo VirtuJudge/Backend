@@ -38,7 +38,7 @@ def get_project_service(
     return cast(ProjectService, request.app.state.project_service_factory(session))
 
 
-def get_TeamInvitation_service(
+def get_team_invitation_service(
     request: Request,
     session: Any = Depends(get_session),
 ) -> TeamInvitationService:

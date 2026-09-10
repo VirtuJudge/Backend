@@ -2,7 +2,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
 )
@@ -12,6 +12,7 @@ from app.domain.team_invitation import (
     InvitationStatus,
     TeamInvitation,
 )
+from app.domain.team_member import TeamMember
 from app.infrastructure.persistence.configurations.invitationResendIdompotancyConfiguration import (
     InvitationResendIdempotencyModel,
 )
@@ -423,6 +424,51 @@ async def test_update_rejects_stale_version(
         await repository.update(invitation)
 
     assert "Invitation with ID" in str(exc_info.value)
+
+
+@pytest.mark.anyio
+async def test_accept_atomically_consumes_invitation_and_creates_one_membership(
+    async_db_session: AsyncSession,
+) -> None:
+    session = async_db_session
+    repository = SqlAlchemyTeamInvitationRepository(session)
+    user = UserModel(
+        id=uuid4(),
+        issuer="test-issuer",
+        subject=f"subject-{uuid4()}",
+        email="invitee@example.com",
+        display_name="Invitee",
+        created_at=datetime.now(UTC),
+    )
+    team = TeamModel(id=uuid4(), name="Atomic Team", created_at=datetime.now(UTC))
+    team_id = team.id
+    user_id = user.id
+    session.add_all([user, team])
+    await session.commit()
+    invitation = await create_test_invitation(session, team_id, email="invitee@example.com")
+    membership = TeamMember(
+        id=uuid4(),
+        team_id=team_id,
+        user_id=user_id,
+        role="member",
+        joined_at=datetime.now(UTC),
+    )
+
+    assert await repository.accept(invitation, membership)
+    assert not await repository.accept(invitation, membership)
+
+    persisted = await repository.get_by_id(invitation.id)
+    membership_count = await session.scalar(
+        select(func.count())
+        .select_from(TeamMemberModel)
+        .where(
+            TeamMemberModel.team_id == team_id,
+            TeamMemberModel.user_id == user_id,
+        )
+    )
+    assert persisted is not None
+    assert persisted.status == InvitationStatus.ACCEPTED
+    assert membership_count == 1
 
 
 @pytest.mark.anyio

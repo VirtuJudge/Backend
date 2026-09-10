@@ -16,13 +16,10 @@ class RedisRateLimiter(RateLimiter):
         window_seconds: int,
     ) -> None:
 
-        count = await self.redis.incr(key)
-
-        if count == 1:
-            await self.redis.expire(
-                key,
-                window_seconds,
-            )
+        async with self.redis.pipeline(transaction=True) as pipeline:
+            pipeline.incr(key)
+            pipeline.expire(key, window_seconds, nx=True)
+            count, _ = await pipeline.execute()
 
         if count > limit:
             raise RateLimitExceeded
