@@ -3,15 +3,18 @@ from uuid import UUID
 
 from sqlalchemy import insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from app.application.interfaces.teamInvitationRepository import TeamInvitationRepository
 from app.domain.team_invitation import InvitationStatus, TeamInvitation
 from app.infrastructure.persistence.configurations.invitationResendIdompotancyConfiguration import (
     InvitationResendIdempotencyModel,
 )
+from app.infrastructure.persistence.configurations.teamConfigration import TeamModel
 from app.infrastructure.persistence.configurations.teamInvitationConfigurations import (
     TeamInvitationModel,
 )
+from app.infrastructure.persistence.configurations.teamMemberCongfigration import TeamMemberModel
 
 
 class SqlAlchemyTeamInvitationRepository(TeamInvitationRepository):
@@ -139,8 +142,15 @@ class SqlAlchemyTeamInvitationRepository(TeamInvitationRepository):
         return self._invitation(updated_model)
 
     async def get_invitation_by_token(self, token: str) -> tuple[str, str, TeamInvitation] | None:
-        stmt = select(TeamInvitationModel).where(TeamInvitationModel.token_hash == token)
-
+        stmt = (
+            select(TeamInvitationModel)
+            .where(TeamInvitationModel.token_hash == token)
+            .options(
+                selectinload(TeamInvitationModel.team)
+                .selectinload(TeamModel.members)
+                .selectinload(TeamMemberModel.user)
+            )
+        )
         model = await self.session.scalar(stmt)
 
         if model is None:
