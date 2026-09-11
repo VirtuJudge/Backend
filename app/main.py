@@ -9,8 +9,10 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.api.routes import routers
+from app.application.interfaces.session_practice.session_practice_repository import PracticeSessionRepository
 from app.application.interfaces.teamMemberRepository import TeamMemberRepository
 from app.application.services.assetStore import AssetStore
+from app.application.services.consentPolicyService import ConsentPolicyService
 from app.application.services.projectService import ProjectService
 from app.application.services.teamInvitationService import TeamInvitationService
 from app.application.services.teamService import TeamService
@@ -22,6 +24,8 @@ from app.infrastructure.documents.document_verifier import DocumentVerifier
 from app.infrastructure.mail import create_mail_sender
 from app.infrastructure.media.ffmpegVerifier import FFmpegMediaVerifier
 from app.infrastructure.redis.rate_limiter import RedisRateLimiter
+from app.infrastructure.repositories.session_workflow import sqlalchemySessionConsentRepository
+from app.infrastructure.repositories.session_workflow.sqlalchemyPracticeSessionRepository import SqlAlchemyPracticeSessionRepository
 from app.infrastructure.repositories.sqlalchemyAssetRepository import SqlAlchemyAssetRepository
 from app.infrastructure.repositories.sqlalchemyInvitationResendKeyRepository import (
     SqlalchemyInvitationResendKeyRepository,
@@ -33,6 +37,19 @@ from app.infrastructure.repositories.sqlalchemyTeamInvitationRepository import (
 from app.infrastructure.repositories.sqlalchemyTeamMemberRepository import (
     SqlAlchemyTeamMemberRepository,
 )
+from app.infrastructure.repositories.session_workflow.sqlalchemySessionManifestRepository import (
+    SqlAlchemySessionManifestRepository,
+)
+from app.infrastructure.repositories.session_workflow.sqlalcemyAnalysisAttemptRepository import (
+    SqlAlchemyAnalysisAttemptRepository,
+)
+from app.infrastructure.repositories.session_workflow.sqlalchemyAnalysisJobRepository import (
+    SqlAlchemyAnalysisJobRepository,    
+)
+from app.application.interfaces.session_practice.session_manifest_repository import SessionManifestRepository
+from app.application.interfaces.session_practice.analysis_attempt_repository import AnalysisAttemptRepository
+from app.application.interfaces.session_practice.analysis_job_repository import AnalysisJobRepository
+from app.application.interfaces.projectRepository import ProjectRepository
 from app.infrastructure.repositories.sqlalchemyTeamRepository import SqlAlchemyTeamRepository
 from app.infrastructure.repositories.sqlalchemyUserRepositories import SqlAlchemyUserRepository
 from app.infrastructure.storage.s3ObjectStorage import S3ObjectStorage
@@ -107,6 +124,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session, resolved_settings
     )
     application.state.team_invitation_service_factory = team_invitation_service_factory
+    application.state.team_member_repository_factory = team_member_repository_factory
+    application.state.get_session_repository_factory = get_session_repository_factory
+    application.state.get_manifest_repository_factory = get_manifest_repository_factory
+    application.state.get_attempt_repository_factory = get_attempt_repository_factory
+    application.state.get_job_repository_factory = get_job_repository_factory
+    application.state.get_project_repository_factory = get_project_repository_factory
+    application.state.get_consent_policy_service_factory = consent_policy_service_factory
     redis = Redis.from_url(
         resolved_settings.redis_url,
         decode_responses=True,
@@ -150,6 +174,9 @@ def user_service_factory(session: AsyncSession) -> UserService:
 def team_service_factory(session: AsyncSession) -> TeamService:
     return TeamService(SqlAlchemyTeamRepository(session))
 
+def consent_policy_service_factory(session: AsyncSession) -> ConsentPolicyService:
+    return ConsentPolicyService(sqlalchemySessionConsentRepository(session))
+
 
 def project_service_factory(session: AsyncSession) -> ProjectService:
     return ProjectService(
@@ -181,6 +208,22 @@ def team_invitation_service_factory(session: AsyncSession) -> TeamInvitationServ
 
 def team_member_repository_factory(session: AsyncSession) -> TeamMemberRepository:
     return SqlAlchemyTeamMemberRepository(session)
+
+def get_session_repository_factory(session: AsyncSession) -> PracticeSessionRepository:
+    return SqlAlchemyPracticeSessionRepository(session)
+
+def get_manifest_repository_factory(session: AsyncSession) -> SessionManifestRepository:
+    return SqlAlchemySessionManifestRepository(session)
+
+def get_attempt_repository_factory(session: AsyncSession) -> AnalysisAttemptRepository:
+    return SqlAlchemyAnalysisAttemptRepository(session)
+
+def get_job_repository_factory(session: AsyncSession) -> AnalysisJobRepository:
+    return SqlAlchemyAnalysisJobRepository(session)
+
+def get_project_repository_factory(session: AsyncSession) -> ProjectRepository:
+    return SqlAlchemyProjectRepository(session)
+
 
 
 app = create_app()
