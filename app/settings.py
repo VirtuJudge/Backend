@@ -43,3 +43,11 @@ class Settings(BaseSettings):
     gmail_smtp_timeout_seconds: float = 10.0
     gmail_smoke_allowlist: str | None = None
     frontend_url: str | None = None
+    cors_allowed_origins: str = ""
+
+    def allowed_cors_origins(self) -> list[str]:
+        return [
+            origin.strip().rstrip("/")
+            for origin in self.cors_allowed_origins.split(",")
+            if origin.strip()
+        ]

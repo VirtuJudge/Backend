@@ -36,3 +36,30 @@ def test_settings_do_not_require_production_credentials() -> None:
     )
 
     assert settings.mail_backend == "fake"
+
+
+def test_configured_frontend_origin_receives_cors_headers() -> None:
+    settings = Settings(
+        app_env="test",
+        database_url="sqlite+aiosqlite:///:memory:",
+        cors_allowed_origins="https://app.example.com/, http://localhost:3000",
+    )
+    application = create_app(settings)
+
+    async def preflight() -> Response:
+        transport = ASGITransport(app=application)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            return await client.options(
+                "/api/v1/me",
+                headers={
+                    "Origin": "https://app.example.com",
+                    "Access-Control-Request-Method": "GET",
+                    "Access-Control-Request-Headers": "authorization",
+                },
+            )
+
+    response = asyncio.run(preflight())
+
+    assert response.status_code == 200
+    assert response.headers["access-control-allow-origin"] == "https://app.example.com"
+    assert response.headers["access-control-allow-credentials"] == "true"
