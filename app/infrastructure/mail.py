@@ -2,6 +2,7 @@ import smtplib
 import ssl
 from email.message import EmailMessage
 
+import httpx
 from pydantic import SecretStr
 
 from app.application.mail import (
@@ -89,7 +90,70 @@ class GmailMailSender:
             raise MailDeliveryError("Failed to deliver email through Gmail SMTP") from None
 
 
+class ResendMailSender:
+    def __init__(
+        self,
+        api_url: str,
+        api_key: SecretStr,
+        from_address: str,
+        timeout: float = 10.0,
+    ) -> None:
+        self.api_url = api_url.rstrip("/")
+        self.api_key = api_key
+        self.from_address = from_address
+        self.timeout = timeout
+
+    @classmethod
+    def from_settings(cls, settings: Settings) -> "ResendMailSender":
+        missing: list[str] = []
+        if not settings.resend_api_url:
+            missing.append("resend_api_url")
+        if not settings.resend_api_key or not settings.resend_api_key.get_secret_value():
+            missing.append("resend_api_key")
+        if not settings.resend_from_address:
+            missing.append("resend_from_address")
+
+        if missing:
+            raise MailConfigurationError(f"Missing required Resend settings: {', '.join(missing)}")
+
+        assert settings.resend_api_key is not None
+        assert settings.resend_from_address is not None
+
+        return cls(
+            api_url=settings.resend_api_url,
+            api_key=settings.resend_api_key,
+            from_address=settings.resend_from_address,
+            timeout=settings.resend_timeout_seconds,
+        )
+
+    def send(self, message: MailMessage) -> None:
+        payload: dict[str, str | list[str]] = {
+            "from": self.from_address,
+            "to": [message.recipient],
+            "subject": message.subject,
+            "text": message.body,
+        }
+        if message.html_body is not None:
+            payload["html"] = message.html_body
+
+        try:
+            response = httpx.post(
+                f"{self.api_url}/emails",
+                headers={
+                    "Authorization": f"Bearer {self.api_key.get_secret_value()}",
+                    "Content-Type": "application/json",
+                },
+                json=payload,
+                timeout=self.timeout,
+            )
+            response.raise_for_status()
+        except (httpx.HTTPError, ValueError):
+            raise MailDeliveryError("Failed to deliver email through Resend") from None
+
+
 def create_mail_sender(settings: Settings) -> MailSender:
     if settings.mail_backend == "fake":
         return FakeMailSender()
-    return GmailMailSender.from_settings(settings)
+    if settings.mail_backend == "gmail":
+        return GmailMailSender.from_settings(settings)
+    return ResendMailSender.from_settings(settings)

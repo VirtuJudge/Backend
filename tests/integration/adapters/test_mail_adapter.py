@@ -3,6 +3,7 @@ import ssl
 from email.message import EmailMessage
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 from pydantic import SecretStr
 
@@ -14,6 +15,7 @@ from app.application.mail import (
 from app.infrastructure.mail import (
     FakeMailSender,
     GmailMailSender,
+    ResendMailSender,
     create_mail_sender,
 )
 from app.main import create_app
@@ -127,6 +129,85 @@ def test_gmail_sender_safe_delivery_error_on_smtp_failure() -> None:
         assert error_msg == "Failed to deliver email through Gmail SMTP"
 
 
+def test_resend_sender_missing_configuration_fails_without_leaking_credentials() -> None:
+    settings = Settings(
+        mail_backend="resend",
+        resend_api_key=None,
+        resend_from_address=None,
+    )
+
+    with pytest.raises(MailConfigurationError) as exc_info:
+        create_mail_sender(settings)
+
+    error_text = str(exc_info.value)
+    assert "resend_api_key" in error_text
+    assert "resend_from_address" in error_text
+
+
+def test_resend_sender_sends_through_https_api() -> None:
+    settings = Settings(
+        mail_backend="resend",
+        resend_api_key=SecretStr("re_secret-api-key"),
+        resend_from_address="VirtuJudge <noreply@mail.example.com>",
+        resend_timeout_seconds=5.0,
+    )
+    sender = ResendMailSender.from_settings(settings)
+    message = MailMessage(
+        recipient="recipient@example.com",
+        subject="Subject line",
+        body="Message body text",
+        html_body="<p>Message body HTML</p>",
+    )
+    response = MagicMock()
+
+    with patch("httpx.post", return_value=response) as mock_post:
+        sender.send(message)
+
+    mock_post.assert_called_once_with(
+        "https://api.resend.com/emails",
+        headers={
+            "Authorization": "Bearer re_secret-api-key",
+            "Content-Type": "application/json",
+        },
+        json={
+            "from": "VirtuJudge <noreply@mail.example.com>",
+            "to": ["recipient@example.com"],
+            "subject": "Subject line",
+            "text": "Message body text",
+            "html": "<p>Message body HTML</p>",
+        },
+        timeout=5.0,
+    )
+    response.raise_for_status.assert_called_once_with()
+
+
+def test_resend_sender_safe_delivery_error_on_api_failure() -> None:
+    settings = Settings(
+        mail_backend="resend",
+        resend_api_key=SecretStr("re_secret-api-key"),
+        resend_from_address="VirtuJudge <noreply@mail.example.com>",
+    )
+    sender = ResendMailSender.from_settings(settings)
+    message = MailMessage(
+        recipient="private-recipient@example.com",
+        subject="Private Subject",
+        body="Private Body containing token=12345",
+    )
+
+    with (
+        patch("httpx.post", side_effect=httpx.ConnectError("re_secret-api-key")),
+        pytest.raises(MailDeliveryError) as exc_info,
+    ):
+        sender.send(message)
+
+    assert exc_info.value.__cause__ is None
+    error_msg = str(exc_info.value)
+    assert "re_secret-api-key" not in error_msg
+    assert "private-recipient@example.com" not in error_msg
+    assert "token=12345" not in error_msg
+    assert error_msg == "Failed to deliver email through Resend"
+
+
 def test_app_wiring_uses_configured_mail_sender() -> None:
     fake_settings = Settings(mail_backend="fake")
     app = create_app(fake_settings)
@@ -140,3 +221,11 @@ def test_app_wiring_uses_configured_mail_sender() -> None:
     )
     with pytest.raises(MailConfigurationError):
         create_app(gmail_unconfigured)
+
+    resend_configured = Settings(
+        mail_backend="resend",
+        resend_api_key=SecretStr("re_secret-api-key"),
+        resend_from_address="VirtuJudge <noreply@mail.example.com>",
+    )
+    resend_app = create_app(resend_configured)
+    assert isinstance(resend_app.state.mail_sender, ResendMailSender)

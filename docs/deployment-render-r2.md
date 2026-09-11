@@ -6,6 +6,7 @@ This deployment is intended for a free-tier prototype:
 - Render Free Key Value for Redis-compatible rate-limit state
 - an external PostgreSQL provider such as Neon
 - a private Cloudflare R2 Standard bucket
+- Resend's HTTPS email API for real transactional mail
 
 Free Render services sleep and can restart. Free Key Value has no persistence, so it must not
 be treated as a durable AI job queue.
@@ -67,7 +68,23 @@ DATABASE_URL=postgresql+asyncpg://USER:PASSWORD@HOST/DATABASE?ssl=require
 The container applies `alembic upgrade head` before starting the API. If the database is
 unreachable or a migration fails, the deployment fails instead of serving against an old schema.
 
-## 3. Deploy the Render Blueprint
+## 3. Configure real email delivery
+
+Create a free Resend account, add a domain or sending subdomain that you own, and add the SPF and
+DKIM records Resend shows to your DNS provider. After the domain is verified, create an API key
+with **Sending access**, restricted to that domain, and save the key when it is shown.
+
+Use a sender address on the verified domain, for example:
+
+```dotenv
+RESEND_FROM_ADDRESS=VirtuJudge <noreply@mail.example.com>
+```
+
+A Gmail address cannot be used as this sender because you do not control the `gmail.com` DNS
+records. The application sends through Resend's HTTPS API; it does not use fake mail or blocked
+SMTP ports.
+
+## 4. Deploy the Render Blueprint
 
 In Render, create a new Blueprint from this repository's `render.yaml`. The Blueprint creates
 the API and a private, same-region Key Value instance. Render prompts for every variable marked
@@ -85,9 +102,8 @@ the API and a private, same-region Key Value instance. Render prompts for every 
 | `OIDC_JWKS_URL` | Provider's JWKS URL |
 | `FRONTEND_URL` | Frontend origin, without a trailing slash |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated browser origins, without paths |
-| `GMAIL_SMTP_USERNAME` | Dedicated Gmail or Google Workspace sender address |
-| `GMAIL_SMTP_PASSWORD` | Google app password, not the account password |
-| `GMAIL_FROM_ADDRESS` | Verified sender address, normally the SMTP username |
+| `RESEND_API_KEY` | Resend sending-access key beginning with `re_` |
+| `RESEND_FROM_ADDRESS` | Name and address on the verified domain, such as `VirtuJudge <noreply@mail.example.com>` |
 
 Example CORS value:
 
@@ -97,7 +113,7 @@ CORS_ALLOWED_ORIGINS=https://frontend.example.com,http://localhost:3000
 
 Never paste secrets into `render.yaml` or commit a populated env file.
 
-## 4. Verify the deployed service
+## 5. Verify the deployed service
 
 After the first deployment succeeds:
 
@@ -105,15 +121,16 @@ After the first deployment succeeds:
 curl --fail https://<SERVICE>.onrender.com/health
 ```
 
-Then send an authenticated request to `/api/v1/me` using a real OIDC access token, and exercise
-one upload intent from the deployed frontend. The API health endpoint intentionally checks only
-process liveness, so it does not prove PostgreSQL, Redis, authentication, or R2 connectivity.
+Then send an authenticated request to `/api/v1/me` using a real OIDC access token, exercise one
+upload intent from the deployed frontend, and trigger one invitation email to an address you can
+inspect. Confirm the delivery in Resend's Emails and Logs pages. The API health endpoint
+intentionally checks only process liveness, so it does not prove PostgreSQL, Redis,
+authentication, R2 connectivity, or mail delivery.
 
 ## Current free-tier boundaries
 
-- The Blueprint enables `MAIL_BACKEND=gmail`, but Render Free blocks SMTP ports 25, 465, and 587.
-  Gmail delivery therefore requires upgrading the web service to a paid Render instance. To stay
-  on Render Free, implement an HTTPS email provider adapter instead of SMTP.
+- The Blueprint enables the real `resend` mail backend, which uses HTTPS and works on Render Free.
+  Its delivery volume is bounded by the selected Resend plan.
 - The current AI-ML repository does not yet contain a long-running queue consumer. A Render paid
   background worker or another worker host is required after that consumer is implemented.
 - Free Render Key Value can lose all data on restart. Use persistent Redis before AI jobs depend
