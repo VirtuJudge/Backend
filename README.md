@@ -67,6 +67,11 @@ cp .env.example .env
 uv run uvicorn app.main:app --reload
 ```
 
+For the prototype production deployment on Render with Cloudflare R2, follow
+[the Render and R2 deployment guide](docs/deployment-render-r2.md). The repository includes a
+Render Blueprint, startup-time migrations, API CORS configuration, and a credential-safe R2
+smoke check.
+
 `.env` configures host processes; `.env.local` configures Compose. To connect host tools to Compose services, privately copy the generated backend password into `DATABASE_URL`, and the MinIO credentials into `OBJECT_STORAGE_ACCESS_KEY` and `OBJECT_STORAGE_SECRET_KEY` in `.env`. Stop the Compose backend or choose another host port before running a second API server. `/health` is application liveness; use the stack smoke command to verify dependencies.
 
 ## Mail

@@ -5,6 +5,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
@@ -105,6 +106,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await engine.dispose()
 
     application = FastAPI(title=resolved_settings.app_name, lifespan=lifespan)
+    allowed_origins = resolved_settings.allowed_cors_origins()
+    if allowed_origins:
+        application.add_middleware(
+            CORSMiddleware,
+            allow_origins=allowed_origins,
+            allow_credentials=True,
+            allow_methods=["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"],
+            allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "If-Match"],
+        )
     application.state.session_factory = session_factory
     application.state.session_dependency = infrastructure_get_session
     application.state.token_verifier = create_token_verifier(resolved_settings)
