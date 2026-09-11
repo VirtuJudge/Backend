@@ -78,6 +78,19 @@ smoke check.
 
 Compose always uses `MAIL_BACKEND=fake`. The fake mail adapter retains messages in memory without delivery or content logging. Invitation business workflows are not part of this setup issue.
 
+Production on Render Free uses the real Resend HTTPS adapter because Render blocks outbound SMTP
+ports on free web services. Verify a domain in Resend and configure these values only in Render's
+Environment page or another secret store:
+
+```dotenv
+MAIL_BACKEND=resend
+RESEND_API_KEY=re_...
+RESEND_FROM_ADDRESS=VirtuJudge <noreply@mail.example.com>
+```
+
+The sender must belong to the verified domain. Secrets are not stored in `render.yaml`; the
+Blueprint prompts for them during setup.
+
 Optional Gmail delivery runs only through an explicitly invoked host smoke command. Configure these values in ignored `.env` or your shell environment:
 
 ```dotenv
