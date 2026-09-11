@@ -1,8 +1,9 @@
+import hashlib
 from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, EmailStr
+from pydantic import BaseModel, EmailStr, model_validator
 
 from app.domain.team_invitation import DeliveryStatus, InvitationStatus
 
@@ -22,6 +23,14 @@ class InviteMemberResponse(BaseModel):
     delivery_attempts: int
     created_at: datetime
     expires_at: datetime
+    version: int = 1
+    etag: str | None = None
+
+    @model_validator(mode="after")
+    def compute_etag(self) -> "InviteMemberResponse":
+        if not self.etag and self.id and self.version is not None:
+            self.etag = hashlib.sha256(f"{self.id}:{self.version}".encode()).hexdigest()
+        return self
 
 
 class InvitationPageResponse(BaseModel):
