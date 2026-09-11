@@ -169,7 +169,7 @@ class TeamInvitationService:
         invitation.delivery_attempts += 1
         invitation.delivery_status = DeliveryStatus.QUEUED
 
-        await self.repository.update(invitation)
+        invitation = await self.repository.update(invitation)
 
         return invitation, token
 
@@ -186,14 +186,17 @@ class TeamInvitationService:
         if invitation.status != InvitationStatus.PENDING:
             raise InvitationNotPendingError("Only pending invitations can be revoked.")
 
-        if if_match is None or if_match.strip('"') != invitation_etag(invitation):
+        normalized_if_match = if_match.strip('"') if if_match else ""
+        if not normalized_if_match or (
+            normalized_if_match != "*" and normalized_if_match != invitation_etag(invitation)
+        ):
             raise InvitationPreconditionFailed(
                 "ETag does not match. The invitation may have been modified by another process."
             )
 
         # Update the status to revoked
         invitation.status = InvitationStatus.REVOKED
-        await self.repository.update(invitation)
+        invitation = await self.repository.update(invitation)
 
     async def get_invitation_preview(self, token: str) -> tuple[str, str, TeamInvitation]:
         token_hash = hashlib.sha256(token.encode()).hexdigest()

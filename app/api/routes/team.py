@@ -342,10 +342,10 @@ async def revoke_team_invitation(
     id: UUID,
     _owner: TeamMember = Depends(get_team_owner),
     service: TeamInvitationService = Depends(get_team_invitation_service),
-    if_match: str = Header(alias="If-Match", min_length=1, max_length=255),
+    if_match: str | None = Header(default="*", alias="If-Match"),
 ) -> Response:
     try:
-        await service.revoke_invitation(team_id, id, if_match)
+        await service.revoke_invitation(team_id, id, if_match or "*")
     except TeamInvitationNotFoundError as error:
         raise HTTPException(status_code=404, detail="team_invitation_not_found") from error
     except AlreadyConsumedInvitationError as error:
