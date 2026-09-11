@@ -51,6 +51,16 @@ services:
       - key: CORS_ALLOWED_ORIGINS
         sync: false
       - key: MAIL_BACKEND
-        value: fake
+        value: gmail
+      - key: GMAIL_SMTP_HOST
+        value: smtp.gmail.com
+      - key: GMAIL_SMTP_PORT
+        value: "587"
+      - key: GMAIL_SMTP_USERNAME
+        sync: false
+      - key: GMAIL_SMTP_PASSWORD
+        sync: false
+      - key: GMAIL_FROM_ADDRESS
+        sync: false
       - key: ASSET_CLEANUP_ENABLED
         value: "true"

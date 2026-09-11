@@ -1,6 +1,7 @@
 #!/bin/sh
 set -eu
 
+python -m app.infrastructure.deployment_environment
 alembic upgrade head
 
 exec uvicorn app.main:app \
