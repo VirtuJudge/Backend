@@ -20,6 +20,16 @@ from app.infrastructure.persistence.configurations.teamInvitationConfigurations 
 from app.infrastructure.persistence.configurations.teamMemberCongfigration import TeamMemberModel
 from app.infrastructure.persistence.configurations.userConfigration import UserModel
 
+from .session_workflow.analysisAttemptConfiguration import (
+    AnalysisAttemptModel,
+)
+from .session_workflow.sessionManifestConfiguration import (
+    SessionManifestModel,
+)
+from .session_workflow.sessionPracticeConfiguration import (
+    PracticeSessionModel,
+)
+
 __all__ = [
     "UserModel",
     "TeamModel",
@@ -32,4 +42,7 @@ __all__ = [
     "AssetUploadIdempotencyModel",
     "TeamInvitationModel",
     "InvitationResendIdempotencyModel",
+    "SessionManifestModel",
+    "PracticeSessionModel",
+    "AnalysisAttemptModel",
 ]

@@ -1,7 +1,8 @@
 from app.domain.session_workflow.entities.speaker_mapping import (
     SpeakerMapping,
 )
-from app.infrastructure.persistence.configurations.session_workflow.speakerMappingConfiguration import (
+
+from ...configurations.session_workflow.speakerMappingConfiguration import (
     SpeakerMappingModel,
 )
 

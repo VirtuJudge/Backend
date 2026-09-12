@@ -1,30 +1,31 @@
 from datetime import datetime
-from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint,Integer,Enum
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String
+from sqlalchemy.orm import Mapped, mapped_column
 
-from app.infrastructure.database import Base
 from app.domain.session_workflow.enums.session_status import SessionStatus
+from app.infrastructure.database import Base
+
 
 class PracticeSessionModel(Base):
     __tablename__ = "practice_sessions"
 
     id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True),
         primary_key=True,
+    )
+    name: Mapped[str | None] = mapped_column(
+        String(length=200),
+        nullable=True,
     )
 
     project_id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True),
         ForeignKey("projects.id"),
         nullable=False,
         index=True,
     )
 
     created_by: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True),
         ForeignKey("users.id"),
         nullable=False,
     )
@@ -60,4 +61,9 @@ class PracticeSessionModel(Base):
 
     cancelled_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
+    )
+
+    consent_granted: Mapped[bool] = mapped_column(
+        nullable=False,
+        default=False,
     )

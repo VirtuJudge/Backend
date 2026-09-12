@@ -1,5 +1,6 @@
 from app.domain.session_workflow.entities.analysis_job import AnalysisJob
-from app.infrastructure.persistence.configurations.session_workflow.analysisJobConfiguration import (
+
+from ...configurations.session_workflow.analysisJobConfiguration import (
     AnalysisJobModel,
 )
 

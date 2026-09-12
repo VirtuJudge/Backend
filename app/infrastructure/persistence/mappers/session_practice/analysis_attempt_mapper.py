@@ -1,7 +1,8 @@
 from app.domain.session_workflow.entities.analysis_attempt import (
     AnalysisAttempt,
 )
-from app.infrastructure.persistence.configurations.session_workflow.analysisAttemptConfiguration import (
+
+from ...configurations.session_workflow.analysisAttemptConfiguration import (
     AnalysisAttemptModel,
 )
 
@@ -20,6 +21,8 @@ def to_domain(model: AnalysisAttemptModel) -> AnalysisAttempt:
         completed_at=model.completed_at,
         failed_at=model.failed_at,
         cancelled_at=model.cancelled_at,
+        version=model.version,
+        idempotency_key=model.idempotency_key,
     )
 
 
@@ -37,4 +40,6 @@ def to_model(entity: AnalysisAttempt) -> AnalysisAttemptModel:
         completed_at=entity.completed_at,
         failed_at=entity.failed_at,
         cancelled_at=entity.cancelled_at,
+        version=entity.version,
+        idempotency_key=entity.idempotency_key,
     )

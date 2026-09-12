@@ -130,3 +130,13 @@ class SqlAlchemyProjectRepository(ProjectRepository):
         )
         await self.session.flush()
         return request
+
+    async def is_member(self, project_id: UUID, user_id: UUID) -> bool:
+        stmt = select(ProjectModel).where(
+            ProjectModel.id == project_id,
+            ProjectModel.team.has(
+                ProjectModel.team.has(ProjectModel.team_members.any(user_id=user_id))
+            ),
+        )
+        result = await self.session.execute(stmt)
+        return result.scalar() is not None

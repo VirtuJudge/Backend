@@ -1,30 +1,27 @@
 from datetime import datetime
-from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint,Integer,Enum,Text
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text, UniqueConstraint
+from sqlalchemy.orm import Mapped, mapped_column
 
-from app.infrastructure.database import Base
 from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
+from app.infrastructure.database import Base
+
 
 class AnalysisAttemptModel(Base):
     __tablename__ = "analysis_attempts"
 
     id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True),
         primary_key=True,
     )
 
     session_id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True),
         ForeignKey("practice_sessions.id"),
         nullable=False,
         index=True,
     )
 
     manifest_id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True),
         ForeignKey("session_manifests.id"),
         nullable=False,
     )
@@ -59,9 +56,21 @@ class AnalysisAttemptModel(Base):
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
     )
-
+    failed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+    )
     cancelled_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
+    )
+
+    version: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=1,
+    )
+    idempotency_key: Mapped[str] = mapped_column(
+        String(100),
+        nullable=True,
     )
 
     __table_args__ = (

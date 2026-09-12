@@ -1,19 +1,23 @@
 from uuid import UUID
 
-from sqlalchemy import select, update ,func
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.application.interfaces.session_practice.analysis_job_repository import AnalysisJobRepository
-from app.domain.session_workflow.entities.analysis_job import AnalysisJob
-from app.infrastructure.persistence.configurations.session_workflow.analysisJobConfiguration import (
-    AnalysisJobModel,
+from app.application.interfaces.session_practice.analysis_job_repository import (
+    AnalysisJobRepository,
 )
+from app.domain.session_workflow.entities.analysis_job import AnalysisJob
 from app.infrastructure.persistence.mappers.session_practice.analysis_job_mapper import (
     to_domain,
     to_model,
 )
-class SqlAlchemyAnalysisJobRepository(AnalysisJobRepository):
 
+from ...persistence.configurations.session_workflow.analysisJobConfiguration import (
+    AnalysisJobModel,
+)
+
+
+class SqlAlchemyAnalysisJobRepository(AnalysisJobRepository):
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
@@ -22,9 +26,7 @@ class SqlAlchemyAnalysisJobRepository(AnalysisJobRepository):
         job_id: UUID,
     ) -> AnalysisJob | None:
 
-        stmt = select(AnalysisJobModel).where(
-            AnalysisJobModel.id == job_id
-        )
+        stmt = select(AnalysisJobModel).where(AnalysisJobModel.id == job_id)
 
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
@@ -36,9 +38,7 @@ class SqlAlchemyAnalysisJobRepository(AnalysisJobRepository):
         attempt_id: UUID,
     ) -> AnalysisJob | None:
 
-        stmt = select(AnalysisJobModel).where(
-            AnalysisJobModel.attempt_id == attempt_id
-        )
+        stmt = select(AnalysisJobModel).where(AnalysisJobModel.attempt_id == attempt_id)
 
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()

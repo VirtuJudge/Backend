@@ -1,21 +1,21 @@
-import uuid
-from datetime import UTC, datetime
-
-from sqlalchemy import UUID, insert, select ,update
+from sqlalchemy import UUID, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.application.interfaces.session_practice.session_manifest_repository import SessionManifestRepository
-from app.domain.session_workflow.entities.session_manifest import SessionManifest
-from app.infrastructure.persistence.configurations.session_workflow.sessionManifestConfiguration import (
-    SessionManifestModel,
+from app.application.interfaces.session_practice.session_manifest_repository import (
+    SessionManifestRepository,
 )
+from app.domain.session_workflow.entities.session_manifest import SessionManifest
 from app.infrastructure.persistence.mappers.session_practice.session_manifest_mapper import (
     to_domain,
     to_model,
 )
 
-class SqlAlchemySessionManifestRepository(SessionManifestRepository):
+from ...persistence.configurations.session_workflow.sessionManifestConfiguration import (
+    SessionManifestModel,
+)
 
+
+class SqlAlchemySessionManifestRepository(SessionManifestRepository):
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
@@ -24,9 +24,7 @@ class SqlAlchemySessionManifestRepository(SessionManifestRepository):
         session_id: UUID,
     ) -> SessionManifest | None:
 
-        stmt = select(SessionManifestModel).where(
-            SessionManifestModel.session_id == session_id
-        )
+        stmt = select(SessionManifestModel).where(SessionManifestModel.session_id == session_id)
 
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
@@ -38,9 +36,7 @@ class SqlAlchemySessionManifestRepository(SessionManifestRepository):
         manifest_id: UUID,
     ) -> SessionManifest | None:
 
-        stmt = select(SessionManifestModel).where(
-            SessionManifestModel.id == manifest_id
-        )
+        stmt = select(SessionManifestModel).where(SessionManifestModel.id == manifest_id)
 
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
@@ -70,7 +66,6 @@ class SqlAlchemySessionManifestRepository(SessionManifestRepository):
             .values(
                 presentation_version_id=manifest.presentation_version_id,
                 document_version_id=manifest.document_version_id,
-                rubric_version_id=manifest.rubric_version_id,
                 frozen_at=manifest.frozen_at,
             )
         )

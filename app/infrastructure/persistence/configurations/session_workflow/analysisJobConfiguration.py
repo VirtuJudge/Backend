@@ -1,24 +1,21 @@
-
 from datetime import datetime
-from typing import TYPE_CHECKING
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint,Integer,Enum,Text
-from sqlalchemy.orm import Mapped, mapped_column, relationship
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column
 
-from app.infrastructure.database import Base
 from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
+from app.infrastructure.database import Base
+
 
 class AnalysisJobModel(Base):
     __tablename__ = "analysis_jobs"
 
     id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True),
         primary_key=True,
     )
 
     attempt_id: Mapped[UUID] = mapped_column(
-        UUID(as_uuid=True),
         ForeignKey("analysis_attempts.id"),
         nullable=False,
         unique=True,
