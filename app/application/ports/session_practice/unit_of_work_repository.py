@@ -28,4 +28,9 @@ class UnitOfWork(Protocol):
 
     async def __aenter__(self) -> "UnitOfWork": ...
 
-    async def __aexit__(self, exc_type, exc, tb): ...
+    async def __aexit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc: BaseException | None,
+        tb: object | None,
+    ) -> None: ...

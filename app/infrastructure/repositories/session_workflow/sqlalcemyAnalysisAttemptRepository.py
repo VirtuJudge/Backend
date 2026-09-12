@@ -131,7 +131,7 @@ class SqlAlchemyAnalysisAttemptRepository(AnalysisAttemptRepository):
             )
             .values(
                 status=attempt.status,
-                version=attempt.version,
+                version=attempt.version + 1,
                 failure_code=attempt.failure_code,
                 failure_message=attempt.failure_message,
                 started_at=attempt.started_at,
@@ -148,7 +148,7 @@ class SqlAlchemyAnalysisAttemptRepository(AnalysisAttemptRepository):
             raise StaleEntityVersion("Analysis attempt was modified concurrently.")
 
         await self._session.flush()
-
+        attempt.version += 1
         return attempt
 
     async def get_by_idempotency_key(

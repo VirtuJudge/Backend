@@ -467,7 +467,6 @@ async def test_update_changes_attempt(
     original_version = attempt.version
 
     attempt.status = AnalysisAttemptStatus.RUNNING
-    attempt.version = original_version + 1
 
     updated = await repository.update(
         attempt,

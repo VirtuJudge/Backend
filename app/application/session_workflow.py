@@ -127,7 +127,7 @@ class SessionWorkflow:
                 raise UnauthorizedSessionAction
 
             sessions, next_cursor = await uow.sessions.list_by_project(
-                project_id=project_id, next_cursor=cursor, limit=limit, search=search
+                project_id=project_id, cursor=cursor, limit=limit, search=search
             )
             return sessions, next_cursor
 
@@ -405,7 +405,10 @@ class SessionWorkflow:
                 attempt.cancelled_at = now
                 attempt.updated_at = now
 
-                await uow.attempts.update(attempt)
+                await uow.attempts.update(
+                    attempt,
+                    expected_version=attempt.version,
+                )
 
                 # 5. Save the changed session
             await uow.sessions.update(session)

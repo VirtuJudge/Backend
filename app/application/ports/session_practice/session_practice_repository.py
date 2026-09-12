@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from typing_extensions import Protocol
+from typing import Protocol
 
 from app.domain.session_workflow.entities.session_practice import PracticeSession
 

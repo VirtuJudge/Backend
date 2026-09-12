@@ -1,4 +1,4 @@
-from asyncio import Protocol
+from typing import Protocol
 from uuid import UUID
 
 from app.domain.session_workflow.entities.session_manifest import SessionManifest
