@@ -210,6 +210,9 @@ class FakeProjectRepository(ProjectRepository):
         self.erasure_requests[key] = request
         return request
 
+    async def is_member(self, project_id, user_id):
+        return await super().is_member(project_id, user_id)
+
 
 class FakeUserRepository(UserRepository):
     def __init__(self) -> None:
