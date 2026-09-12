@@ -1,8 +1,11 @@
+from dataclasses import dataclass
 from datetime import datetime
 from uuid import UUID
 
 from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
 
+
+@dataclass(slots=True)
 class AnalysisJob:
     id: UUID
     attempt_id: UUID

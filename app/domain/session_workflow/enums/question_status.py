@@ -1,6 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
-class QuestionStatus(str, Enum):
+
+class QuestionStatus(StrEnum):
     PENDING = "pending"
     ANSWERED = "answered"
     SKIPPED = "skipped"

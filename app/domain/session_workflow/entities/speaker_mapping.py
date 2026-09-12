@@ -3,7 +3,7 @@ from datetime import datetime
 from uuid import UUID
 
 
-@dataclass
+@dataclass(slots=True)
 class SpeakerMapping:
     id: UUID
     attempt_id: UUID

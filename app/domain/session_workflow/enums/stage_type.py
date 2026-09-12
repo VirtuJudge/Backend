@@ -1,7 +1,7 @@
 from enum import StrEnum
 
 
-class AnalysisStage(StrEnum):
+class StageType(StrEnum):
     TRANSCRIPTION = "transcription"
     DIARIZATION = "diarization"
     DOCUMENT_ANALYSIS = "document_analysis"

@@ -1,7 +1,7 @@
-from enum import Enum
+from enum import StrEnum
 
 
-class AnalysisAttemptStatus(str, Enum):
+class AnalysisAttemptStatus(StrEnum):
     PENDING = "pending"
     RUNNING = "running"
     FAILED = "failed"
