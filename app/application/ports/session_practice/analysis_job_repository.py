@@ -1,6 +1,5 @@
-from uuid import UUID
-
 from typing import Protocol
+from uuid import UUID
 
 from app.domain.session_workflow.entities.analysis_job import AnalysisJob
 
