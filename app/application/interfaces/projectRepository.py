@@ -41,3 +41,6 @@ class ProjectRepository(ABC):
 
     @abstractmethod
     async def create_erasure_request(self, request: ErasureRequest, key: str) -> ErasureRequest: ...
+
+    @abstractmethod
+    async def is_member(self, project_id: UUID, user_id: UUID) -> bool: ...

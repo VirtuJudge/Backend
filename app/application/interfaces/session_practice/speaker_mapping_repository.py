@@ -1,4 +1,3 @@
-
 from uuid import UUID
 
 from typing_extensions import Protocol
@@ -7,35 +6,30 @@ from app.domain.session_workflow.entities.speaker_mapping import (
     SpeakerMapping,
 )
 
-class SpeakerMappingRepository(Protocol):
 
+class SpeakerMappingRepository(Protocol):
     async def get_by_id(
         self,
         mapping_id: UUID,
-    ) -> SpeakerMapping | None:
-        ...
+    ) -> SpeakerMapping | None: ...
 
     async def get_by_attempt_id(
         self,
         attempt_id: UUID,
-    ) -> list[SpeakerMapping]:
-        ...
+    ) -> list[SpeakerMapping]: ...
 
     async def get_by_speaker_label(
         self,
         attempt_id: UUID,
         speaker_label: str,
-    ) -> SpeakerMapping | None:
-        ...
+    ) -> SpeakerMapping | None: ...
 
     async def create(
         self,
         mapping: SpeakerMapping,
-    ) -> SpeakerMapping:
-        ...
+    ) -> SpeakerMapping: ...
 
     async def update(
         self,
         mapping: SpeakerMapping,
-    ) -> SpeakerMapping:
-        ...
+    ) -> SpeakerMapping: ...
