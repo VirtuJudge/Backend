@@ -9,12 +9,45 @@ from sqlalchemy import create_engine, inspect, make_url
 ROOT = Path(__file__).resolve().parents[4]
 
 
-def test_migration_upgrade_and_downgrade(tmp_path: Path) -> None:
-    database_path = tmp_path / "migrations.db"
-    sync_url = f"sqlite:///{database_path}"
+def migration_configuration(sync_url: str) -> Config:
     configuration = Config(ROOT / "alembic.ini")
     configuration.set_main_option("script_location", str(ROOT / "migrations"))
     configuration.set_main_option("sqlalchemy.url", sync_url)
+    return configuration
+
+
+def test_backend_migrations_ignore_a_foreign_alembic_revision(tmp_path: Path) -> None:
+    database_path = tmp_path / "shared-migrations.db"
+    sync_url = f"sqlite:///{database_path}"
+    engine = create_engine(sync_url)
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL PRIMARY KEY)"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO alembic_version (version_num) VALUES ('d0bab208d7c4')"
+        )
+
+    command.upgrade(migration_configuration(sync_url), "head")
+
+    with engine.connect() as connection:
+        foreign_revision = connection.exec_driver_sql(
+            "SELECT version_num FROM alembic_version"
+        ).scalar_one()
+        backend_revision = connection.exec_driver_sql(
+            "SELECT version_num FROM backend_alembic_version"
+        ).scalar_one()
+
+    assert foreign_revision == "d0bab208d7c4"
+    assert backend_revision == "c210932aac79"
+    assert "users" in inspect(engine).get_table_names()
+    engine.dispose()
+
+
+def test_migration_upgrade_and_downgrade(tmp_path: Path) -> None:
+    database_path = tmp_path / "migrations.db"
+    sync_url = f"sqlite:///{database_path}"
+    configuration = migration_configuration(sync_url)
 
     command.upgrade(configuration, "head")
 
@@ -49,9 +82,7 @@ def test_migration_upgrade_and_downgrade(tmp_path: Path) -> None:
 def test_migration_backfill_existing_versions(tmp_path: Path) -> None:
     database_path = tmp_path / "legacy_backfill.db"
     sync_url = f"sqlite:///{database_path}"
-    configuration = Config(ROOT / "alembic.ini")
-    configuration.set_main_option("script_location", str(ROOT / "migrations"))
-    configuration.set_main_option("sqlalchemy.url", sync_url)
+    configuration = migration_configuration(sync_url)
 
     # Upgrade up to c4d5e6f7a8b9 (prior to cleanup migration)
     command.upgrade(configuration, "c4d5e6f7a8b9")
@@ -105,9 +136,7 @@ def test_postgres_migration_upgrade_and_downgrade() -> None:
     if not pg_url:
         pytest.skip("ASSET_TEST_DATABASE_URL not configured")
 
-    configuration = Config(ROOT / "alembic.ini")
-    configuration.set_main_option("script_location", str(ROOT / "migrations"))
-    configuration.set_main_option("sqlalchemy.url", pg_url)
+    configuration = migration_configuration(pg_url)
 
     command.upgrade(configuration, "head")
 
