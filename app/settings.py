@@ -34,7 +34,7 @@ class Settings(BaseSettings):
     oidc_audience: str | None = None
     oidc_jwks_url: str | None = None
     ai_worker_shared_secret: SecretStr | None = None
-    mail_backend: Literal["fake", "gmail"] = "fake"
+    mail_backend: Literal["fake", "gmail", "resend"] = "fake"
     gmail_smtp_host: str = "smtp.gmail.com"
     gmail_smtp_port: int = 587
     gmail_smtp_username: str | None = None
@@ -42,4 +42,16 @@ class Settings(BaseSettings):
     gmail_from_address: str | None = None
     gmail_smtp_timeout_seconds: float = 10.0
     gmail_smoke_allowlist: str | None = None
+    resend_api_url: str = "https://api.resend.com"
+    resend_api_key: SecretStr | None = None
+    resend_from_address: str | None = None
+    resend_timeout_seconds: float = 10.0
     frontend_url: str | None = None
+    cors_allowed_origins: str = ""
+
+    def allowed_cors_origins(self) -> list[str]:
+        return [
+            origin.strip().rstrip("/")
+            for origin in self.cors_allowed_origins.split(",")
+            if origin.strip()
+        ]

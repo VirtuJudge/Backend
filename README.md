@@ -2,6 +2,17 @@
 
 FastAPI control plane following the four-layer [backend architecture](https://github.com/VirtuJudge/Docs/blob/main/Architecture/Backend-Architecture.md).
 
+## Architecture
+
+The backend follows a strict four-layer architecture with dependencies pointing inward:
+
+- **`domain`** (`app/domain/`): Plain models, business entities, validation rules, and domain error definitions. Strictly framework-free with no dependencies on FastAPI, SQLAlchemy, or external SDKs.
+- **`application`** (`app/application/`): Use cases, orchestrators, and services (`asset_store`, `project_service`, `team_service`, `user_service`). Defines abstract interfaces and contracts under `app/application/ports/` (`asset_repository.py`, `object_storage.py`, `media_verifier.py`, `document_verifier.py`, `project_repository.py`, `team_repository.py`, `user_repository.py`).
+- **`api`** (`app/api/`): HTTP presentation layer containing FastAPI routers (`health.py`, `user.py`, `asset.py`, `project.py`, `team.py`), request schemas, authentication dependencies, and mapped Problem Details error responses (`errors.py`). Calls application use cases and converts domain errors to HTTP status codes.
+- **`infrastructure`** (`app/infrastructure/`): Concrete adapter implementations of application ports. Contains SQLAlchemy ORM models, mappings, and repositories (`app/infrastructure/repositories/`), S3 object storage client (`app/infrastructure/storage/`), media inspection with ffmpeg/ffprobe (`app/infrastructure/media/`), pypdf document verifier, database engine configuration, and settings.
+
+Wiring and dependency injection take place at the composition root in `app/main.py`.
+
 ## Shared local stack
 
 Install Docker with Compose 2.17 or newer and Python 3. Check out the scaffolded repositories side by side:
@@ -56,11 +67,29 @@ cp .env.example .env
 uv run uvicorn app.main:app --reload
 ```
 
+For the prototype production deployment on Render with Cloudflare R2, follow
+[the Render and R2 deployment guide](docs/deployment-render-r2.md). The repository includes a
+Render Blueprint, startup-time migrations, API CORS configuration, and a credential-safe R2
+smoke check.
+
 `.env` configures host processes; `.env.local` configures Compose. To connect host tools to Compose services, privately copy the generated backend password into `DATABASE_URL`, and the MinIO credentials into `OBJECT_STORAGE_ACCESS_KEY` and `OBJECT_STORAGE_SECRET_KEY` in `.env`. Stop the Compose backend or choose another host port before running a second API server. `/health` is application liveness; use the stack smoke command to verify dependencies.
 
 ## Mail
 
 Compose always uses `MAIL_BACKEND=fake`. The fake mail adapter retains messages in memory without delivery or content logging. Invitation business workflows are not part of this setup issue.
+
+Production on Render Free uses the real Resend HTTPS adapter because Render blocks outbound SMTP
+ports on free web services. Verify a domain in Resend and configure these values only in Render's
+Environment page or another secret store:
+
+```dotenv
+MAIL_BACKEND=resend
+RESEND_API_KEY=re_...
+RESEND_FROM_ADDRESS=VirtuJudge <noreply@mail.example.com>
+```
+
+The sender must belong to the verified domain. Secrets are not stored in `render.yaml`; the
+Blueprint prompts for them during setup.
 
 Optional Gmail delivery runs only through an explicitly invoked host smoke command. Configure these values in ignored `.env` or your shell environment:
 
@@ -92,6 +121,30 @@ uv run alembic downgrade -1
 ```
 
 Repository checks cover lint, formatting, strict types, and tests without running external services. The explicit stack smoke check covers the real service boundaries.
+
+### Test taxonomy
+
+Tests are categorized under `tests/` aligned with the four-layer architecture:
+
+- **Architecture tests** (`tests/architecture/`): Enforce dependency directions, ensuring ports and domain do not import outer layers.
+- **Unit tests** (`tests/unit/`): Fast, in-memory validation of domain rules, asset metadata, and container signatures without I/O or database overhead.
+- **Integration tests** (`tests/integration/`):
+  - `api/`: Route handlers, status codes, and Problem Details error responses.
+  - `adapters/`: Adapter implementations against synthetic or subprocess boundaries (FFmpeg media verifier, pypdf document verifier, S3 storage client, mail adapter).
+  - `persistence/`: Database operations, concurrent updates, locks, and migration lifecycle tests with SQLite or PostgreSQL test databases.
+- **Acceptance tests** (`tests/acceptance/`): End-to-end API workflows and business processes (asset upload intents, verification completions, version progression, project/team authorization, and abandoned upload cleanup).
+- **System tests** (`tests/system/`): Local-stack smoke checks, container CLI interactions, Redis diagnostic queues, and Gmail smoke verification.
+- **Test support** (`tests/support/`): Shared test doubles (`FakeAssetRepository`, `RecordingStorage`, `FakeSyncRedis`, `FakeTokenVerifier`), synthetic document builders, client helpers, and constants.
+
+Individual test categories can be executed selectively:
+
+```bash
+uv run pytest tests/architecture
+uv run pytest tests/unit
+uv run pytest tests/integration
+uv run pytest tests/acceptance
+uv run pytest tests/system
+```
 
 ## Asset uploads and abandoned cleanup
 

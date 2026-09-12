@@ -24,6 +24,7 @@ class TeamMembershipResponse(BaseModel):
     user_id: UUID
     role: str
     joined_at: datetime
+    display_name: str | None = None
 
 
 class TeamPage(BaseModel):

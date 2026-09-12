@@ -5,9 +5,11 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.api.errors import register_error_handlers
 from app.api.routes import routers
 from app.application.interfaces.projectRepository import ProjectRepository
 from app.application.interfaces.session_practice.analysis_attempt_repository import (
@@ -22,18 +24,18 @@ from app.application.interfaces.session_practice.session_manifest_repository imp
 from app.application.interfaces.session_practice.session_practice_repository import (
     PracticeSessionRepository,
 )
-from app.application.interfaces.teamMemberRepository import TeamMemberRepository
-from app.application.services.assetStore import AssetStore
-from app.application.services.projectService import ProjectService
-from app.application.services.teamInvitationService import TeamInvitationService
-from app.application.services.teamService import TeamService
-from app.application.services.userService import UserService
+from app.application.ports.team_member_repository import TeamMemberRepository
+from app.application.services.asset_store import AssetStore
+from app.application.services.project_service import ProjectService
+from app.application.services.team_invitation_service import TeamInvitationService
+from app.application.services.team_service import TeamService
+from app.application.services.user_service import UserService
 from app.infrastructure.auth.provider import create_token_verifier
 from app.infrastructure.database import create_database_engine
 from app.infrastructure.database import get_session as infrastructure_get_session
 from app.infrastructure.documents.document_verifier import DocumentVerifier
 from app.infrastructure.mail import create_mail_sender
-from app.infrastructure.media.ffmpegVerifier import FFmpegMediaVerifier
+from app.infrastructure.media.ffmpeg_verifier import FFmpegMediaVerifier
 from app.infrastructure.redis.rate_limiter import RedisRateLimiter
 from app.infrastructure.repositories.session_workflow.sqlalcemyAnalysisAttemptRepository import (
     SqlAlchemyAnalysisAttemptRepository,
@@ -50,20 +52,28 @@ from app.infrastructure.repositories.session_workflow.sqlalchemySessionManifestR
 from app.infrastructure.repositories.session_workflow.sqlalchemyUnitOfWork import (
     SqlAlchemyUnitOfWork,
 )
-from app.infrastructure.repositories.sqlalchemyAssetRepository import SqlAlchemyAssetRepository
-from app.infrastructure.repositories.sqlalchemyInvitationResendKeyRepository import (
+from app.infrastructure.repositories.sqlalchemy_asset_repository import (
+    SqlAlchemyAssetRepository,
+)
+from app.infrastructure.repositories.sqlalchemy_invitation_resend_key_repository import (
     SqlalchemyInvitationResendKeyRepository,
 )
-from app.infrastructure.repositories.sqlalchemyProjectRepository import SqlAlchemyProjectRepository
-from app.infrastructure.repositories.sqlalchemyTeamInvitationRepository import (
+from app.infrastructure.repositories.sqlalchemy_project_repository import (
+    SqlAlchemyProjectRepository,
+)
+from app.infrastructure.repositories.sqlalchemy_team_invitation_repository import (
     SqlAlchemyTeamInvitationRepository,
 )
-from app.infrastructure.repositories.sqlalchemyTeamMemberRepository import (
+from app.infrastructure.repositories.sqlalchemy_team_member_repository import (
     SqlAlchemyTeamMemberRepository,
 )
-from app.infrastructure.repositories.sqlalchemyTeamRepository import SqlAlchemyTeamRepository
-from app.infrastructure.repositories.sqlalchemyUserRepositories import SqlAlchemyUserRepository
-from app.infrastructure.storage.s3ObjectStorage import S3ObjectStorage
+from app.infrastructure.repositories.sqlalchemy_team_repository import (
+    SqlAlchemyTeamRepository,
+)
+from app.infrastructure.repositories.sqlalchemy_user_repository import (
+    SqlAlchemyUserRepository,
+)
+from app.infrastructure.storage.s3_object_storage import S3ObjectStorage
 from app.settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -124,6 +134,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await engine.dispose()
 
     application = FastAPI(title=resolved_settings.app_name, lifespan=lifespan)
+    allowed_origins = resolved_settings.allowed_cors_origins()
+    if allowed_origins:
+        application.add_middleware(
+            CORSMiddleware,
+            allow_origins=allowed_origins,
+            allow_credentials=True,
+            allow_methods=["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"],
+            allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "If-Match"],
+        )
     application.state.session_factory = session_factory
     application.state.session_dependency = infrastructure_get_session
     application.state.token_verifier = create_token_verifier(resolved_settings)
@@ -150,30 +169,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     for router in routers:
         application.include_router(router)
     application.state.mail_sender = create_mail_sender(resolved_settings)
-
-    from fastapi.exception_handlers import request_validation_exception_handler
-    from fastapi.exceptions import RequestValidationError
-    from fastapi.requests import Request
-    from fastapi.responses import JSONResponse
-
-    @application.exception_handler(RequestValidationError)
-    async def asset_request_validation_handler(
-        request: Request, exc: RequestValidationError
-    ) -> JSONResponse:
-        if "/assets" in request.url.path:
-            return JSONResponse(
-                status_code=422,
-                content={
-                    "type": "https://docs.virtujudge.org/problems/validation-failed",
-                    "title": "Validation failed",
-                    "status": 422,
-                    "detail": "The request parameters failed validation.",
-                    "instance": request.url.path,
-                    "code": "validation_failed",
-                },
-                media_type="application/problem+json",
-            )
-        return await request_validation_exception_handler(request, exc)
+    register_error_handlers(application)
 
     return application
 

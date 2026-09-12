@@ -708,6 +708,17 @@
             "title": "Email",
             "type": "string"
           },
+          "etag": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Etag"
+          },
           "expires_at": {
             "format": "date-time",
             "title": "Expires At",
@@ -729,6 +740,11 @@
             "format": "uuid",
             "title": "Team Id",
             "type": "string"
+          },
+          "version": {
+            "default": 1,
+            "title": "Version",
+            "type": "integer"
           }
         },
         "required": [
@@ -1016,6 +1032,17 @@
       },
       "TeamMembershipResponse": {
         "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
           "id": {
             "format": "uuid",
             "title": "Id",
@@ -3206,12 +3233,18 @@
           {
             "in": "header",
             "name": "If-Match",
-            "required": true,
+            "required": false,
             "schema": {
-              "maxLength": 255,
-              "minLength": 1,
-              "title": "If-Match",
-              "type": "string"
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": "*",
+              "title": "If-Match"
             }
           }
         ],
