@@ -5,6 +5,10 @@ from datetime import datetime
 from uuid import UUID
 
 
+class ProjectNotFoundError(Exception):
+    pass
+
+
 @dataclass
 class Project:
     id: UUID
