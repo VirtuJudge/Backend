@@ -1,7 +1,7 @@
 from sqlalchemy import UUID, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.application.interfaces.session_practice.speaker_mapping_repository import (
+from app.application.ports.session_practice.speaker_mapping_repository import (
     SpeakerMappingRepository,
 )
 from app.domain.session_workflow.entities.speaker_mapping import (

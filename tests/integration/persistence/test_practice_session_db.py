@@ -2,17 +2,17 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
-from app.infrastructure.persistence.configurations.projectConfigration import (
-    ProjectModel,
-)
-from app.infrastructure.persistence.configurations.teamConfigration import TeamModel
-from app.infrastructure.persistence.configurations.userConfigration import UserModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.session_workflow.entities.session_practice import PracticeSession
 from app.domain.session_workflow.enums.session_status import SessionStatus
 from app.domain.session_workflow.exceptions import StaleEntityVersion
+from app.infrastructure.persistence.configurations import (
+    ProjectModel,
+    TeamModel,
+    UserModel,
+)
 from app.infrastructure.persistence.configurations.session_workflow import (
     PracticeSessionModel,
 )

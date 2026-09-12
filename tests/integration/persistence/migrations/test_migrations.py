@@ -39,7 +39,7 @@ def test_backend_migrations_ignore_a_foreign_alembic_revision(tmp_path: Path) ->
         ).scalar_one()
 
     assert foreign_revision == "d0bab208d7c4"
-    assert backend_revision == "c210932aac79"
+    assert backend_revision == "13b7d8c79976"
     assert "users" in inspect(engine).get_table_names()
     engine.dispose()
 

@@ -1,7 +1,7 @@
 from sqlalchemy import UUID, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.application.interfaces.session_practice.session_manifest_repository import (
+from app.application.ports.session_practice.session_manifest_repository import (
     SessionManifestRepository,
 )
 from app.domain.session_workflow.entities.session_manifest import SessionManifest

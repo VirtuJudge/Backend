@@ -1,17 +1,16 @@
 from typing import Protocol
 
-from app.application.interfaces.projectRepository import ProjectRepository
-
-from app.application.interfaces.session_practice.analysis_attempt_repository import (
+from app.application.ports import ProjectRepository
+from app.application.ports.session_practice.analysis_attempt_repository import (
     AnalysisAttemptRepository,
 )
-from app.application.interfaces.session_practice.analysis_job_repository import (
+from app.application.ports.session_practice.analysis_job_repository import (
     AnalysisJobRepository,
 )
-from app.application.interfaces.session_practice.session_manifest_repository import (
+from app.application.ports.session_practice.session_manifest_repository import (
     SessionManifestRepository,
 )
-from app.application.interfaces.session_practice.session_practice_repository import (
+from app.application.ports.session_practice.session_practice_repository import (
     PracticeSessionRepository,
 )
 

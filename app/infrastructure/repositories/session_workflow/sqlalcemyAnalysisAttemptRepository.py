@@ -3,7 +3,7 @@ from uuid import UUID
 from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.application.interfaces.session_practice.analysis_attempt_repository import (
+from app.application.ports.session_practice.analysis_attempt_repository import (
     AnalysisAttemptRepository,
 )
 from app.domain.session_workflow.entities.analysis_attempt import AnalysisAttempt

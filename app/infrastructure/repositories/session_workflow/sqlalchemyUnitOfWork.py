@@ -1,9 +1,9 @@
 from types import TracebackType
 
-from app.infrastructure.repositories.sqlalchemyProjectRepository import SqlAlchemyProjectRepository
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.application.interfaces.session_practice.unit_of_work_repository import UnitOfWork
+from app.application.ports.session_practice.unit_of_work_repository import UnitOfWork
+from app.infrastructure.repositories import SqlAlchemyProjectRepository
 from app.infrastructure.repositories.session_workflow.sqlalcemyAnalysisAttemptRepository import (
     SqlAlchemyAnalysisAttemptRepository,
 )

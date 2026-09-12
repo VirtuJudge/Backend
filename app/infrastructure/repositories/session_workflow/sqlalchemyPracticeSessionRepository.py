@@ -5,7 +5,7 @@ from uuid import UUID
 from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.application.interfaces.session_practice.session_practice_repository import (
+from app.application.ports.session_practice.session_practice_repository import (
     PracticeSessionRepository,
 )
 from app.domain.session_workflow.entities.session_practice import PracticeSession

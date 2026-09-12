@@ -1,7 +1,7 @@
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from app.application.interfaces.session_practice.unit_of_work_repository import (
+from app.application.ports.session_practice.unit_of_work_repository import (
     UnitOfWork,
 )
 from app.domain.project import ProjectNotFoundError
