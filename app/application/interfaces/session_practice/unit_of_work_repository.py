@@ -1,6 +1,7 @@
 from typing import Protocol
 
 from app.application.interfaces.projectRepository import ProjectRepository
+
 from app.application.interfaces.session_practice.analysis_attempt_repository import (
     AnalysisAttemptRepository,
 )

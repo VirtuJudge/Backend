@@ -2,24 +2,24 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
+from app.infrastructure.persistence.configurations.assetConfiguration import (
+    AssetModel,
+    AssetVersionModel,
+)
+from app.infrastructure.persistence.configurations.projectConfigration import ProjectModel
+from app.infrastructure.persistence.configurations.teamConfigration import TeamModel
+from app.infrastructure.persistence.configurations.userConfigration import UserModel
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.session_workflow.entities.analysis_attempt import AnalysisAttempt
 from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
 from app.domain.session_workflow.exceptions import StaleEntityVersion
-from app.infrastructure.persistence.configurations.assetConfiguration import (
-    AssetModel,
-    AssetVersionModel,
-)
-from app.infrastructure.persistence.configurations.projectConfigration import ProjectModel
 from app.infrastructure.persistence.configurations.session_workflow import (
     AnalysisAttemptModel,
     PracticeSessionModel,
     SessionManifestModel,
 )
-from app.infrastructure.persistence.configurations.teamConfigration import TeamModel
-from app.infrastructure.persistence.configurations.userConfigration import UserModel
 from app.infrastructure.repositories.session_workflow.sqlalcemyAnalysisAttemptRepository import (
     SqlAlchemyAnalysisAttemptRepository,
 )

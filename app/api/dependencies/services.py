@@ -1,9 +1,9 @@
 from collections.abc import AsyncIterator
 from typing import Any, cast
 
+from app.application.interfaces.projectRepository import ProjectRepository
 from fastapi import Depends, Request
 
-from app.application.interfaces.projectRepository import ProjectRepository
 from app.application.interfaces.session_practice.analysis_attempt_repository import (
     AnalysisAttemptRepository,
 )

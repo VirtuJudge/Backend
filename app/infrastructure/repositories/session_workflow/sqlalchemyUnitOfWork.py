@@ -1,5 +1,6 @@
 from types import TracebackType
 
+from app.infrastructure.repositories.sqlalchemyProjectRepository import SqlAlchemyProjectRepository
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.interfaces.session_practice.unit_of_work_repository import UnitOfWork
@@ -15,7 +16,6 @@ from app.infrastructure.repositories.session_workflow.sqlalchemyPracticeSessionR
 from app.infrastructure.repositories.session_workflow.sqlalchemySessionManifestRepository import (
     SqlAlchemySessionManifestRepository,
 )
-from app.infrastructure.repositories.sqlalchemyProjectRepository import SqlAlchemyProjectRepository
 
 
 class SqlAlchemyUnitOfWork(UnitOfWork):

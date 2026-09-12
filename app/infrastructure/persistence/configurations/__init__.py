@@ -20,7 +20,6 @@ from app.infrastructure.persistence.configurations.user_configuration import Use
 from .invitation_resend_idempotency_configuration import (
     InvitationResendIdempotencyModel,
 )
-
 from .session_workflow.analysisAttemptConfiguration import (
     AnalysisAttemptModel,
 )
