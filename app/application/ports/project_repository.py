@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+from typing import Any
 from uuid import UUID
 
 from app.domain.erasure_request import ErasureRequest
@@ -41,3 +42,26 @@ class ProjectRepository(ABC):
 
     @abstractmethod
     async def create_erasure_request(self, request: ErasureRequest, key: str) -> ErasureRequest: ...
+
+    @abstractmethod
+    async def is_member(self, project_id: UUID, user_id: UUID) -> bool: ...
+
+    @abstractmethod
+    async def get_team_member_id(self, project_id: UUID, user_id: UUID) -> UUID | None: ...
+
+    @abstractmethod
+    async def is_owner(self, project_id: UUID, user_id: UUID) -> bool: ...
+
+    @abstractmethod
+    async def asset_versions_are_verified(
+        self,
+        project_id: UUID,
+        presentation_version_id: UUID,
+        document_version_ids: list[UUID] | None = None,
+    ) -> bool: ...
+
+    @abstractmethod
+    async def get_asset_version_snapshots(
+        self,
+        version_ids: list[UUID],
+    ) -> dict[UUID, dict[str, Any]]: ...

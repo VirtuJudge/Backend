@@ -210,6 +210,29 @@ class FakeProjectRepository(ProjectRepository):
         self.erasure_requests[key] = request
         return request
 
+    async def is_member(self, project_id: UUID, user_id: UUID) -> bool:
+        return False
+
+    async def get_team_member_id(self, project_id: UUID, user_id: UUID) -> UUID | None:
+        return None
+
+    async def is_owner(self, project_id: UUID, user_id: UUID) -> bool:
+        return False
+
+    async def asset_versions_are_verified(
+        self,
+        project_id: UUID,
+        presentation_version_id: UUID,
+        document_version_ids: list[UUID] | None = None,
+    ) -> bool:
+        return True
+
+    async def get_asset_version_snapshots(
+        self,
+        version_ids: list[UUID],
+    ) -> dict[UUID, dict[str, Any]]:
+        return {}
+
 
 class FakeUserRepository(UserRepository):
     def __init__(self) -> None:

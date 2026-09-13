@@ -20,6 +20,7 @@ from app.settings import Settings
 
 def test_s3_storage_signed_put_enforces_headers() -> None:
     settings = Settings(
+        _env_file=None,
         object_storage_endpoint="http://127.0.0.1:9000",
         object_storage_bucket="virtujudge",
         object_storage_access_key=SecretStr("mock_access_key"),
@@ -50,6 +51,7 @@ def test_s3_storage_signed_put_enforces_headers() -> None:
 
 def test_s3_storage_signed_get_url() -> None:
     settings = Settings(
+        _env_file=None,
         object_storage_endpoint="http://127.0.0.1:9000",
         object_storage_bucket="virtujudge",
         object_storage_access_key=SecretStr("mock_access_key"),

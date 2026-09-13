@@ -23,6 +23,7 @@ def test_health_endpoint() -> None:
 
 def test_settings_do_not_require_production_credentials() -> None:
     settings = Settings(
+        _env_file=None,
         app_env="test",
         database_url="sqlite+aiosqlite:///:memory:",
         object_storage_access_key=None,

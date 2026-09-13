@@ -9,8 +9,23 @@ from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.api.correlation import CorrelationIdMiddleware
 from app.api.errors import register_error_handlers
 from app.api.routes import routers
+from app.application.ports import ProjectRepository
+from app.application.ports.session_practice.analysis_attempt_repository import (
+    AnalysisAttemptRepository,
+)
+from app.application.ports.session_practice.analysis_job_repository import (
+    AnalysisJobRepository,
+)
+from app.application.ports.session_practice.session_manifest_repository import (
+    SessionManifestRepository,
+)
+from app.application.ports.session_practice.session_practice_repository import (
+    PracticeSessionRepository,
+)
+from app.application.ports.session_practice.unit_of_work_repository import UnitOfWork
 from app.application.ports.team_member_repository import TeamMemberRepository
 from app.application.services.asset_store import AssetStore
 from app.application.services.project_service import ProjectService
@@ -24,6 +39,13 @@ from app.infrastructure.documents.document_verifier import DocumentVerifier
 from app.infrastructure.mail import create_mail_sender
 from app.infrastructure.media.ffmpeg_verifier import FFmpegMediaVerifier
 from app.infrastructure.redis.rate_limiter import RedisRateLimiter
+from app.infrastructure.repositories.session_workflow import (
+    SqlAlchemyAnalysisAttemptRepository,
+    SqlAlchemyAnalysisJobRepository,
+    SqlAlchemyPracticeSessionRepository,
+    SqlAlchemySessionManifestRepository,
+    SqlAlchemyUnitOfWork,
+)
 from app.infrastructure.repositories.sqlalchemy_asset_repository import (
     SqlAlchemyAssetRepository,
 )
@@ -106,6 +128,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await engine.dispose()
 
     application = FastAPI(title=resolved_settings.app_name, lifespan=lifespan)
+    application.add_middleware(CorrelationIdMiddleware)
     allowed_origins = resolved_settings.allowed_cors_origins()
     if allowed_origins:
         application.add_middleware(
@@ -113,7 +136,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             allow_origins=allowed_origins,
             allow_credentials=True,
             allow_methods=["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"],
-            allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "If-Match"],
+            allow_headers=[
+                "Authorization",
+                "Content-Type",
+                "Idempotency-Key",
+                "If-Match",
+                "X-Correlation-Id",
+            ],
+            expose_headers=["ETag", "Location", "X-Correlation-Id"],
         )
     application.state.session_factory = session_factory
     application.state.session_dependency = infrastructure_get_session
@@ -126,6 +156,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session, resolved_settings
     )
     application.state.team_invitation_service_factory = team_invitation_service_factory
+    application.state.team_member_repository_factory = team_member_repository_factory
+    application.state.get_session_repository_factory = get_session_repository_factory
+    application.state.get_manifest_repository_factory = get_manifest_repository_factory
+    application.state.get_attempt_repository_factory = get_attempt_repository_factory
+    application.state.get_job_repository_factory = get_job_repository_factory
+    application.state.get_project_repository_factory = get_project_repository_factory
+    application.state.get_unit_of_work_repository_factory = get_unit_of_work_repository_factory
     redis = Redis.from_url(
         resolved_settings.redis_url,
         decode_responses=True,
@@ -177,6 +214,30 @@ def team_invitation_service_factory(session: AsyncSession) -> TeamInvitationServ
 
 def team_member_repository_factory(session: AsyncSession) -> TeamMemberRepository:
     return SqlAlchemyTeamMemberRepository(session)
+
+
+def get_session_repository_factory(session: AsyncSession) -> PracticeSessionRepository:
+    return SqlAlchemyPracticeSessionRepository(session)
+
+
+def get_manifest_repository_factory(session: AsyncSession) -> SessionManifestRepository:
+    return SqlAlchemySessionManifestRepository(session)
+
+
+def get_attempt_repository_factory(session: AsyncSession) -> AnalysisAttemptRepository:
+    return SqlAlchemyAnalysisAttemptRepository(session)
+
+
+def get_job_repository_factory(session: AsyncSession) -> AnalysisJobRepository:
+    return SqlAlchemyAnalysisJobRepository(session)
+
+
+def get_project_repository_factory(session: AsyncSession) -> ProjectRepository:
+    return SqlAlchemyProjectRepository(session)
+
+
+def get_unit_of_work_repository_factory(session: AsyncSession) -> UnitOfWork:
+    return SqlAlchemyUnitOfWork(session)
 
 
 app = create_app()

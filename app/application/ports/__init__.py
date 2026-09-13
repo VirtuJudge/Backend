@@ -5,6 +5,17 @@ from app.application.ports.media_verifier import MediaVerifierPort
 from app.application.ports.object_storage import ObjectStoragePort
 from app.application.ports.project_repository import ProjectRepository
 from app.application.ports.rate_limiter import RateLimiter
+from app.application.ports.session_practice.analysis_attempt_repository import (
+    AnalysisAttemptRepository,
+)
+from app.application.ports.session_practice.analysis_job_repository import AnalysisJobRepository
+from app.application.ports.session_practice.analysis_stage_repository import AnalysisStageRepository
+from app.application.ports.session_practice.session_manifest_repository import (
+    SessionManifestRepository,
+)
+from app.application.ports.session_practice.session_practice_repository import (
+    PracticeSessionRepository,
+)
 from app.application.ports.team_invitation_repository import TeamInvitationRepository
 from app.application.ports.team_member_repository import TeamMemberRepository
 from app.application.ports.team_repository import TeamRepository
@@ -22,4 +33,9 @@ __all__ = [
     "TeamMemberRepository",
     "TeamRepository",
     "UserRepository",
+    "AnalysisAttemptRepository",
+    "PracticeSessionRepository",
+    "SessionManifestRepository",
+    "AnalysisJobRepository",
+    "AnalysisStageRepository",
 ]
