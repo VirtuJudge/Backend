@@ -39,7 +39,7 @@ def test_migration_metadata_parity(tmp_path: Path) -> None:
         "analysis_attempts",
         "session_command_idempotency",
         "session_manifest_documents",
-        "analysis_jobs",
+        "ai_jobs",
         "analysis_stages",
         "speaker_mappings",
     ]
@@ -114,8 +114,8 @@ def test_migration_metadata_parity(tmp_path: Path) -> None:
     assert len(uq_doc) == 1
     assert set(uq_doc[0].columns.keys()) == {"manifest_id", "document_version_id"}
 
-    # Specific assertions for analysis_jobs
-    job_table = Base.metadata.tables["analysis_jobs"]
+    # Specific assertions for ai_jobs
+    job_table = Base.metadata.tables["ai_jobs"]
     assert not job_table.columns["practice_session_id"].nullable
     job_type_type = job_table.columns["job_type"].type
     assert isinstance(job_type_type, String)

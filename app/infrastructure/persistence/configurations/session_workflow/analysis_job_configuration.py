@@ -9,7 +9,7 @@ from app.infrastructure.database import Base
 
 
 class AnalysisJobModel(Base):
-    __tablename__ = "analysis_jobs"
+    __tablename__ = "ai_jobs"
 
     id: Mapped[UUID] = mapped_column(
         primary_key=True,
@@ -104,3 +104,6 @@ class AnalysisJobModel(Base):
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
     )
+
+
+AIJobModel = AnalysisJobModel

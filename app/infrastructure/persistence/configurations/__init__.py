@@ -23,7 +23,10 @@ from .invitation_resend_idempotency_configuration import (
 from .session_workflow.analysis_attempt_configuration import (
     AnalysisAttemptModel,
 )
-from .session_workflow.analysis_job_configuration import AnalysisJobModel
+from .session_workflow.analysis_job_configuration import (
+    AIJobModel,
+    AnalysisJobModel,
+)
 from .session_workflow.analysis_stage_configuration import AnalysisStageModel
 from .session_workflow.session_command_idempotency_configuration import (
     SessionCommandIdempotencyModel,
@@ -56,6 +59,7 @@ __all__ = [
     "SessionCommandIdempotencyModel",
     "PracticeSessionModel",
     "AnalysisAttemptModel",
+    "AIJobModel",
     "AnalysisJobModel",
     "AnalysisStageModel",
     "SpeakerMappingModel",

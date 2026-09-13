@@ -39,7 +39,7 @@ def test_backend_migrations_ignore_a_foreign_alembic_revision(tmp_path: Path) ->
         ).scalar_one()
 
     assert foreign_revision == "d0bab208d7c4"
-    assert backend_revision == "ef143c2a901b"
+    assert backend_revision == "40d664ee8b4d"
     assert "users" in inspect(engine).get_table_names()
     engine.dispose()
 
@@ -72,7 +72,7 @@ def test_backend_migrations_adopt_an_existing_legacy_schema(tmp_path: Path) -> N
         ).scalar_one()
 
     assert foreign_revision == "d0bab208d7c4"
-    assert backend_revision == "ef143c2a901b"
+    assert backend_revision == "40d664ee8b4d"
     assert "practice_sessions" in inspect(engine).get_table_names()
     engine.dispose()
 
@@ -94,14 +94,15 @@ def test_migration_upgrade_and_downgrade(tmp_path: Path) -> None:
     assert "session_manifest_documents" in tables
     assert "session_command_idempotency" in tables
     assert "analysis_attempts" in tables
-    assert "analysis_jobs" in tables
+    assert "ai_jobs" in tables
+    assert "analysis_jobs" not in tables
     assert "analysis_stages" in tables
     assert "speaker_mappings" in tables
     manifest_columns = [c["name"] for c in inspect(engine).get_columns("session_manifests")]
     assert "rubric_id" in manifest_columns
     assert "rubric_version" in manifest_columns
     assert "snapshot" in manifest_columns
-    job_columns = [c["name"] for c in inspect(engine).get_columns("analysis_jobs")]
+    job_columns = [c["name"] for c in inspect(engine).get_columns("ai_jobs")]
     assert "practice_session_id" in job_columns
     assert "analysis_attempt" in job_columns
     assert "job_type" in job_columns
@@ -135,6 +136,7 @@ def test_migration_upgrade_and_downgrade(tmp_path: Path) -> None:
     tables_downgraded = inspect(engine).get_table_names()
     assert "assets" not in tables_downgraded
     assert "practice_sessions" not in tables_downgraded
+    assert "ai_jobs" not in tables_downgraded
     assert "analysis_jobs" not in tables_downgraded
     engine.dispose()
 
@@ -208,12 +210,18 @@ def test_postgres_migration_upgrade_and_downgrade() -> None:
     assert "assets" in tables
     assert "asset_versions" in tables
     assert "asset_upload_idempotency" in tables
+    assert "ai_jobs" in tables
+    assert "analysis_jobs" not in tables
 
     command.downgrade(configuration, "a1b2c3d4e5f6")
     tables_downgraded = inspect(engine).get_table_names()
     assert "assets" not in tables_downgraded
+    assert "ai_jobs" not in tables_downgraded
+    assert "analysis_jobs" not in tables_downgraded
 
     command.upgrade(configuration, "head")
     tables_final = inspect(engine).get_table_names()
     assert "assets" in tables_final
+    assert "ai_jobs" in tables_final
+    assert "analysis_jobs" not in tables_final
     engine.dispose()
