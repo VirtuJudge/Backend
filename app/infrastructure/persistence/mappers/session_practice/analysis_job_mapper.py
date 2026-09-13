@@ -24,6 +24,12 @@ def to_domain(model: AnalysisJobModel) -> AnalysisJob:
         updated_at=model.updated_at,
         started_at=model.started_at,
         completed_at=model.completed_at,
+        payload=model.payload,
+        queued_at=model.queued_at,
+        next_dispatch_at=model.next_dispatch_at,
+        dispatch_retry_count=model.dispatch_retry_count,
+        last_dispatch_error_category=model.last_dispatch_error_category,
+        completed_result=model.completed_result,
     )
 
 
@@ -46,4 +52,10 @@ def to_model(entity: AnalysisJob) -> AnalysisJobModel:
         updated_at=entity.updated_at,
         started_at=entity.started_at,
         completed_at=entity.completed_at,
+        payload=entity.payload,
+        queued_at=entity.queued_at,
+        next_dispatch_at=entity.next_dispatch_at,
+        dispatch_retry_count=entity.dispatch_retry_count,
+        last_dispatch_error_category=entity.last_dispatch_error_category,
+        completed_result=entity.completed_result,
     )

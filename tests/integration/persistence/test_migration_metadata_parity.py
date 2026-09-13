@@ -121,6 +121,21 @@ def test_migration_metadata_parity(tmp_path: Path) -> None:
     assert isinstance(job_type_type, String)
     assert job_type_type.length == 50
     assert not job_table.columns["job_type"].nullable
+    assert job_table.columns["payload"].nullable
+    assert job_table.columns["queued_at"].nullable
+    assert job_table.columns["next_dispatch_at"].nullable
+    assert not job_table.columns["dispatch_retry_count"].nullable
+    assert job_table.columns["last_dispatch_error_category"].nullable
+    assert job_table.columns["completed_result"].nullable
+
+    job_indexes = {str(idx.name): idx for idx in job_table.indexes if idx.name is not None}
+    assert "ix_ai_jobs_pending_dispatch" in job_indexes
+    assert [c.name for c in job_indexes["ix_ai_jobs_pending_dispatch"].columns] == [
+        "status",
+        "next_dispatch_at",
+        "created_at",
+        "id",
+    ]
 
     # Specific assertions for analysis_stages
     stage_table = Base.metadata.tables["analysis_stages"]

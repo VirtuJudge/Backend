@@ -1,8 +1,9 @@
 from datetime import datetime
+from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Boolean, DateTime, Enum, ForeignKey, Integer, String, Text
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Index, Integer, String, Text
+from sqlalchemy.orm import Mapped, mapped_column, synonym
 
 from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
 from app.infrastructure.database import Base
@@ -103,6 +104,53 @@ class AnalysisJobModel(Base):
 
     completed_at: Mapped[datetime | None] = mapped_column(
         DateTime(timezone=True),
+    )
+
+    payload: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON,
+        nullable=True,
+    )
+
+    queued_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    next_dispatch_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    dispatch_retry_count: Mapped[int] = mapped_column(
+        Integer,
+        nullable=False,
+        default=0,
+    )
+
+    last_dispatch_error_category: Mapped[str | None] = mapped_column(
+        String(100),
+        nullable=True,
+    )
+
+    completed_result: Mapped[dict[str, Any] | None] = mapped_column(
+        JSON,
+        nullable=True,
+    )
+
+    result = synonym("completed_result")
+    next_eligible_dispatch_at = synonym("next_dispatch_at")
+    last_dispatch_error = synonym("last_dispatch_error_category")
+    dispatch_payload = synonym("payload")
+    dispatch_envelope = synonym("payload")
+
+    __table_args__ = (
+        Index(
+            "ix_ai_jobs_pending_dispatch",
+            "status",
+            "next_dispatch_at",
+            "created_at",
+            "id",
+        ),
     )
 
 

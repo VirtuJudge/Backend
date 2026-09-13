@@ -39,7 +39,7 @@ def test_backend_migrations_ignore_a_foreign_alembic_revision(tmp_path: Path) ->
         ).scalar_one()
 
     assert foreign_revision == "d0bab208d7c4"
-    assert backend_revision == "40d664ee8b4d"
+    assert backend_revision == "f31a1f55d085"
     assert "users" in inspect(engine).get_table_names()
     engine.dispose()
 
@@ -72,7 +72,7 @@ def test_backend_migrations_adopt_an_existing_legacy_schema(tmp_path: Path) -> N
         ).scalar_one()
 
     assert foreign_revision == "d0bab208d7c4"
-    assert backend_revision == "40d664ee8b4d"
+    assert backend_revision == "f31a1f55d085"
     assert "practice_sessions" in inspect(engine).get_table_names()
     engine.dispose()
 
@@ -110,6 +110,12 @@ def test_migration_upgrade_and_downgrade(tmp_path: Path) -> None:
     assert "payload_version" in job_columns
     assert "attempts" in job_columns
     assert "cancel_requested" in job_columns
+    assert "payload" in job_columns
+    assert "queued_at" in job_columns
+    assert "next_dispatch_at" in job_columns
+    assert "dispatch_retry_count" in job_columns
+    assert "last_dispatch_error_category" in job_columns
+    assert "completed_result" in job_columns
     asset_columns = [c["name"] for c in inspect(engine).get_columns("assets")]
     assert "retention_expires_at" in asset_columns
     version_columns = [c["name"] for c in inspect(engine).get_columns("asset_versions")]
