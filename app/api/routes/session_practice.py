@@ -273,7 +273,7 @@ async def get_analysis_attempts(
 ) -> AnalysisAttemptListResponse:
 
     try:
-        attempts = await workflow.get_analysis_attempts(
+        attempts = await workflow.get_analysis_attemptss(
             session_id=session_id,
             actor_id=current_user.id,
             cursor=cursor,

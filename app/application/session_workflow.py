@@ -264,7 +264,7 @@ class SessionWorkflow:
 
             return attempt
 
-    async def get_analysis_attempts(
+    async def get_analysis_attemptss(
         self,
         session_id: UUID,
         actor_id: UUID,
@@ -295,13 +295,13 @@ class SessionWorkflow:
                 limit=limit,
             )
 
-    async def start_analysis():
+    async def start_analysis() -> None:
         return None
 
-    async def submit_answer():
+    async def submit_answer()-> None:
         return None
 
-    async def skip_answer():
+    async def skip_answer()-> None:
         return None
 
     async def retry(
@@ -404,7 +404,6 @@ class SessionWorkflow:
 
                 attempt.status = AnalysisAttemptStatus.CANCELLED
                 attempt.cancelled_at = now
-                attempt.updated_at = now
 
                 await uow.attempts.update(
                     attempt,

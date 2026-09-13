@@ -29,8 +29,6 @@ async def ensure_attempt_parents(
     session: AsyncSession,
     session_id: UUID,
 ) -> UUID:
-    manifest_id = session.info.get(f"analysis_attempt_manifest:{session_id}")
-
     manifest_id = cast(
         UUID | None,
         session.info.get(f"analysis_attempt_manifest:{session_id}"),

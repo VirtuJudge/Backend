@@ -1,8 +1,10 @@
 ## infrastructure/persistence/repositories/practice_session_repository.py
 
 from uuid import UUID
+from typing import Any
 
-from sqlalchemy import select, update
+from sqlalchemy import select, update,cast
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.ports.session_practice.session_practice_repository import (
@@ -77,7 +79,10 @@ class SqlAlchemyPracticeSessionRepository(PracticeSessionRepository):
             )
         )
 
-        result = await self._session.execute(stmt)
+        result = cast(
+            CursorResult[Any],
+            await self._session.execute(stmt),
+        )
 
         if result.rowcount != 1:
             raise StaleEntityVersion("Practice session was modified by another request.")

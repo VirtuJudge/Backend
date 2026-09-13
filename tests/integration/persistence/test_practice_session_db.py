@@ -24,8 +24,6 @@ from app.infrastructure.repositories.session_workflow.sqlalchemyPracticeSessionR
 async def ensure_session_parents(
     session: AsyncSession,
 ) -> tuple[UUID, UUID]:
-    parent_ids = session.info.get("practice_session_parents")
-
     parent_ids = cast(
         tuple[UUID, UUID] | None,
         session.info.get("practice_session_parents"),

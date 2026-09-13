@@ -1,7 +1,7 @@
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import func, select, update
+from sqlalchemy import func, select, update,cast
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -144,7 +144,10 @@ class SqlAlchemyAnalysisAttemptRepository(AnalysisAttemptRepository):
             )
         )
 
-        result: CursorResult[Any] = await self._session.execute(stmt)
+        result = cast(
+            CursorResult[Any],
+            await self._session.execute(stmt),
+        )
 
         if result.rowcount != 1:
             raise StaleEntityVersion("Analysis attempt was modified concurrently.")
