@@ -44,6 +44,39 @@ def test_backend_migrations_ignore_a_foreign_alembic_revision(tmp_path: Path) ->
     engine.dispose()
 
 
+def test_backend_migrations_adopt_an_existing_legacy_schema(tmp_path: Path) -> None:
+    database_path = tmp_path / "legacy-backend-schema.db"
+    sync_url = f"sqlite:///{database_path}"
+    configuration = migration_configuration(sync_url)
+
+    command.upgrade(configuration, "c210932aac79")
+
+    engine = create_engine(sync_url)
+    with engine.begin() as connection:
+        connection.exec_driver_sql("DROP TABLE backend_alembic_version")
+        connection.exec_driver_sql(
+            "CREATE TABLE alembic_version (version_num VARCHAR(32) NOT NULL PRIMARY KEY)"
+        )
+        connection.exec_driver_sql(
+            "INSERT INTO alembic_version (version_num) VALUES ('d0bab208d7c4')"
+        )
+
+    command.upgrade(configuration, "head")
+
+    with engine.connect() as connection:
+        foreign_revision = connection.exec_driver_sql(
+            "SELECT version_num FROM alembic_version"
+        ).scalar_one()
+        backend_revision = connection.exec_driver_sql(
+            "SELECT version_num FROM backend_alembic_version"
+        ).scalar_one()
+
+    assert foreign_revision == "d0bab208d7c4"
+    assert backend_revision == "ef143c2a901b"
+    assert "practice_sessions" in inspect(engine).get_table_names()
+    engine.dispose()
+
+
 def test_migration_upgrade_and_downgrade(tmp_path: Path) -> None:
     database_path = tmp_path / "migrations.db"
     sync_url = f"sqlite:///{database_path}"
