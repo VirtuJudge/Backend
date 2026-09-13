@@ -12,6 +12,13 @@ import pytest
 from jsonschema import Draft202012Validator
 from pydantic import BaseModel, Field, field_validator
 
+from app.application.ai_job_contracts import (
+    AIJobQueueMessage,
+    AIWorkerUpdate,
+    AIWorkerUpdateStatus,
+    parse_queue_message,
+    parse_worker_update,
+)
 from scripts.ai_contract import (
     ContextualValidationError,
     collect_errors,
@@ -307,6 +314,26 @@ def test_valid_fixtures_parse_into_consumer_pydantic_models(fixture_def: dict[st
             )
         else:
             pytest.fail(f"Unhandled update status: {update.status}")
+
+
+@pytest.mark.parametrize("fixture_def", VALID_FIXTURES, ids=[f["id"] for f in VALID_FIXTURES])
+def test_valid_fixtures_parse_into_backend_runtime_models(fixture_def: dict[str, Any]) -> None:
+    fixture_path = REPO_ROOT / fixture_def["path"]
+    data = json.loads(fixture_path.read_text(encoding="utf-8"))
+
+    if "ai_job" in fixture_def["schema"]:
+        msg = AIJobQueueMessage.model_validate(data)
+        typed_msg = parse_queue_message(data)
+        assert msg.job_type == typed_msg.job_type
+    elif "ai_worker_update" in fixture_def["schema"]:
+        update = AIWorkerUpdate.model_validate(data)
+        if update.status == AIWorkerUpdateStatus.COMPLETED:
+            res_type = fixture_def["result_type"]
+            typed_update = parse_worker_update(data, job_type=res_type)
+            assert typed_update.status == AIWorkerUpdateStatus.COMPLETED
+        else:
+            typed_update = parse_worker_update(data)
+            assert typed_update.status == update.status
 
 
 @pytest.mark.parametrize("fixture_def", BREAKING_FIXTURES, ids=[f["id"] for f in BREAKING_FIXTURES])
