@@ -280,7 +280,7 @@ async def test_list_sessions_returns_sessions(
 
     uow.sessions.list_by_project.assert_awaited_once_with(
         project_id=project_id,
-        next_cursor="current-cursor",
+        cursor="current-cursor",
         limit=10,
         search="test",
     )
@@ -472,6 +472,7 @@ async def test_cancel_cancels_session_and_latest_attempt(
 
     attempt = MagicMock()
     attempt.status = AnalysisAttemptStatus.PENDING
+    attempt.version = 1
 
     uow.sessions.get_by_id.return_value = practice_session
     uow.projects.is_member.return_value = True
@@ -493,7 +494,7 @@ async def test_cancel_cancels_session_and_latest_attempt(
 
     assert manifest.frozen_at is None
 
-    uow.attempts.update.assert_awaited_once_with(attempt)
+    uow.attempts.update.assert_awaited_once_with(attempt, expected_version=1)
     uow.sessions.update.assert_awaited_once()
     uow.manifests.update.assert_awaited()
     uow.commit.assert_awaited_once()
