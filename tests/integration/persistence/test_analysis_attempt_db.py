@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import cast, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.session_workflow.entities.analysis_attempt import AnalysisAttempt
@@ -30,6 +30,11 @@ async def ensure_attempt_parents(
     session_id: UUID,
 ) -> UUID:
     manifest_id = session.info.get(f"analysis_attempt_manifest:{session_id}")
+
+    manifest_id = cast(
+        UUID | None,
+        session.info.get(f"analysis_attempt_manifest:{session_id}"),
+    )
     if manifest_id is not None:
         return manifest_id
 

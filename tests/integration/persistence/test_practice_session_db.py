@@ -2,7 +2,7 @@ from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import select
+from sqlalchemy import cast, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.session_workflow.entities.session_practice import PracticeSession
@@ -25,6 +25,11 @@ async def ensure_session_parents(
     session: AsyncSession,
 ) -> tuple[UUID, UUID]:
     parent_ids = session.info.get("practice_session_parents")
+
+    parent_ids = cast(
+        tuple[UUID, UUID] | None,
+        session.info.get("practice_session_parents"),
+    )
 
     if parent_ids is not None:
         return parent_ids

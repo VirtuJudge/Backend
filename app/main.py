@@ -24,6 +24,7 @@ from app.application.ports.session_practice.session_manifest_repository import (
 from app.application.ports.session_practice.session_practice_repository import (
     PracticeSessionRepository,
 )
+from app.application.ports.session_practice.unit_of_work_repository import UnitOfWork
 from app.application.ports.team_member_repository import TeamMemberRepository
 from app.application.services.asset_store import AssetStore
 from app.application.services.project_service import ProjectService
@@ -234,7 +235,7 @@ def get_project_repository_factory(session: AsyncSession) -> ProjectRepository:
     return SqlAlchemyProjectRepository(session)
 
 
-def get_unit_of_work_repository_factory(session: AsyncSession) -> SqlAlchemyUnitOfWork:
+def get_unit_of_work_repository_factory(session: AsyncSession) -> UnitOfWork:
     return SqlAlchemyUnitOfWork(session)
 
 

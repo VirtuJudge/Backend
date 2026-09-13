@@ -12,6 +12,10 @@ from app.infrastructure.persistence.configurations.project_configuration import 
 from app.infrastructure.persistence.configurations.project_erasure_request import (
     ProjectErasureRequestModel,
 )
+from app.infrastructure.persistence.configurations.team_configuration import TeamModel
+from app.infrastructure.persistence.configurations.team_member_configuration import (
+    TeamMemberModel,
+)
 
 
 class SqlAlchemyProjectRepository(ProjectRepository):
@@ -134,9 +138,7 @@ class SqlAlchemyProjectRepository(ProjectRepository):
     async def is_member(self, project_id: UUID, user_id: UUID) -> bool:
         stmt = select(ProjectModel).where(
             ProjectModel.id == project_id,
-            ProjectModel.team.has(
-                ProjectModel.team.has(ProjectModel.team_members.any(user_id=user_id))
-            ),
+            ProjectModel.team.has(TeamModel.members.any(TeamMemberModel.user_id == user_id)),
         )
         result = await self.session.execute(stmt)
         return result.scalar() is not None

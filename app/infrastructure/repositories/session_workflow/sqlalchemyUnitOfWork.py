@@ -22,11 +22,10 @@ class SqlAlchemyUnitOfWork(UnitOfWork):
     def __init__(self, session: AsyncSession) -> None:
         self.session = session
 
-        self.practice_sessions = SqlAlchemyPracticeSessionRepository(session)
+        self.sessions = SqlAlchemyPracticeSessionRepository(session)
         self.manifests = SqlAlchemySessionManifestRepository(session)
         self.attempts = SqlAlchemyAnalysisAttemptRepository(session)
         self.projects = SqlAlchemyProjectRepository(session)
-        self.attempts = SqlAlchemyAnalysisAttemptRepository(session)
         self.jobs = SqlAlchemyAnalysisJobRepository(session)
 
     async def commit(self) -> None:

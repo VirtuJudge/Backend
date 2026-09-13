@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, Text
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, Text
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
@@ -26,8 +26,7 @@ class AnalysisJobModel(Base):
         nullable=False,
     )
 
-    correlation_id: Mapped[str] = mapped_column(
-        String(100),
+    correlation_id: Mapped[UUID] = mapped_column(
         nullable=False,
         index=True,
     )

@@ -1,4 +1,6 @@
-from sqlalchemy import UUID, select, update
+from uuid import UUID
+
+from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.ports.session_practice.session_manifest_repository import (

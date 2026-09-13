@@ -1,6 +1,8 @@
+from typing import Any
 from uuid import UUID
 
 from sqlalchemy import func, select, update
+from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.ports.session_practice.analysis_attempt_repository import (
@@ -13,9 +15,9 @@ from app.infrastructure.persistence.mappers.session_practice.analysis_attempt_ma
     to_model,
 )
 
+from ....domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
 from ...persistence.configurations.session_workflow.analysisAttemptConfiguration import (
     AnalysisAttemptModel,
-    AnalysisAttemptStatus,
 )
 
 
@@ -142,7 +144,7 @@ class SqlAlchemyAnalysisAttemptRepository(AnalysisAttemptRepository):
             )
         )
 
-        result = await self._session.execute(stmt)
+        result: CursorResult[Any] = await self._session.execute(stmt)
 
         if result.rowcount != 1:
             raise StaleEntityVersion("Analysis attempt was modified concurrently.")

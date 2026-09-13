@@ -306,7 +306,7 @@ async def get_analysis_attempts(
 async def cancel_practice_session(
     session_id: UUID,
     request: CancelPracticeSessionRequest,
-    current_user=Depends(get_current_user),
+    current_user: User = Depends(get_current_user),
     workflow: SessionWorkflow = Depends(get_session_workflow),
 ) -> PracticeSessionResponse:
     try:

@@ -221,11 +221,10 @@ class SessionWorkflow:
                 raise ConsentRequiredError("Consent must be accepted before analysis.")
 
             manifest = await uow.manifests.get_by_session_id(session.id)
-            manifest.frozen_at = datetime.now(UTC)
-            await uow.manifests.update(manifest)
-
             if manifest is None:
                 raise SessionNotFoundError("Session manifest not found.")
+            manifest.frozen_at = datetime.now(UTC)
+            await uow.manifests.update(manifest)
 
             # 6. Idempotency check
             existing_attempt = await uow.attempts.get_by_idempotency_key(
@@ -251,7 +250,6 @@ class SessionWorkflow:
                 created_by=actor_id,
                 status=AnalysisAttemptStatus.PENDING,
                 created_at=now,
-                updated_at=now,
                 idempotency_key=idempotency_key,
                 attempt_number=await uow.attempts.get_next_attempt_number(session.id),
                 version=1,
@@ -297,11 +295,14 @@ class SessionWorkflow:
                 limit=limit,
             )
 
-    async def start_analysis(): ...
+    async def start_analysis():
+        return None
 
-    async def submit_answer(): ...
+    async def submit_answer():
+        return None
 
-    async def skip_answer(): ...
+    async def skip_answer():
+        return None
 
     async def retry(
         self,
@@ -411,7 +412,7 @@ class SessionWorkflow:
                 )
 
                 # 5. Save the changed session
-            await uow.sessions.update(session)
+            await uow.sessions.update(session, expected_version=session.version)
             await uow.manifests.update(manifest)
             await uow.commit()
 

@@ -1,3 +1,4 @@
+from types import TracebackType
 from typing import Protocol
 
 from app.application.ports import ProjectRepository
@@ -32,5 +33,5 @@ class UnitOfWork(Protocol):
         self,
         exc_type: type[BaseException] | None,
         exc: BaseException | None,
-        tb: object | None,
+        tb: TracebackType | None,
     ) -> None: ...
