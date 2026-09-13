@@ -20,15 +20,24 @@ from app.infrastructure.persistence.configurations.user_configuration import Use
 from .invitation_resend_idempotency_configuration import (
     InvitationResendIdempotencyModel,
 )
-from .session_workflow.analysisAttemptConfiguration import (
+from .session_workflow.analysis_attempt_configuration import (
     AnalysisAttemptModel,
 )
-from .session_workflow.sessionManifestConfiguration import (
+from .session_workflow.analysis_job_configuration import AnalysisJobModel
+from .session_workflow.analysis_stage_configuration import AnalysisStageModel
+from .session_workflow.session_command_idempotency_configuration import (
+    SessionCommandIdempotencyModel,
+)
+from .session_workflow.session_manifest_configuration import (
     SessionManifestModel,
 )
-from .session_workflow.sessionPracticeConfiguration import (
+from .session_workflow.session_manifest_document_configuration import (
+    SessionManifestDocumentModel,
+)
+from .session_workflow.session_practice_configuration import (
     PracticeSessionModel,
 )
+from .session_workflow.speaker_mapping_configuration import SpeakerMappingModel
 
 __all__ = [
     "UserModel",
@@ -43,6 +52,11 @@ __all__ = [
     "TeamInvitationModel",
     "InvitationResendIdempotencyModel",
     "SessionManifestModel",
+    "SessionManifestDocumentModel",
+    "SessionCommandIdempotencyModel",
     "PracticeSessionModel",
     "AnalysisAttemptModel",
+    "AnalysisJobModel",
+    "AnalysisStageModel",
+    "SpeakerMappingModel",
 ]

@@ -4,6 +4,12 @@ class InvalidSessionStatusTransition(Exception):
     pass
 
 
+class InvalidManifestDocuments(Exception):
+    """Exception raised when supporting documents are invalid (e.g. duplicates or > 5)."""
+
+    pass
+
+
 class ManifestAlreadyFrozen(Exception):
     """Exception raised when attempting to freeze a manifest that is already frozen."""
 
@@ -88,5 +94,23 @@ class ConsentRequiredError(Exception):
 
 class RetryNotAllowed(Exception):
     """Exception raised when the latest analysis attempt cannot be retried."""
+
+    pass
+
+
+class IdempotencyConflict(Exception):
+    """Exception raised when an idempotency key is reused with different request parameters."""
+
+    pass
+
+
+class AnalysisNotReady(Exception):
+    """Exception raised when analysis results are not yet available for speaker mapping."""
+
+    pass
+
+
+class InvalidTeamMember(Exception):
+    """Exception raised when a user is not a member of the project team."""
 
     pass

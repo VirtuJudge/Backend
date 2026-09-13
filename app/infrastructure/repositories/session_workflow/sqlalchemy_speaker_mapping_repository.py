@@ -1,6 +1,7 @@
 from uuid import UUID
 
 from sqlalchemy import select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.ports.session_practice.speaker_mapping_repository import (
@@ -9,12 +10,13 @@ from app.application.ports.session_practice.speaker_mapping_repository import (
 from app.domain.session_workflow.entities.speaker_mapping import (
     SpeakerMapping,
 )
+from app.domain.session_workflow.exceptions import IdempotencyConflict
 from app.infrastructure.persistence.mappers.session_practice.speaker_mapping_mapper import (
     to_domain,
     to_model,
 )
 
-from ...persistence.configurations.session_workflow.speakerMappingConfiguration import (
+from ...persistence.configurations.session_workflow.speaker_mapping_configuration import (
     SpeakerMappingModel,
 )
 
@@ -66,19 +68,19 @@ class SqlAlchemySpeakerMappingRepository(SpeakerMappingRepository):
         self,
         mapping: SpeakerMapping,
     ) -> SpeakerMapping:
-
         model = to_model(mapping)
-
         self._session.add(model)
-        await self._session.flush()
-
+        try:
+            await self._session.flush()
+        except IntegrityError as exc:
+            await self._session.rollback()
+            raise IdempotencyConflict("Speaker mapping already exists or conflict.") from exc
         return to_domain(model)
 
     async def update(
         self,
         mapping: SpeakerMapping,
     ) -> SpeakerMapping:
-
         stmt = (
             update(SpeakerMappingModel)
             .where(SpeakerMappingModel.id == mapping.id)
@@ -88,8 +90,10 @@ class SqlAlchemySpeakerMappingRepository(SpeakerMappingRepository):
                 mapped_at=mapping.mapped_at,
             )
         )
-
         await self._session.execute(stmt)
-        await self._session.flush()
-
+        try:
+            await self._session.flush()
+        except IntegrityError as exc:
+            await self._session.rollback()
+            raise IdempotencyConflict("Integrity conflict on speaker mapping update.") from exc
         return mapping

@@ -1,8 +1,6 @@
-# infrastructure/persistence/mappers/practice_session_mapper.py
-
 from app.domain.session_workflow.entities.session_practice import PracticeSession
 
-from ...configurations.session_workflow.sessionPracticeConfiguration import (
+from ...configurations.session_workflow.session_practice_configuration import (
     PracticeSessionModel,
 )
 
@@ -21,6 +19,11 @@ def to_domain(model: PracticeSessionModel) -> PracticeSession:
         completed_at=model.completed_at,
         cancelled_at=model.cancelled_at,
         consent_granted=model.consent_granted,
+        consent_policy_version=model.consent_policy_version,
+        consent_confirmed_by=model.consent_confirmed_by,
+        consent_confirmed_at=model.consent_confirmed_at,
+        cancelled_by=model.cancelled_by,
+        cancellation_reason=model.cancellation_reason,
     )
 
 
@@ -38,4 +41,9 @@ def to_model(entity: PracticeSession) -> PracticeSessionModel:
         completed_at=entity.completed_at,
         cancelled_at=entity.cancelled_at,
         consent_granted=entity.consent_granted,
+        consent_policy_version=entity.consent_policy_version,
+        consent_confirmed_by=entity.consent_confirmed_by,
+        consent_confirmed_at=entity.consent_confirmed_at,
+        cancelled_by=entity.cancelled_by,
+        cancellation_reason=entity.cancellation_reason,
     )

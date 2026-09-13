@@ -8,11 +8,17 @@ from app.application.ports.session_practice.analysis_attempt_repository import (
 from app.application.ports.session_practice.analysis_job_repository import (
     AnalysisJobRepository,
 )
+from app.application.ports.session_practice.session_command_idempotency_repository import (
+    SessionCommandIdempotencyRepository,
+)
 from app.application.ports.session_practice.session_manifest_repository import (
     SessionManifestRepository,
 )
 from app.application.ports.session_practice.session_practice_repository import (
     PracticeSessionRepository,
+)
+from app.application.ports.session_practice.speaker_mapping_repository import (
+    SpeakerMappingRepository,
 )
 
 
@@ -22,6 +28,8 @@ class UnitOfWork(Protocol):
     attempts: AnalysisAttemptRepository
     projects: ProjectRepository
     jobs: AnalysisJobRepository
+    speaker_mappings: SpeakerMappingRepository
+    idempotency: SessionCommandIdempotencyRepository
 
     async def commit(self) -> None: ...
 

@@ -8,3 +8,8 @@ class DiarizationResultReader(ABC):
         self,
         attempt_id: UUID,
     ) -> set[str]: ...
+
+
+class NullDiarizationResultReader(DiarizationResultReader):
+    async def get_speaker_labels(self, attempt_id: UUID) -> set[str]:
+        return set()

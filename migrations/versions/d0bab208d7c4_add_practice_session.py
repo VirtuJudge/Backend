@@ -93,7 +93,7 @@ def upgrade() -> None:
         sa.Column(
             "status",
             sa.Enum(
-                "pending",
+                "queued",
                 "running",
                 "failed",
                 "completed",
@@ -120,6 +120,9 @@ def upgrade() -> None:
         ),
         sa.PrimaryKeyConstraint("id"),
         sa.UniqueConstraint("session_id", "attempt_number", name="uq_session_attempt_number"),
+        sa.UniqueConstraint(
+            "session_id", "idempotency_key", name="uq_analysis_attempt_idempotency_key"
+        ),
     )
     with op.batch_alter_table("analysis_attempts", schema=None) as batch_op:
         batch_op.create_index(

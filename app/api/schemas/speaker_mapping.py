@@ -1,6 +1,7 @@
+from datetime import datetime
 from uuid import UUID
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class SpeakerMappingRequest(BaseModel):
@@ -10,3 +11,15 @@ class SpeakerMappingRequest(BaseModel):
 
 class UpdateSpeakerMappingsRequest(BaseModel):
     mappings: list[SpeakerMappingRequest]
+
+
+class SpeakerMappingResponse(BaseModel):
+    id: UUID
+    attempt_id: UUID
+    speaker_label: str
+    user_id: UUID | None = None
+    member_id: UUID | None = None
+    mapped_by: UUID
+    mapped_at: datetime
+
+    model_config = ConfigDict(from_attributes=True)

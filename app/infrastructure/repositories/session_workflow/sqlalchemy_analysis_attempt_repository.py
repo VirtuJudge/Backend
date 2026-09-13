@@ -3,21 +3,21 @@ from uuid import UUID
 
 from sqlalchemy import func, select, update
 from sqlalchemy.engine import CursorResult
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.ports.session_practice.analysis_attempt_repository import (
     AnalysisAttemptRepository,
 )
 from app.domain.session_workflow.entities.analysis_attempt import AnalysisAttempt
-from app.domain.session_workflow.exceptions import StaleEntityVersion
+from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
+from app.domain.session_workflow.exceptions import IdempotencyConflict, StaleEntityVersion
+from app.infrastructure.persistence.configurations.session_workflow import (
+    AnalysisAttemptModel,
+)
 from app.infrastructure.persistence.mappers.session_practice.analysis_attempt_mapper import (
     to_domain,
     to_model,
-)
-
-from ....domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
-from ...persistence.configurations.session_workflow.analysisAttemptConfiguration import (
-    AnalysisAttemptModel,
 )
 
 
@@ -29,72 +29,73 @@ class SqlAlchemyAnalysisAttemptRepository(AnalysisAttemptRepository):
         self,
         attempt_id: UUID,
     ) -> AnalysisAttempt | None:
-
         stmt = select(AnalysisAttemptModel).where(AnalysisAttemptModel.id == attempt_id)
-
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
-
         return None if model is None else to_domain(model)
 
     async def get_latest(
         self,
         session_id: UUID,
     ) -> AnalysisAttempt | None:
-
         stmt = (
             select(AnalysisAttemptModel)
             .where(AnalysisAttemptModel.session_id == session_id)
             .order_by(AnalysisAttemptModel.attempt_number.desc())
             .limit(1)
         )
-
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
-
         return None if model is None else to_domain(model)
 
     async def get_active(
         self,
         session_id: UUID,
     ) -> AnalysisAttempt | None:
-
-        stmt = select(AnalysisAttemptModel).where(
-            AnalysisAttemptModel.session_id == session_id,
-            AnalysisAttemptModel.status.in_(
-                [
-                    AnalysisAttemptStatus.PENDING,
-                    AnalysisAttemptStatus.RUNNING,
-                ]
-            ),
+        stmt = (
+            select(AnalysisAttemptModel)
+            .where(
+                AnalysisAttemptModel.session_id == session_id,
+                AnalysisAttemptModel.status.in_(
+                    [
+                        AnalysisAttemptStatus.QUEUED,
+                        AnalysisAttemptStatus.RUNNING,
+                    ]
+                ),
+            )
+            .order_by(AnalysisAttemptModel.attempt_number.desc())
+            .limit(1)
         )
-
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
-
         return None if model is None else to_domain(model)
+
+    async def get_current_by_session_id(
+        self,
+        session_id: UUID,
+    ) -> AnalysisAttempt | None:
+        active = await self.get_active(session_id)
+        if active is not None:
+            return active
+        return await self.get_latest(session_id)
 
     async def get_by_number(
         self,
         session_id: UUID,
         attempt_number: int,
     ) -> AnalysisAttempt | None:
-
         stmt = select(AnalysisAttemptModel).where(
             AnalysisAttemptModel.session_id == session_id,
             AnalysisAttemptModel.attempt_number == attempt_number,
         )
-
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
-
         return None if model is None else to_domain(model)
 
     async def get_next_attempt_number(
         self,
         session_id: UUID,
     ) -> int:
-
         stmt = select(
             func.coalesce(
                 func.max(AnalysisAttemptModel.attempt_number),
@@ -102,21 +103,20 @@ class SqlAlchemyAnalysisAttemptRepository(AnalysisAttemptRepository):
             )
             + 1
         ).where(AnalysisAttemptModel.session_id == session_id)
-
         result = await self._session.execute(stmt)
-
         return result.scalar_one()
 
     async def create(
         self,
         attempt: AnalysisAttempt,
     ) -> AnalysisAttempt:
-
         model = to_model(attempt)
-
         self._session.add(model)
-        await self._session.flush()
-
+        try:
+            await self._session.flush()
+        except IntegrityError as exc:
+            await self._session.rollback()
+            raise IdempotencyConflict("Analysis attempt already exists or conflict.") from exc
         return to_domain(model)
 
     async def update(
@@ -124,7 +124,6 @@ class SqlAlchemyAnalysisAttemptRepository(AnalysisAttemptRepository):
         attempt: AnalysisAttempt,
         expected_version: int,
     ) -> AnalysisAttempt:
-
         stmt = (
             update(AnalysisAttemptModel)
             .where(
@@ -143,16 +142,18 @@ class SqlAlchemyAnalysisAttemptRepository(AnalysisAttemptRepository):
                 idempotency_key=attempt.idempotency_key,
             )
         )
-
         result = cast(
             CursorResult[Any],
             await self._session.execute(stmt),
         )
-
         if result.rowcount != 1:
             raise StaleEntityVersion("Analysis attempt was modified concurrently.")
 
-        await self._session.flush()
+        try:
+            await self._session.flush()
+        except IntegrityError as exc:
+            await self._session.rollback()
+            raise IdempotencyConflict("Integrity conflict on analysis attempt update.") from exc
         attempt.version += 1
         return attempt
 
@@ -165,10 +166,8 @@ class SqlAlchemyAnalysisAttemptRepository(AnalysisAttemptRepository):
             AnalysisAttemptModel.session_id == session_id,
             AnalysisAttemptModel.idempotency_key == idempotency_key,
         )
-
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
-
         return None if model is None else to_domain(model)
 
     async def get_all_by_session_id(

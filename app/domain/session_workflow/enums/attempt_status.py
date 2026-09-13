@@ -2,7 +2,7 @@ from enum import StrEnum
 
 
 class AnalysisAttemptStatus(StrEnum):
-    PENDING = "pending"
+    QUEUED = "queued"
     RUNNING = "running"
     FAILED = "failed"
     COMPLETED = "completed"

@@ -31,7 +31,11 @@ class PracticeSessionModel(Base):
     )
 
     status: Mapped[SessionStatus] = mapped_column(
-        Enum(SessionStatus),
+        Enum(
+            SessionStatus,
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+            name="sessionstatus",
+        ),
         nullable=False,
     )
 
@@ -67,3 +71,10 @@ class PracticeSessionModel(Base):
         nullable=False,
         default=False,
     )
+    consent_policy_version: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    consent_confirmed_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    consent_confirmed_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    cancelled_by: Mapped[UUID | None] = mapped_column(ForeignKey("users.id"), nullable=True)
+    cancellation_reason: Mapped[str | None] = mapped_column(String(500), nullable=True)

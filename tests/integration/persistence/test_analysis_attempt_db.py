@@ -8,7 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.session_workflow.entities.analysis_attempt import AnalysisAttempt
 from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
-from app.domain.session_workflow.exceptions import StaleEntityVersion
+from app.domain.session_workflow.exceptions import IdempotencyConflict, StaleEntityVersion
 from app.infrastructure.persistence.configurations import (
     AssetModel,
     AssetVersionModel,
@@ -21,7 +21,7 @@ from app.infrastructure.persistence.configurations.session_workflow import (
     PracticeSessionModel,
     SessionManifestModel,
 )
-from app.infrastructure.repositories.session_workflow.sqlalcemyAnalysisAttemptRepository import (
+from app.infrastructure.repositories.session_workflow import (
     SqlAlchemyAnalysisAttemptRepository,
 )
 
@@ -149,7 +149,7 @@ async def create_test_attempt(
     session_id: UUID,
     *,
     attempt_number: int = 1,
-    status: AnalysisAttemptStatus = AnalysisAttemptStatus.PENDING,
+    status: AnalysisAttemptStatus = AnalysisAttemptStatus.QUEUED,
     idempotency_key: str | None = None,
 ) -> AnalysisAttempt:
     repository = SqlAlchemyAnalysisAttemptRepository(session)
@@ -269,14 +269,14 @@ async def test_get_active_returns_pending_attempt(
     attempt = await create_test_attempt(
         session,
         session_id,
-        status=AnalysisAttemptStatus.PENDING,
+        status=AnalysisAttemptStatus.QUEUED,
     )
 
     result = await repository.get_active(session_id)
 
     assert result is not None
     assert result.id == attempt.id
-    assert result.status == AnalysisAttemptStatus.PENDING
+    assert result.status == AnalysisAttemptStatus.QUEUED
 
 
 @pytest.mark.anyio
@@ -424,7 +424,7 @@ async def test_create_persists_attempt(
         manifest_id=manifest_id,
         idempotency_key="key-123",
         attempt_number=1,
-        status=AnalysisAttemptStatus.PENDING,
+        status=AnalysisAttemptStatus.QUEUED,
         failure_code=None,
         failure_message=None,
         created_at=now,
@@ -450,7 +450,7 @@ async def test_create_persists_attempt(
     assert persisted is not None
     assert persisted.session_id == session_id
     assert persisted.attempt_number == 1
-    assert persisted.status == AnalysisAttemptStatus.PENDING
+    assert persisted.status == AnalysisAttemptStatus.QUEUED
     assert persisted.idempotency_key == "key-123"
 
 
@@ -466,7 +466,7 @@ async def test_update_changes_attempt(
     attempt = await create_test_attempt(
         session,
         session_id,
-        status=AnalysisAttemptStatus.PENDING,
+        status=AnalysisAttemptStatus.QUEUED,
     )
 
     original_version = attempt.version
@@ -691,3 +691,82 @@ async def test_get_all_by_session_id_returns_none_cursor_on_last_page(
 
     assert len(result) == 1
     assert next_cursor is None
+
+
+@pytest.mark.anyio
+async def test_create_duplicate_attempt_number_raises_idempotency_conflict_and_resets_transaction(
+    async_db_session: AsyncSession,
+) -> None:
+    session = async_db_session
+    repository = SqlAlchemyAnalysisAttemptRepository(session)
+    session_id = uuid4()
+
+    attempt = await create_test_attempt(
+        session,
+        session_id,
+        attempt_number=1,
+    )
+    await session.commit()
+
+    duplicate_attempt = AnalysisAttempt(
+        id=uuid4(),
+        session_id=session_id,
+        manifest_id=attempt.manifest_id,
+        idempotency_key="diff-key",
+        attempt_number=1,
+        status=AnalysisAttemptStatus.QUEUED,
+        failure_code=None,
+        failure_message=None,
+        created_at=datetime.now(UTC),
+        started_at=None,
+        completed_at=None,
+        failed_at=None,
+        cancelled_at=None,
+        version=1,
+    )
+
+    with pytest.raises(IdempotencyConflict):
+        await repository.create(duplicate_attempt)
+
+    # Verify session is not poisoned and can execute further operations
+    fetched = await repository.get_by_id(attempt.id)
+    assert fetched is not None
+    assert fetched.id == attempt.id
+
+
+@pytest.mark.anyio
+async def test_create_attempt_with_128_char_idempotency_key_and_request_hash(
+    async_db_session: AsyncSession,
+) -> None:
+    session = async_db_session
+    repository = SqlAlchemyAnalysisAttemptRepository(session)
+    session_id = uuid4()
+    manifest_id = await ensure_attempt_parents(session, session_id)
+
+    key_128 = "k" * 128
+    hash_64 = "h" * 64
+    attempt = AnalysisAttempt(
+        id=uuid4(),
+        session_id=session_id,
+        manifest_id=manifest_id,
+        idempotency_key=key_128,
+        attempt_number=1,
+        status=AnalysisAttemptStatus.QUEUED,
+        failure_code=None,
+        failure_message=None,
+        created_at=datetime.now(UTC),
+        started_at=None,
+        completed_at=None,
+        failed_at=None,
+        cancelled_at=None,
+        version=1,
+        request_hash=hash_64,
+    )
+
+    created = await repository.create(attempt)
+    await session.commit()
+
+    fetched = await repository.get_by_id(created.id)
+    assert fetched is not None
+    assert fetched.idempotency_key == key_128
+    assert fetched.request_hash == hash_64

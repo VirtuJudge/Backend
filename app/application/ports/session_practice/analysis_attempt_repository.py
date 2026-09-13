@@ -20,6 +20,11 @@ class AnalysisAttemptRepository(Protocol):
         session_id: UUID,
     ) -> AnalysisAttempt | None: ...
 
+    async def get_current_by_session_id(
+        self,
+        session_id: UUID,
+    ) -> AnalysisAttempt | None: ...
+
     async def get_by_number(
         self,
         session_id: UUID,

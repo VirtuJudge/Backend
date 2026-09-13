@@ -8,6 +8,10 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.application.ports.project_repository import ProjectRepository
 from app.domain.erasure_request import ErasureRequest
 from app.domain.project import Project
+from app.infrastructure.persistence.configurations.asset_configuration import (
+    AssetModel,
+    AssetVersionModel,
+)
 from app.infrastructure.persistence.configurations.project_configuration import ProjectModel
 from app.infrastructure.persistence.configurations.project_erasure_request import (
     ProjectErasureRequestModel,
@@ -142,3 +146,77 @@ class SqlAlchemyProjectRepository(ProjectRepository):
         )
         result = await self.session.execute(stmt)
         return result.scalar() is not None
+
+    async def get_team_member_id(self, project_id: UUID, user_id: UUID) -> UUID | None:
+        stmt = (
+            select(TeamMemberModel.id)
+            .join(ProjectModel, ProjectModel.team_id == TeamMemberModel.team_id)
+            .where(
+                ProjectModel.id == project_id,
+                TeamMemberModel.user_id == user_id,
+            )
+        )
+        return (await self.session.execute(stmt)).scalar_one_or_none()
+
+    async def is_owner(self, project_id: UUID, user_id: UUID) -> bool:
+        stmt = select(ProjectModel.id).where(
+            ProjectModel.id == project_id,
+            ProjectModel.team.has(
+                TeamModel.members.any(
+                    (TeamMemberModel.user_id == user_id) & (TeamMemberModel.role == "owner")
+                )
+            ),
+        )
+        return (await self.session.scalar(stmt)) is not None
+
+    async def asset_versions_are_verified(
+        self,
+        project_id: UUID,
+        presentation_version_id: UUID,
+        document_version_ids: list[UUID] | None = None,
+    ) -> bool:
+        doc_ids = list(document_version_ids or [])
+        version_ids = [presentation_version_id, *doc_ids]
+        rows = list(
+            (
+                await self.session.execute(
+                    select(AssetVersionModel.id, AssetModel.kind)
+                    .join(AssetModel, AssetModel.id == AssetVersionModel.asset_id)
+                    .where(
+                        AssetVersionModel.id.in_(version_ids),
+                        AssetVersionModel.state == "verified",
+                        AssetModel.project_id == project_id,
+                    )
+                )
+            ).all()
+        )
+        kinds = {version_id: kind for version_id, kind in rows}
+        return (
+            len(kinds) == len(version_ids)
+            and kinds.get(presentation_version_id) == "presentation_video"
+            and all(kinds.get(doc_id) == "supporting_document" for doc_id in doc_ids)
+        )
+
+    async def get_asset_version_snapshots(
+        self,
+        version_ids: list[UUID],
+    ) -> dict[UUID, dict[str, Any]]:
+        rows = list(
+            (
+                await self.session.execute(
+                    select(
+                        AssetVersionModel.id,
+                        AssetVersionModel.asset_id,
+                        AssetVersionModel.checksum,
+                    ).where(AssetVersionModel.id.in_(version_ids))
+                )
+            ).all()
+        )
+        return {
+            row[0]: {
+                "asset_id": str(row[1]),
+                "asset_version_id": str(row[0]),
+                "checksum": row[2] or "",
+            }
+            for row in rows
+        }

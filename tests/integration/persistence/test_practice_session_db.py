@@ -17,7 +17,7 @@ from app.infrastructure.persistence.configurations import (
 from app.infrastructure.persistence.configurations.session_workflow import (
     PracticeSessionModel,
 )
-from app.infrastructure.repositories.session_workflow.sqlalchemyPracticeSessionRepository import (
+from app.infrastructure.repositories.session_workflow import (
     SqlAlchemyPracticeSessionRepository,
 )
 

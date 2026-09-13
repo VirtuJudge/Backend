@@ -1,10 +1,16 @@
 from datetime import datetime
+from typing import TYPE_CHECKING
 from uuid import UUID
 
 from sqlalchemy import DateTime, ForeignKey, String, UniqueConstraint
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.infrastructure.database import Base
+
+if TYPE_CHECKING:
+    from app.infrastructure.persistence.configurations.team_member_configuration import (
+        TeamMemberModel,
+    )
 
 
 class SpeakerMappingModel(Base):
@@ -43,4 +49,9 @@ class SpeakerMappingModel(Base):
     mapped_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True),
         nullable=False,
+    )
+
+    member: Mapped["TeamMemberModel | None"] = relationship(
+        "TeamMemberModel",
+        lazy="selectin",
     )

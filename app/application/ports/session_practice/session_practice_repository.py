@@ -10,6 +10,11 @@ class PracticeSessionRepository(Protocol):
         session_id: UUID,
     ) -> PracticeSession | None: ...
 
+    async def get_by_id_for_update(
+        self,
+        session_id: UUID,
+    ) -> PracticeSession | None: ...
+
     async def create(
         self,
         session: PracticeSession,

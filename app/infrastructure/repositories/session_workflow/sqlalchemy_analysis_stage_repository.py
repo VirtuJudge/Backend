@@ -14,7 +14,7 @@ from app.infrastructure.persistence.mappers.session_practice.analysis_stage_mapp
     to_domain,
 )
 
-from ...persistence.configurations.session_workflow.analysisStageConfiguration import (
+from ...persistence.configurations.session_workflow.analysis_stage_configuration import (
     AnalysisStageModel,
 )
 
@@ -40,3 +40,6 @@ class SQLAlchemyAnalysisStageRepository(AnalysisStageRepository):
             return None
 
         return to_domain(model)
+
+
+SqlAlchemyAnalysisStageRepository = SQLAlchemyAnalysisStageRepository

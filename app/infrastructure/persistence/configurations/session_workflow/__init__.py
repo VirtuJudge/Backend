@@ -1,9 +1,19 @@
-from .analysisAttemptConfiguration import AnalysisAttemptModel
-from .sessionManifestConfiguration import SessionManifestModel
-from .sessionPracticeConfiguration import PracticeSessionModel
+from .analysis_attempt_configuration import AnalysisAttemptModel
+from .analysis_job_configuration import AnalysisJobModel
+from .analysis_stage_configuration import AnalysisStageModel
+from .session_command_idempotency_configuration import SessionCommandIdempotencyModel
+from .session_manifest_configuration import SessionManifestModel
+from .session_manifest_document_configuration import SessionManifestDocumentModel
+from .session_practice_configuration import PracticeSessionModel
+from .speaker_mapping_configuration import SpeakerMappingModel
 
 __all__ = [
     "AnalysisAttemptModel",
+    "AnalysisJobModel",
+    "AnalysisStageModel",
+    "SessionCommandIdempotencyModel",
     "SessionManifestModel",
+    "SessionManifestDocumentModel",
     "PracticeSessionModel",
+    "SpeakerMappingModel",
 ]

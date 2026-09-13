@@ -32,7 +32,11 @@ class AnalysisAttemptModel(Base):
     )
 
     status: Mapped[AnalysisAttemptStatus] = mapped_column(
-        Enum(AnalysisAttemptStatus),
+        Enum(
+            AnalysisAttemptStatus,
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+            name="analysisattemptstatus",
+        ),
         nullable=False,
     )
 
@@ -68,8 +72,12 @@ class AnalysisAttemptModel(Base):
         nullable=False,
         default=1,
     )
-    idempotency_key: Mapped[str] = mapped_column(
-        String(100),
+    idempotency_key: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+    )
+    request_hash: Mapped[str | None] = mapped_column(
+        String(64),
         nullable=True,
     )
 
@@ -78,5 +86,10 @@ class AnalysisAttemptModel(Base):
             "session_id",
             "attempt_number",
             name="uq_session_attempt_number",
+        ),
+        UniqueConstraint(
+            "session_id",
+            "idempotency_key",
+            name="uq_analysis_attempt_idempotency_key",
         ),
     )

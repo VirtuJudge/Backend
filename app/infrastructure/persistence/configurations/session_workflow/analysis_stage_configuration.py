@@ -1,7 +1,7 @@
 from datetime import datetime
 from uuid import UUID
 
-from sqlalchemy import DateTime, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import DateTime, Enum, ForeignKey, Integer, String, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.domain.session_workflow.enums.stage_status import StageStatus
@@ -28,10 +28,20 @@ class AnalysisStageModel(Base):
     )
 
     stage: Mapped[StageType] = mapped_column(
+        Enum(
+            StageType,
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+            name="stagetype",
+        ),
         nullable=False,
     )
 
     status: Mapped[StageStatus] = mapped_column(
+        Enum(
+            StageStatus,
+            values_callable=lambda enum_cls: [e.value for e in enum_cls],
+            name="stagestatus",
+        ),
         nullable=False,
     )
 

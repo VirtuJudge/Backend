@@ -1,11 +1,13 @@
 from typing import Any, cast
 
-from fastapi import FastAPI, status
+from fastapi import FastAPI, HTTPException, status
 from fastapi.exception_handlers import request_validation_exception_handler
 from fastapi.exceptions import RequestValidationError
 from fastapi.requests import Request
 from fastapi.responses import JSONResponse
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
+from app.api.correlation import get_correlation_id
 from app.domain.asset import (
     AssetCompletionConflict,
     AssetConflict,
@@ -29,8 +31,11 @@ def problem_response(
     title: str,
     detail: str,
     instance: str,
+    trace_id: str | None = None,
 ) -> JSONResponse:
-    content = {
+    if trace_id is None:
+        trace_id = get_correlation_id()
+    content: dict[str, Any] = {
         "type": f"https://docs.virtujudge.org/problems/{code.replace('_', '-')}",
         "title": title,
         "status": status_code,
@@ -38,9 +43,15 @@ def problem_response(
         "instance": instance,
         "code": code,
     }
+    if trace_id is not None:
+        content["trace_id"] = trace_id
+    headers = {}
+    if trace_id is not None:
+        headers["X-Correlation-Id"] = trace_id
     return JSONResponse(
         status_code=status_code,
         content=content,
+        headers=headers,
         media_type="application/problem+json",
     )
 
@@ -154,21 +165,71 @@ def handle_asset_error(err: AssetDomainError, path: str) -> JSONResponse:
 async def asset_request_validation_handler(
     request: Request, exc: RequestValidationError
 ) -> JSONResponse:
-    if "/assets" in request.url.path:
+    if "/assets" in request.url.path or "/practice-sessions" in request.url.path:
+        trace_id = get_correlation_id() or getattr(request.state, "correlation_id", None)
+        content: dict[str, Any] = {
+            "type": "https://docs.virtujudge.org/problems/validation-failed",
+            "title": "Validation failed",
+            "status": 422,
+            "detail": "The request parameters failed validation.",
+            "instance": request.url.path,
+            "code": "validation_failed",
+        }
+        if trace_id is not None:
+            content["trace_id"] = trace_id
+        headers = {}
+        if trace_id is not None:
+            headers["X-Correlation-Id"] = trace_id
         return JSONResponse(
             status_code=422,
-            content={
-                "type": "https://docs.virtujudge.org/problems/validation-failed",
-                "title": "Validation failed",
-                "status": 422,
-                "detail": "The request parameters failed validation.",
-                "instance": request.url.path,
-                "code": "validation_failed",
-            },
+            content=content,
+            headers=headers,
             media_type="application/problem+json",
         )
     return await request_validation_exception_handler(request, exc)
 
 
+async def http_exception_handler(
+    request: Request, exc: HTTPException | StarletteHTTPException
+) -> JSONResponse:
+    trace_id = get_correlation_id() or getattr(request.state, "correlation_id", None)
+    status_code = exc.status_code
+    if status_code == 401:
+        code = "unauthorized"
+        title = "Unauthorized"
+    elif status_code == 403:
+        code = "forbidden"
+        title = "Forbidden"
+    elif status_code == 404:
+        code = "not_found"
+        title = "Resource not found"
+    else:
+        code = f"http_{status_code}"
+        title = "HTTP error"
+
+    detail = str(exc.detail) if exc.detail else title
+    content: dict[str, Any] = {
+        "type": f"https://docs.virtujudge.org/problems/{code.replace('_', '-')}",
+        "title": title,
+        "status": status_code,
+        "detail": detail,
+        "instance": request.url.path,
+        "code": code,
+    }
+    if trace_id is not None:
+        content["trace_id"] = trace_id
+    headers = dict(exc.headers or {})
+    if trace_id is not None:
+        headers["X-Correlation-Id"] = trace_id
+    return JSONResponse(
+        status_code=status_code,
+        content=content,
+        headers=headers,
+        media_type="application/problem+json",
+    )
+
+
 def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(RequestValidationError, cast(Any, asset_request_validation_handler))
+    app.add_exception_handler(HTTPException, cast(Any, http_exception_handler))
+    app.add_exception_handler(StarletteHTTPException, cast(Any, http_exception_handler))

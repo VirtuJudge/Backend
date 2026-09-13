@@ -9,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from app.api.correlation import CorrelationIdMiddleware
 from app.api.errors import register_error_handlers
 from app.api.routes import routers
 from app.application.ports import ProjectRepository
@@ -38,19 +39,11 @@ from app.infrastructure.documents.document_verifier import DocumentVerifier
 from app.infrastructure.mail import create_mail_sender
 from app.infrastructure.media.ffmpeg_verifier import FFmpegMediaVerifier
 from app.infrastructure.redis.rate_limiter import RedisRateLimiter
-from app.infrastructure.repositories.session_workflow.sqlalcemyAnalysisAttemptRepository import (
+from app.infrastructure.repositories.session_workflow import (
     SqlAlchemyAnalysisAttemptRepository,
-)
-from app.infrastructure.repositories.session_workflow.sqlalchemyAnalysisJobRepository import (
     SqlAlchemyAnalysisJobRepository,
-)
-from app.infrastructure.repositories.session_workflow.sqlalchemyPracticeSessionRepository import (
     SqlAlchemyPracticeSessionRepository,
-)
-from app.infrastructure.repositories.session_workflow.sqlalchemySessionManifestRepository import (
     SqlAlchemySessionManifestRepository,
-)
-from app.infrastructure.repositories.session_workflow.sqlalchemyUnitOfWork import (
     SqlAlchemyUnitOfWork,
 )
 from app.infrastructure.repositories.sqlalchemy_asset_repository import (
@@ -135,6 +128,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             await engine.dispose()
 
     application = FastAPI(title=resolved_settings.app_name, lifespan=lifespan)
+    application.add_middleware(CorrelationIdMiddleware)
     allowed_origins = resolved_settings.allowed_cors_origins()
     if allowed_origins:
         application.add_middleware(
@@ -142,7 +136,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             allow_origins=allowed_origins,
             allow_credentials=True,
             allow_methods=["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"],
-            allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "If-Match"],
+            allow_headers=[
+                "Authorization",
+                "Content-Type",
+                "Idempotency-Key",
+                "If-Match",
+                "X-Correlation-Id",
+            ],
+            expose_headers=["ETag", "Location", "X-Correlation-Id"],
         )
     application.state.session_factory = session_factory
     application.state.session_dependency = infrastructure_get_session

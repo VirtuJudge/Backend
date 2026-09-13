@@ -1,6 +1,6 @@
 from app.domain.session_workflow.entities.analysis_stage import AnalysisStage
 
-from ...configurations.session_workflow.analysisStageConfiguration import (
+from ...configurations.session_workflow.analysis_stage_configuration import (
     AnalysisStageModel,
 )
 

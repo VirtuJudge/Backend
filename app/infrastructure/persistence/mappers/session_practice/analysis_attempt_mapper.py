@@ -2,7 +2,7 @@ from app.domain.session_workflow.entities.analysis_attempt import (
     AnalysisAttempt,
 )
 
-from ...configurations.session_workflow.analysisAttemptConfiguration import (
+from ...configurations.session_workflow.analysis_attempt_configuration import (
     AnalysisAttemptModel,
 )
 
@@ -23,6 +23,7 @@ def to_domain(model: AnalysisAttemptModel) -> AnalysisAttempt:
         cancelled_at=model.cancelled_at,
         version=model.version,
         idempotency_key=model.idempotency_key,
+        request_hash=model.request_hash,
     )
 
 
@@ -42,4 +43,5 @@ def to_model(entity: AnalysisAttempt) -> AnalysisAttemptModel:
         cancelled_at=entity.cancelled_at,
         version=entity.version,
         idempotency_key=entity.idempotency_key,
+        request_hash=entity.request_hash,
     )

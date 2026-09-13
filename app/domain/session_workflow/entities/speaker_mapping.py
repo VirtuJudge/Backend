@@ -11,3 +11,4 @@ class SpeakerMapping:
     member_id: UUID | None
     mapped_by: UUID
     mapped_at: datetime
+    user_id: UUID | None = None
