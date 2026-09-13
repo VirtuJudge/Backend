@@ -298,10 +298,10 @@ class SessionWorkflow:
     async def start_analysis() -> None:
         return None
 
-    async def submit_answer()-> None:
+    async def submit_answer() -> None:
         return None
 
-    async def skip_answer()-> None:
+    async def skip_answer() -> None:
         return None
 
     async def retry(

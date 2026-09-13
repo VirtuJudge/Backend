@@ -1,8 +1,9 @@
 from datetime import UTC, datetime
+from typing import cast
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy import cast, select
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.session_workflow.entities.session_practice import PracticeSession
