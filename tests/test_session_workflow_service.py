@@ -385,7 +385,7 @@ async def test_get_analysis_attempts_returns_attempts(
         "next-cursor",
     )
 
-    result, cursor = await workflow.get_analysis_attempts(
+    result, cursor = await workflow.get_analysis_attemptss(
         session_id=practice_session.id,
         actor_id=actor_id,
         cursor="cursor",

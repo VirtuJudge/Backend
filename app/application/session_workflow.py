@@ -295,15 +295,6 @@ class SessionWorkflow:
                 limit=limit,
             )
 
-    async def start_analysis() -> None:
-        return None
-
-    async def submit_answer() -> None:
-        return None
-
-    async def skip_answer() -> None:
-        return None
-
     async def retry(
         self,
         session_id: UUID,
