@@ -16,7 +16,11 @@ class Settings(BaseSettings):
     )
     redis_url: str = "redis://localhost:6379/0"
     redis_cache_url: str = "redis://localhost:6379/1"
+    celery_broker_url: str | None = None
+    ai_worker_task_name: str = "app.worker.process_job"
+    ai_worker_queue_name: str = "ai_jobs"
     object_storage_endpoint: str = "http://localhost:9000"
+
     object_storage_public_endpoint: str | None = None
     object_storage_bucket: str = "virtujudge"
     object_storage_region: str = "us-east-1"
@@ -55,3 +59,7 @@ class Settings(BaseSettings):
             for origin in self.cors_allowed_origins.split(",")
             if origin.strip()
         ]
+
+    @property
+    def effective_celery_broker_url(self) -> str:
+        return self.celery_broker_url or self.redis_url
