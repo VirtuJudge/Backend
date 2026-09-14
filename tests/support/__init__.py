@@ -14,10 +14,14 @@ from .documents import (
     make_pdf,
 )
 from .fakes import (
+    FakeAIJobQueue,
+    FakeAIQueue,
     FakeAssetRepository,
     FakeObjectStorage,
     FakeTokenVerifier,
     FakeUserService,
+    RecordingAIJobQueue,
+    RecordingAIQueue,
     RecordingStorage,
 )
 from .smoke import FakeConnection, FakeCursor, FakeSyncRedis
@@ -38,6 +42,10 @@ __all__ = [
     "RecordingStorage",
     "FakeTokenVerifier",
     "FakeUserService",
+    "FakeAIJobQueue",
+    "RecordingAIJobQueue",
+    "FakeAIQueue",
+    "RecordingAIQueue",
     "create_test_client",
     "FakeCursor",
     "FakeConnection",
