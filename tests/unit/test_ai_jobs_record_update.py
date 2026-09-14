@@ -20,6 +20,7 @@ from app.application.ai_job_contracts import (
     StartedPayload,
 )
 from app.application.ai_jobs import AIJobs
+from app.application.session_notification_contracts import NotificationEventName
 from app.domain.session_workflow.entities.analysis_attempt import AnalysisAttempt
 from app.domain.session_workflow.entities.analysis_job import (
     AIJobAncestryContext,
@@ -36,6 +37,7 @@ from app.domain.session_workflow.exceptions import (
 )
 from tests.support.fake_analysis_attempt_repository import FakeAnalysisAttemptRepository
 from tests.support.fake_analysis_job_repository import FakeAnalysisJobRepository, FakeUnitOfWork
+from tests.support.fake_session_notifications import FakeSessionNotifications
 
 
 def _valid_completed_session_payload() -> SessionAnalysisCompletedPayload:
@@ -264,6 +266,38 @@ async def test_allowed_running_to_progress() -> None:
     }
     assert attempt.status == AnalysisAttemptStatus.RUNNING
     assert uow.commit_count == 1
+
+
+@pytest.mark.asyncio
+async def test_progress_publishes_one_safe_notification() -> None:
+    job, _, uow, _ = _build_attempt_and_job(
+        job_status=AnalysisJobStatus.RUNNING,
+        attempt_status=AnalysisAttemptStatus.RUNNING,
+        last_update_sequence=1,
+    )
+    notifications = FakeSessionNotifications()
+    service = AIJobs(uow, notifications=notifications)
+    update = _make_update(
+        AIWorkerUpdateStatus.PROGRESS,
+        sequence=2,
+        payload=ProgressPayload(
+            stage="private-provider-stage",
+            progress=0.6,
+            message="private provider message",
+        ),
+    )
+
+    await service.record_update(job.id, update)
+    await service.record_update(job.id, update)
+
+    events = (await notifications.replay(str(job.practice_session_id), 0)).events
+    assert len(events) == 1
+    event = events[0]
+    assert event.event_name == NotificationEventName.PRACTICE_SESSION_ANALYSIS_PROGRESSED
+    data = event.model_dump()
+    assert data["stage"] == "processing"
+    assert data["progress"] == 0.6
+    assert "message" not in data
 
 
 @pytest.mark.asyncio

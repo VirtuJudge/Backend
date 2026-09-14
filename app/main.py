@@ -42,6 +42,7 @@ from app.infrastructure.mail import create_mail_sender
 from app.infrastructure.media.ffmpeg_verifier import FFmpegMediaVerifier
 from app.infrastructure.queues.celery_ai_job_queue import CeleryAIJobQueue
 from app.infrastructure.redis.rate_limiter import RedisRateLimiter
+from app.infrastructure.redis.session_notifications import RedisSessionNotifications
 from app.infrastructure.repositories.session_workflow import (
     SqlAlchemyAnalysisAttemptRepository,
     SqlAlchemyAnalysisJobRepository,
@@ -207,6 +208,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "Content-Type",
                 "Idempotency-Key",
                 "If-Match",
+                "Last-Event-ID",
                 "X-Correlation-Id",
             ],
             expose_headers=["ETag", "Location", "X-Correlation-Id"],
@@ -235,11 +237,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         decode_responses=True,
     )
     application.state.redis = RedisRateLimiter(redis)
+    application.state.session_notifications = RedisSessionNotifications(
+        redis,
+        max_events=resolved_settings.session_event_max_events,
+        retention_seconds=resolved_settings.session_event_retention_seconds,
+    )
     for router in routers:
         application.include_router(router)
     application.state.mail_sender = create_mail_sender(resolved_settings)
     application.state.ai_job_queue = CeleryAIJobQueue.from_settings(resolved_settings)
-    application.state.ai_jobs_factory = lambda uow, queue: AIJobs(uow, queue=queue)
+    application.state.ai_jobs_factory = lambda uow, queue: AIJobs(
+        uow,
+        queue=queue,
+        notifications=application.state.session_notifications,
+    )
 
     async def run_ai_job_dispatcher_iteration() -> RedispatchResult:
         return await _run_dispatcher_iteration(application)

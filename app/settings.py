@@ -16,6 +16,8 @@ class Settings(BaseSettings):
     )
     redis_url: str = "redis://localhost:6379/0"
     redis_cache_url: str = "redis://localhost:6379/1"
+    session_event_max_events: int = Field(default=1000, ge=1)
+    session_event_retention_seconds: int = Field(default=86400, ge=1)
     celery_broker_url: str | None = None
     ai_worker_task_name: str = "app.worker.process_job"
     ai_worker_queue_name: str = "ai_jobs"

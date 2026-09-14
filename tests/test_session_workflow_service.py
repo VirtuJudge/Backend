@@ -44,6 +44,7 @@ from app.domain.session_workflow.exceptions import (
     UnverifiedAsset,
 )
 from tests.support.fake_ai_job_queue import FakeAIJobQueue
+from tests.support.fake_session_notifications import FakeSessionNotifications
 
 
 @pytest.fixture
@@ -117,10 +118,20 @@ def uow() -> MagicMock:
 
 
 @pytest.fixture
-def workflow(uow: MagicMock) -> SessionWorkflow:
+def notifications() -> FakeSessionNotifications:
+    return FakeSessionNotifications()
+
+
+@pytest.fixture
+def workflow(uow: MagicMock, notifications: FakeSessionNotifications) -> SessionWorkflow:
     reader = MagicMock()
     reader.get_speaker_labels = AsyncMock(return_value={"SPEAKER_00", "SPEAKER_01"})
-    return SessionWorkflow(uow, diarization_reader=reader)
+    return SessionWorkflow(
+        uow,
+        diarization_reader=reader,
+        notifications=notifications,
+        trace_id="trace-test",
+    )
 
 
 @pytest.fixture
@@ -204,6 +215,51 @@ async def test_create_session_creates_session_and_manifest(
     uow.sessions.create.assert_awaited_once()
     uow.manifests.create.assert_awaited_once()
     uow.commit.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_create_session_publishes_after_commit(
+    workflow: SessionWorkflow,
+    uow: MagicMock,
+    notifications: FakeSessionNotifications,
+    project_id: UUID,
+    actor_id: UUID,
+) -> None:
+    uow.projects.get_by_id.return_value = MagicMock()
+
+    session = await workflow.create_session(
+        project_id=project_id,
+        actor_id=actor_id,
+        name="My Session",
+        presentation_asset_version_id=uuid4(),
+    )
+
+    events = (await notifications.replay(str(session.id), 0)).events
+    assert len(events) == 1
+    assert events[0].state == SessionStatus.DRAFT  # type: ignore[attr-defined]
+
+
+@pytest.mark.anyio
+async def test_notification_failure_does_not_fail_committed_session(
+    uow: MagicMock,
+    project_id: UUID,
+    actor_id: UUID,
+) -> None:
+    notifications = MagicMock()
+    notifications.publish = AsyncMock(side_effect=RuntimeError("unavailable"))
+    workflow = SessionWorkflow(uow, notifications=notifications)
+    uow.projects.get_by_id.return_value = MagicMock()
+
+    result = await workflow.create_session(
+        project_id=project_id,
+        actor_id=actor_id,
+        name="My Session",
+        presentation_asset_version_id=uuid4(),
+    )
+
+    assert result.status == SessionStatus.DRAFT
+    uow.commit.assert_awaited_once()
+    notifications.publish.assert_awaited_once()
 
 
 @pytest.mark.anyio

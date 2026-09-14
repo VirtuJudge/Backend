@@ -1,16 +1,22 @@
 import contextlib
 import hashlib
+import logging
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
 from app.application.ai_jobs import AIJobs
 from app.application.ports.ai_job_queue import AIJobQueuePort
+from app.application.ports.session_notification import (
+    PendingSessionNotification,
+    SessionNotificationPort,
+)
 from app.application.ports.session_practice.diarization_result_reader import (
     DiarizationResultReader,
     NullDiarizationResultReader,
 )
 from app.application.ports.session_practice.unit_of_work_repository import UnitOfWork
+from app.application.session_notification_contracts import NotificationEventName
 from app.domain.project import ProjectNotFoundError
 from app.domain.session_workflow.entities.analysis_attempt import AnalysisAttempt
 from app.domain.session_workflow.entities.session_command_idempotency import (
@@ -40,6 +46,7 @@ from app.domain.session_workflow.exceptions import (
 )
 
 CURRENT_CONSENT_POLICY_VERSION = 1
+logger = logging.getLogger(__name__)
 
 
 class SessionWorkflow:
@@ -49,6 +56,8 @@ class SessionWorkflow:
         ai_jobs: AIJobs | None = None,
         diarization_reader: DiarizationResultReader | None = None,
         queue: AIJobQueuePort | None = None,
+        notifications: SessionNotificationPort | None = None,
+        trace_id: str = "unknown",
     ) -> None:
         self._uow = uow
         if ai_jobs is not None:
@@ -58,6 +67,37 @@ class SessionWorkflow:
         else:
             self._ai_jobs = AIJobs(uow, queue=queue)
         self._diarization_reader = diarization_reader or NullDiarizationResultReader()
+        self._notifications = notifications
+        self._trace_id = trace_id
+
+    async def _publish_session_update(
+        self,
+        session: PracticeSession,
+        *,
+        current_attempt: int | None = None,
+    ) -> None:
+        if self._notifications is None:
+            return
+        try:
+            await self._notifications.publish(
+                PendingSessionNotification(
+                    event_name=NotificationEventName.PRACTICE_SESSION_UPDATED,
+                    practice_session_id=str(session.id),
+                    occurred_at=session.updated_at,
+                    trace_id=self._trace_id,
+                    payload={
+                        "version": session.version,
+                        "state": session.status.value,
+                        "current_attempt": current_attempt,
+                    },
+                )
+            )
+        except Exception as exc:
+            logger.warning(
+                "Session notification publication failed for %s: %s",
+                session.id,
+                type(exc).__name__,
+            )
 
     async def _authorize_member(
         self, uow: UnitOfWork, session: PracticeSession, actor_id: UUID
@@ -157,6 +197,7 @@ class SessionWorkflow:
             await uow.sessions.create(session)
             await uow.manifests.create(manifest)
             await uow.commit()
+            await self._publish_session_update(session)
             return session
 
     async def get_session(self, session_id: UUID, actor_id: UUID) -> PracticeSession:
@@ -243,6 +284,7 @@ class SessionWorkflow:
             await uow.sessions.update(session, expected_version=expected_version)
             await uow.manifests.update(manifest)
             await uow.commit()
+            await self._publish_session_update(session)
             return session
 
     async def create_analysis_attempt(
@@ -368,6 +410,8 @@ class SessionWorkflow:
                     "Another analysis attempt was created concurrently."
                 ) from err
 
+            await self._publish_session_update(session, current_attempt=attempt.attempt_number)
+
             with contextlib.suppress(Exception):
                 await self._ai_jobs.dispatch(job, now=now)
 
@@ -461,6 +505,8 @@ class SessionWorkflow:
                     "Another retry attempt was created concurrently."
                 ) from err
 
+            await self._publish_session_update(session, current_attempt=attempt.attempt_number)
+
             with contextlib.suppress(Exception):
                 await self._ai_jobs.dispatch(job, now=now)
 
@@ -545,6 +591,7 @@ class SessionWorkflow:
 
                 await uow.sessions.update(session, expected_version=session.version)
                 await uow.commit()
+                await self._publish_session_update(session)
                 return session
             except (IdempotencyConflict, StaleEntityVersion) as err:
                 await uow.rollback()

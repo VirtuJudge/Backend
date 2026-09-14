@@ -3,10 +3,14 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
+from fastapi import Request
+from fastapi.responses import StreamingResponse
 from httpx import ASGITransport, AsyncClient
 
 from app.api.dependencies.auth import get_current_user
+from app.api.dependencies.session_notifications import get_session_notifications
 from app.api.dependencies.session_workflow import get_session_workflow
+from app.api.routes.session_practice import stream_practice_session_events
 from app.application.session_workflow import SessionWorkflow
 from app.domain.session_workflow.entities.analysis_attempt import AnalysisAttempt
 from app.domain.session_workflow.entities.session_practice import PracticeSession
@@ -25,11 +29,13 @@ from app.domain.session_workflow.exceptions import (
     SessionNotFoundError,
     SessionNotReadyError,
     StaleEntityVersion,
+    UnauthorizedSessionAction,
     UnverifiedAsset,
 )
 from app.domain.user import User
 from app.main import create_app
 from app.settings import Settings
+from tests.support.fake_session_notifications import FakeSessionNotifications
 
 
 def _create_user() -> User:
@@ -114,6 +120,8 @@ def client(workflow_mock: MagicMock, current_user: User) -> AsyncClient:
     app = create_app(settings)
     app.dependency_overrides[get_current_user] = lambda: current_user
     app.dependency_overrides[get_session_workflow] = lambda: workflow_mock
+    notification_store = FakeSessionNotifications()
+    app.dependency_overrides[get_session_notifications] = lambda: notification_store
 
     transport = ASGITransport(app=app)
     return AsyncClient(transport=transport, base_url="http://test")
@@ -177,6 +185,89 @@ async def test_get_practice_session_returns_404_when_not_found(
     data = response.json()
     assert data["code"] == "not_found"
     assert data["status"] == 404
+
+
+@pytest.mark.anyio
+async def test_session_event_stream_authorizes_before_streaming(
+    workflow_mock: MagicMock, current_user: User
+) -> None:
+    session = _create_session(status=SessionStatus.ANALYZING)
+    workflow_mock.get_session.return_value = session
+    request = Request(
+        {
+            "type": "http",
+            "method": "GET",
+            "scheme": "http",
+            "path": f"/api/v1/practice-sessions/{session.id}/events",
+            "raw_path": b"/api/v1/practice-sessions/events",
+            "query_string": b"",
+            "headers": [],
+            "server": ("test", 80),
+        }
+    )
+
+    response = await stream_practice_session_events(
+        session_id=session.id,
+        raw_request=request,
+        last_event_id="0",
+        current_user=current_user,
+        workflow=workflow_mock,
+        notifications=FakeSessionNotifications(),
+    )
+
+    assert isinstance(response, StreamingResponse)
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert response.headers["cache-control"] == "no-cache"
+    assert response.headers["x-accel-buffering"] == "no"
+    workflow_mock.get_session.assert_awaited_once_with(
+        session_id=session.id, actor_id=current_user.id
+    )
+
+
+@pytest.mark.anyio
+async def test_session_event_stream_rejects_invalid_last_event_id(
+    client: AsyncClient, workflow_mock: MagicMock
+) -> None:
+    session_id = uuid4()
+
+    async with client:
+        response = await client.get(
+            f"/api/v1/practice-sessions/{session_id}/events",
+            headers={"Last-Event-ID": "invalid"},
+        )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "invalid_last_event_id"
+    workflow_mock.get_session.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_session_event_stream_rejects_query_access_token(
+    client: AsyncClient, workflow_mock: MagicMock
+) -> None:
+    async with client:
+        response = await client.get(
+            f"/api/v1/practice-sessions/{uuid4()}/events",
+            params={"access_token": "must-not-appear-in-a-url"},
+        )
+
+    assert response.status_code == 401
+    assert response.headers["content-type"] == "application/problem+json"
+    assert response.json()["code"] == "invalid_token"
+    workflow_mock.get_session.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_session_event_stream_rejects_outsider(
+    client: AsyncClient, workflow_mock: MagicMock
+) -> None:
+    workflow_mock.get_session.side_effect = UnauthorizedSessionAction("Not a team member")
+
+    async with client:
+        response = await client.get(f"/api/v1/practice-sessions/{uuid4()}/events")
+
+    assert response.status_code == 403
 
 
 @pytest.mark.anyio
