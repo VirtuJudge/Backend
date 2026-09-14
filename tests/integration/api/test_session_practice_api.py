@@ -6,6 +6,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.api.dependencies.auth import get_current_user
+from app.api.dependencies.session_notifications import get_session_notifications
 from app.api.dependencies.session_workflow import get_session_workflow
 from app.application.session_workflow import SessionWorkflow
 from app.domain.session_workflow.entities.analysis_attempt import AnalysisAttempt
@@ -31,6 +32,7 @@ from app.domain.session_workflow.exceptions import (
 from app.domain.user import User
 from app.main import create_app
 from app.settings import Settings
+from tests.support.fake_session_notifications import FakeSessionNotifications
 
 
 def _create_user() -> User:
@@ -115,6 +117,7 @@ def client(workflow_mock: MagicMock, current_user: User) -> AsyncClient:
     app = create_app(settings)
     app.dependency_overrides[get_current_user] = lambda: current_user
     app.dependency_overrides[get_session_workflow] = lambda: workflow_mock
+    app.dependency_overrides[get_session_notifications] = FakeSessionNotifications
 
     transport = ASGITransport(app=app)
     return AsyncClient(transport=transport, base_url="http://test")

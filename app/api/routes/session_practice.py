@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 
 from app.api.dependencies.auth import get_current_user
+from app.api.dependencies.session_notifications import get_session_notifications
 from app.api.dependencies.session_workflow import get_session_workflow
 from app.api.errors import problem_response
 from app.api.schemas.session_practice import (
@@ -25,6 +26,8 @@ from app.api.schemas.speaker_mapping import (
     SpeakerMappingResponse,
     UpdateSpeakerMappingsRequest,
 )
+from app.api.session_event_stream import stream_live_session_events
+from app.application.ports.session_notification import SessionNotificationPort
 from app.application.session_workflow import SessionWorkflow
 from app.domain.project import ProjectNotFoundError
 from app.domain.session_workflow.entities.session_practice import PracticeSession
@@ -241,7 +244,9 @@ async def stream_practice_session_events(
     last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
     current_user: User = Depends(get_current_user),
     workflow: SessionWorkflow = Depends(get_session_workflow),
+    notifications: SessionNotificationPort = Depends(get_session_notifications),
 ) -> Any:
+    parsed_last_event_id = 0
     if last_event_id is not None:
         try:
             parsed_last_event_id = int(last_event_id)
@@ -275,8 +280,13 @@ async def stream_practice_session_events(
             raw_request.url.path,
         )
 
-    return Response(
-        content="",
+    return StreamingResponse(
+        stream_live_session_events(
+            raw_request,
+            notifications,
+            str(session_id),
+            parsed_last_event_id,
+        ),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
