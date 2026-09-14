@@ -100,6 +100,7 @@ the API and a private, same-region Key Value instance. Render prompts for every 
 | `OIDC_ISSUER` | Exact issuer from the authentication provider |
 | `OIDC_AUDIENCE` | API audience expected in access tokens |
 | `OIDC_JWKS_URL` | Provider's JWKS URL |
+| `AI_WORKER_SHARED_SECRET` | Shared secret token used to authenticate AI worker callback endpoints (generate via `openssl rand -hex 32`) |
 | `FRONTEND_URL` | Frontend origin, without a trailing slash |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated browser origins, without paths |
 | `RESEND_API_KEY` | Resend sending-access key beginning with `re_` |
