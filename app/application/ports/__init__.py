@@ -29,6 +29,7 @@ from app.application.ports.team_invitation_repository import TeamInvitationRepos
 from app.application.ports.team_member_repository import TeamMemberRepository
 from app.application.ports.team_repository import TeamRepository
 from app.application.ports.user_repository import UserRepository
+from app.application.ports.worker_auth import WorkerAuthVerifier
 
 __all__ = [
     "AIJobQueueAccepted",
@@ -54,4 +55,5 @@ __all__ = [
     "SessionManifestRepository",
     "AnalysisJobRepository",
     "AnalysisStageRepository",
+    "WorkerAuthVerifier",
 ]

@@ -34,6 +34,7 @@ from app.application.services.team_invitation_service import TeamInvitationServi
 from app.application.services.team_service import TeamService
 from app.application.services.user_service import UserService
 from app.infrastructure.auth.provider import create_token_verifier
+from app.infrastructure.auth.worker_auth import create_worker_auth_verifier
 from app.infrastructure.database import create_database_engine
 from app.infrastructure.database import get_session as infrastructure_get_session
 from app.infrastructure.documents.document_verifier import DocumentVerifier
@@ -213,6 +214,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.state.session_factory = session_factory
     application.state.session_dependency = infrastructure_get_session
     application.state.token_verifier = create_token_verifier(resolved_settings)
+    application.state.worker_auth_verifier = create_worker_auth_verifier(resolved_settings)
     application.state.user_service_factory = user_service_factory
     application.state.team_service_factory = team_service_factory
     application.state.project_service_factory = project_service_factory
