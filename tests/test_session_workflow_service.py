@@ -14,6 +14,8 @@ from app.application.ai_job_contracts import (
     AIJobType,
     AnalyzeSessionPayload,
 )
+from app.application.ai_jobs import AIJobs
+from app.application.ports.ai_queue import AIJobQueueTemporaryFailure
 from app.application.session_workflow import CURRENT_CONSENT_POLICY_VERSION, SessionWorkflow
 from app.domain.project import ProjectNotFoundError
 from app.domain.session_workflow.entities.analysis_attempt import AnalysisAttempt
@@ -41,6 +43,7 @@ from app.domain.session_workflow.exceptions import (
     UnauthorizedSessionAction,
     UnverifiedAsset,
 )
+from tests.support.fake_ai_job_queue import FakeAIJobQueue
 
 
 @pytest.fixture
@@ -91,6 +94,9 @@ def uow() -> MagicMock:
 
     uow.jobs.create = AsyncMock()
     uow.jobs.get_by_attempt_id = AsyncMock(return_value=None)
+    uow.jobs.get_by_id = AsyncMock(return_value=None)
+    uow.jobs.change_pending_to_queued = AsyncMock(return_value=None)
+    uow.jobs.record_dispatch_failure = AsyncMock(return_value=None)
     uow.jobs.update = AsyncMock()
 
     uow.speaker_mappings = MagicMock()
@@ -1574,3 +1580,440 @@ async def test_retry_produces_contract_valid_message(
     assert parsed.practice_session_id == str(practice_session.id)
     assert parsed.analysis_attempt == 2
     assert parsed.trace_id.startswith("trc_")
+
+
+@pytest.mark.anyio
+async def test_create_analysis_attempt_dispatches_job_to_queue_after_commit(
+    uow: MagicMock,
+    practice_session: PracticeSession,
+    manifest: SessionManifest,
+    actor_id: UUID,
+) -> None:
+    practice_session.status = SessionStatus.READY
+    manifest.session_id = practice_session.id
+    manifest.frozen_at = None
+
+    uow.sessions.get_by_id.return_value = practice_session
+    uow.manifests.get_by_session_id.return_value = manifest
+    uow.attempts.get_by_idempotency_key.return_value = None
+    uow.projects.asset_versions_are_verified.return_value = True
+
+    queue = FakeAIJobQueue()
+    workflow = SessionWorkflow(uow, queue=queue)
+
+    async def _mock_change_queued(jid: UUID, now_dt: datetime) -> AnalysisJob:
+        created_job: AnalysisJob = uow.jobs.create.call_args[0][0]
+        created_job.status = AnalysisJobStatus.QUEUED
+        created_job.queued_at = now_dt
+        created_job.updated_at = now_dt
+        return created_job
+
+    uow.jobs.change_pending_to_queued.side_effect = _mock_change_queued
+
+    result = await workflow.create_analysis_attempt(
+        session_id=practice_session.id,
+        actor_id=actor_id,
+        idempotency_key="key-dispatch-success",
+        consent_accepted=True,
+        consent_policy_version=CURRENT_CONSENT_POLICY_VERSION,
+    )
+
+    assert result.session_id == practice_session.id
+    assert queue.count == 1
+    enqueued = queue.last_message
+    assert enqueued is not None
+    assert str(enqueued.job_id) == str(uow.jobs.create.call_args[0][0].id)
+    assert enqueued.practice_session_id == str(practice_session.id)
+    assert enqueued.analysis_attempt == 1
+
+    uow.jobs.change_pending_to_queued.assert_awaited_once()
+    assert uow.commit.await_count == 2
+    created_job: AnalysisJob = uow.jobs.create.call_args[0][0]
+    assert created_job.status == AnalysisJobStatus.QUEUED
+
+
+@pytest.mark.anyio
+async def test_create_analysis_attempt_call_ordering_database_commits_before_queue(
+    uow: MagicMock,
+    practice_session: PracticeSession,
+    manifest: SessionManifest,
+    actor_id: UUID,
+) -> None:
+    practice_session.status = SessionStatus.READY
+    manifest.session_id = practice_session.id
+    manifest.frozen_at = None
+
+    uow.sessions.get_by_id.return_value = practice_session
+    uow.manifests.get_by_session_id.return_value = manifest
+    uow.attempts.get_by_idempotency_key.return_value = None
+    uow.projects.asset_versions_are_verified.return_value = True
+
+    call_order: list[str] = []
+
+    async def _logging_commit() -> None:
+        call_order.append("db_commit")
+
+    uow.commit.side_effect = _logging_commit
+
+    class LoggingFakeAIJobQueue(FakeAIJobQueue):
+        async def enqueue(self, *args: Any, **kwargs: Any) -> Any:
+            call_order.append("queue_enqueue")
+            return await super().enqueue(*args, **kwargs)
+
+    queue = LoggingFakeAIJobQueue()
+    workflow = SessionWorkflow(uow, queue=queue)
+
+    async def _mock_change_queued(jid: UUID, now_dt: datetime) -> AnalysisJob:
+        created_job: AnalysisJob = uow.jobs.create.call_args[0][0]
+        created_job.status = AnalysisJobStatus.QUEUED
+        return created_job
+
+    uow.jobs.change_pending_to_queued.side_effect = _mock_change_queued
+
+    await workflow.create_analysis_attempt(
+        session_id=practice_session.id,
+        actor_id=actor_id,
+        idempotency_key="key-call-ordering",
+        consent_accepted=True,
+        consent_policy_version=CURRENT_CONSENT_POLICY_VERSION,
+    )
+
+    assert call_order == ["db_commit", "queue_enqueue", "db_commit"]
+
+
+@pytest.mark.anyio
+async def test_create_analysis_attempt_does_not_call_queue_if_database_commit_fails(
+    uow: MagicMock,
+    practice_session: PracticeSession,
+    manifest: SessionManifest,
+    actor_id: UUID,
+) -> None:
+    practice_session.status = SessionStatus.READY
+    manifest.session_id = practice_session.id
+    manifest.frozen_at = None
+
+    uow.sessions.get_by_id.return_value = practice_session
+    uow.manifests.get_by_session_id.return_value = manifest
+    uow.attempts.get_by_idempotency_key.return_value = None
+    uow.projects.asset_versions_are_verified.return_value = True
+    uow.commit.side_effect = IdempotencyConflict("Simulated commit conflict")
+
+    queue = FakeAIJobQueue()
+    workflow = SessionWorkflow(uow, queue=queue)
+
+    with pytest.raises(IdempotencyConflict):
+        await workflow.create_analysis_attempt(
+            session_id=practice_session.id,
+            actor_id=actor_id,
+            idempotency_key="key-commit-fails",
+            consent_accepted=True,
+            consent_policy_version=CURRENT_CONSENT_POLICY_VERSION,
+        )
+
+    assert queue.count == 0
+    uow.jobs.change_pending_to_queued.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_create_analysis_attempt_failure_window_retains_recoverable_pending_job(
+    uow: MagicMock,
+    practice_session: PracticeSession,
+    manifest: SessionManifest,
+    actor_id: UUID,
+) -> None:
+    practice_session.status = SessionStatus.READY
+    manifest.session_id = practice_session.id
+    manifest.frozen_at = None
+
+    uow.sessions.get_by_id.return_value = practice_session
+    uow.manifests.get_by_session_id.return_value = manifest
+    uow.attempts.get_by_idempotency_key.return_value = None
+    uow.projects.asset_versions_are_verified.return_value = True
+
+    queue = FakeAIJobQueue()
+    queue.fail_next(
+        1,
+        AIJobQueueTemporaryFailure("Redis connection timeout", retry_after_seconds=45.0),
+    )
+
+    async def _mock_record_failure(
+        jid: UUID,
+        now_dt: datetime,
+        next_at: datetime,
+        cat: str,
+        msg: str | None = None,
+    ) -> AnalysisJob:
+        created_job: AnalysisJob = uow.jobs.create.call_args[0][0]
+        created_job.dispatch_retry_count += 1
+        created_job.next_dispatch_at = next_at
+        created_job.last_dispatch_error_category = cat
+        created_job.last_error = msg
+        created_job.updated_at = now_dt
+        return created_job
+
+    uow.jobs.record_dispatch_failure.side_effect = _mock_record_failure
+
+    workflow = SessionWorkflow(uow, queue=queue)
+
+    attempt = await workflow.create_analysis_attempt(
+        session_id=practice_session.id,
+        actor_id=actor_id,
+        idempotency_key="key-failure-window",
+        consent_accepted=True,
+        consent_policy_version=CURRENT_CONSENT_POLICY_VERSION,
+    )
+
+    assert attempt is not None
+    assert attempt.attempt_number == 1
+    assert uow.commit.await_count == 2
+    uow.jobs.change_pending_to_queued.assert_not_awaited()
+    uow.jobs.record_dispatch_failure.assert_awaited_once()
+
+    call_args = uow.jobs.record_dispatch_failure.call_args[0]
+    assert call_args[3] == "temporary_queue_failure"
+
+    created_job: AnalysisJob = uow.jobs.create.call_args[0][0]
+    assert created_job.status == AnalysisJobStatus.PENDING
+    assert created_job.dispatch_retry_count == 1
+    assert created_job.last_dispatch_error_category == "temporary_queue_failure"
+    assert created_job.next_dispatch_at is not None
+
+
+@pytest.mark.anyio
+async def test_create_analysis_attempt_idempotent_replay_does_not_re_dispatch(
+    uow: MagicMock,
+    practice_session: PracticeSession,
+    manifest: SessionManifest,
+    actor_id: UUID,
+) -> None:
+    practice_session.status = SessionStatus.READY
+    manifest.session_id = practice_session.id
+    manifest.frozen_at = None
+
+    uow.sessions.get_by_id.return_value = practice_session
+    uow.manifests.get_by_session_id.return_value = manifest
+    uow.attempts.get_by_idempotency_key.return_value = None
+    uow.projects.asset_versions_are_verified.return_value = True
+
+    queue = FakeAIJobQueue()
+    workflow = SessionWorkflow(uow, queue=queue)
+
+    start_hash = hashlib.sha256(f"{True}:{CURRENT_CONSENT_POLICY_VERSION}".encode()).hexdigest()
+
+    async def _mock_change_queued(jid: UUID, now_dt: datetime) -> AnalysisJob:
+        created_job: AnalysisJob = uow.jobs.create.call_args[0][0]
+        created_job.status = AnalysisJobStatus.QUEUED
+        return created_job
+
+    uow.jobs.change_pending_to_queued.side_effect = _mock_change_queued
+
+    first_attempt = await workflow.create_analysis_attempt(
+        session_id=practice_session.id,
+        actor_id=actor_id,
+        idempotency_key="key-idempotent-replay",
+        consent_accepted=True,
+        consent_policy_version=CURRENT_CONSENT_POLICY_VERSION,
+    )
+    assert queue.count == 1
+
+    first_attempt.request_hash = start_hash
+    uow.attempts.get_by_idempotency_key.return_value = first_attempt
+
+    second_attempt = await workflow.create_analysis_attempt(
+        session_id=practice_session.id,
+        actor_id=actor_id,
+        idempotency_key="key-idempotent-replay",
+        consent_accepted=True,
+        consent_policy_version=CURRENT_CONSENT_POLICY_VERSION,
+    )
+    assert second_attempt.id == first_attempt.id
+    assert queue.count == 1
+
+
+@pytest.mark.anyio
+async def test_retry_analysis_attempt_dispatches_job_to_queue_after_commit(
+    uow: MagicMock,
+    practice_session: PracticeSession,
+    manifest: SessionManifest,
+    actor_id: UUID,
+) -> None:
+    practice_session.status = SessionStatus.FAILED
+    manifest.session_id = practice_session.id
+    manifest.frozen_at = datetime.now(UTC)
+
+    failed_attempt = MagicMock()
+    failed_attempt.status = AnalysisAttemptStatus.FAILED
+
+    uow.sessions.get_by_id.return_value = practice_session
+    uow.projects.is_member.return_value = True
+    uow.attempts.get_latest.return_value = failed_attempt
+    uow.manifests.get_by_session_id.return_value = manifest
+    uow.attempts.get_next_attempt_number.return_value = 2
+
+    queue = FakeAIJobQueue()
+    workflow = SessionWorkflow(uow, queue=queue)
+
+    async def _mock_change_queued(jid: UUID, now_dt: datetime) -> AnalysisJob:
+        created_job: AnalysisJob = uow.jobs.create.call_args[0][0]
+        created_job.status = AnalysisJobStatus.QUEUED
+        return created_job
+
+    uow.jobs.change_pending_to_queued.side_effect = _mock_change_queued
+
+    result = await workflow.retry(
+        session_id=practice_session.id,
+        actor_id=actor_id,
+        idempotency_key="key-retry-dispatch",
+    )
+
+    assert result.attempt_number == 2
+    assert queue.count == 1
+    enqueued = queue.last_message
+    assert enqueued is not None
+    assert enqueued.analysis_attempt == 2
+    assert uow.commit.await_count == 2
+    uow.jobs.change_pending_to_queued.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_retry_analysis_attempt_call_ordering_and_failure_window(
+    uow: MagicMock,
+    practice_session: PracticeSession,
+    manifest: SessionManifest,
+    actor_id: UUID,
+) -> None:
+    practice_session.status = SessionStatus.FAILED
+    manifest.session_id = practice_session.id
+    manifest.frozen_at = datetime.now(UTC)
+
+    failed_attempt = MagicMock()
+    failed_attempt.status = AnalysisAttemptStatus.FAILED
+
+    uow.sessions.get_by_id.return_value = practice_session
+    uow.projects.is_member.return_value = True
+    uow.attempts.get_latest.return_value = failed_attempt
+    uow.manifests.get_by_session_id.return_value = manifest
+    uow.attempts.get_next_attempt_number.return_value = 2
+
+    call_order: list[str] = []
+
+    async def _logging_commit() -> None:
+        call_order.append("db_commit")
+
+    uow.commit.side_effect = _logging_commit
+
+    class LoggingFakeAIJobQueue(FakeAIJobQueue):
+        async def enqueue(self, *args: Any, **kwargs: Any) -> Any:
+            call_order.append("queue_enqueue")
+            return await super().enqueue(*args, **kwargs)
+
+    queue = LoggingFakeAIJobQueue()
+    queue.fail_next(1, AIJobQueueTemporaryFailure("Celery broker error"))
+
+    workflow = SessionWorkflow(uow, queue=queue)
+
+    async def _mock_record_failure(
+        jid: UUID,
+        now_dt: datetime,
+        next_at: datetime,
+        cat: str,
+        msg: str | None = None,
+    ) -> AnalysisJob:
+        created_job: AnalysisJob = uow.jobs.create.call_args[0][0]
+        created_job.dispatch_retry_count += 1
+        created_job.last_dispatch_error_category = cat
+        return created_job
+
+    uow.jobs.record_dispatch_failure.side_effect = _mock_record_failure
+
+    attempt = await workflow.retry(
+        session_id=practice_session.id,
+        actor_id=actor_id,
+        idempotency_key="key-retry-fail-window",
+    )
+
+    assert call_order == ["db_commit", "queue_enqueue", "db_commit"]
+    assert attempt.attempt_number == 2
+    uow.jobs.record_dispatch_failure.assert_awaited_once()
+    created_job: AnalysisJob = uow.jobs.create.call_args[0][0]
+    assert created_job.status == AnalysisJobStatus.PENDING
+    assert created_job.dispatch_retry_count == 1
+
+
+@pytest.mark.anyio
+async def test_ai_jobs_dispatch_preconditions_and_safety(
+    uow: MagicMock,
+) -> None:
+    queue = FakeAIJobQueue()
+    ai_jobs = AIJobs(uow, queue=queue)
+
+    now = datetime.now(UTC)
+    job_completed = AnalysisJob(
+        id=uuid4(),
+        practice_session_id=uuid4(),
+        attempt_id=uuid4(),
+        analysis_attempt=1,
+        job_type="analyze_session",
+        status=AnalysisJobStatus.COMPLETED,
+        correlation_id=uuid4(),
+        last_update_sequence=1,
+        payload_version=1,
+        attempts=1,
+        cancel_requested=False,
+        retry_count=0,
+        last_error=None,
+        created_at=now,
+        updated_at=now,
+        started_at=now,
+        completed_at=now,
+        payload={"schema_version": 1},
+    )
+    assert await ai_jobs.dispatch(job_completed) is False
+    assert queue.count == 0
+
+    job_cancelled = AnalysisJob(
+        id=uuid4(),
+        practice_session_id=uuid4(),
+        attempt_id=uuid4(),
+        analysis_attempt=1,
+        job_type="analyze_session",
+        status=AnalysisJobStatus.PENDING,
+        correlation_id=uuid4(),
+        last_update_sequence=0,
+        payload_version=1,
+        attempts=0,
+        cancel_requested=True,
+        retry_count=0,
+        last_error=None,
+        created_at=now,
+        updated_at=now,
+        started_at=None,
+        completed_at=None,
+        payload={"schema_version": 1},
+    )
+    assert await ai_jobs.dispatch(job_cancelled) is False
+    assert queue.count == 0
+
+    ai_jobs_no_queue = AIJobs(uow, queue=None)
+    job_pending = AnalysisJob(
+        id=uuid4(),
+        practice_session_id=uuid4(),
+        attempt_id=uuid4(),
+        analysis_attempt=1,
+        job_type="analyze_session",
+        status=AnalysisJobStatus.PENDING,
+        correlation_id=uuid4(),
+        last_update_sequence=0,
+        payload_version=1,
+        attempts=0,
+        cancel_requested=False,
+        retry_count=0,
+        last_error=None,
+        created_at=now,
+        updated_at=now,
+        started_at=None,
+        completed_at=None,
+        payload={"schema_version": 1},
+    )
+    assert await ai_jobs_no_queue.dispatch(job_pending) is False
+    assert queue.count == 0

@@ -1,5 +1,6 @@
 import hashlib
-from datetime import datetime
+import logging
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
 
@@ -10,11 +11,17 @@ from app.application.ai_job_contracts import (
     AssetInput,
     RubricRef,
 )
+from app.application.ports.ai_queue import (
+    AIJobQueuePort,
+    AIQueueTemporaryFailure,
+)
 from app.application.ports.session_practice.unit_of_work_repository import UnitOfWork
 from app.domain.session_workflow.entities.analysis_attempt import AnalysisAttempt
 from app.domain.session_workflow.entities.analysis_job import AnalysisJob
 from app.domain.session_workflow.entities.session_manifest import SessionManifest
 from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
+
+logger = logging.getLogger(__name__)
 
 DEFAULT_REQUESTED_CAPABILITIES: list[str] = [
     "speech",
@@ -73,8 +80,21 @@ def _build_asset_input(
 
 
 class AIJobs:
-    def __init__(self, uow: UnitOfWork) -> None:
+    def __init__(
+        self,
+        uow: UnitOfWork,
+        queue: AIJobQueuePort | None = None,
+    ) -> None:
         self._uow = uow
+        self._queue = queue
+
+    @property
+    def queue(self) -> AIJobQueuePort | None:
+        return self._queue
+
+    @queue.setter
+    def queue(self, val: AIJobQueuePort | None) -> None:
+        self._queue = val
 
     async def create_pending_job(
         self,
@@ -206,3 +226,96 @@ class AIJobs:
             job.completed_at = now
         await self._uow.jobs.update(job)
         return job
+
+    async def dispatch(
+        self,
+        job_or_id: AnalysisJob | UUID,
+        *,
+        now: datetime | None = None,
+    ) -> bool:
+        if isinstance(job_or_id, UUID):
+            job = await self._uow.jobs.get_by_id(job_or_id)
+            if job is None:
+                return False
+        else:
+            job = job_or_id
+
+        if job.status != AnalysisJobStatus.PENDING or job.cancel_requested:
+            return False
+
+        if not job.payload:
+            return False
+
+        if self._queue is None:
+            return False
+
+        now_time = now or datetime.now(UTC)
+        if job.next_dispatch_at is not None and now_time < job.next_dispatch_at:
+            return False
+
+        try:
+            envelope = (
+                AIJobQueueMessage.model_validate(job.payload)
+                if isinstance(job.payload, dict)
+                else job.payload
+            )
+            await self._queue.enqueue(envelope)
+        except Exception as exc:
+            error_category = (
+                "temporary_queue_failure"
+                if isinstance(exc, AIQueueTemporaryFailure)
+                else exc.__class__.__name__
+            )
+            retry_after = getattr(exc, "retry_after_seconds", None)
+            retry_delay = (
+                float(retry_after) if retry_after is not None and retry_after > 0 else 30.0
+            )
+            next_eligible_at = now_time + timedelta(seconds=retry_delay)
+            error_msg = str(exc)[:255] if str(exc) else exc.__class__.__name__
+            try:
+                updated_job = await self._uow.jobs.record_dispatch_failure(
+                    job.id,
+                    now_time,
+                    next_eligible_at,
+                    error_category,
+                    error_msg,
+                )
+                await self._uow.commit()
+                if updated_job is not None:
+                    job.dispatch_retry_count = updated_job.dispatch_retry_count
+                    job.next_dispatch_at = updated_job.next_dispatch_at
+                    job.last_dispatch_error_category = updated_job.last_dispatch_error_category
+                    job.last_error = updated_job.last_error
+                    job.updated_at = updated_job.updated_at
+                else:
+                    job.dispatch_retry_count += 1
+                    job.next_dispatch_at = next_eligible_at
+                    job.last_dispatch_error_category = error_category
+                    job.last_error = error_msg
+                    job.updated_at = now_time
+            except Exception as rec_exc:
+                logger.warning(
+                    "Failed to record dispatch failure for job %s: %s",
+                    job.id,
+                    rec_exc,
+                )
+            return False
+
+        try:
+            updated_job = await self._uow.jobs.change_pending_to_queued(job.id, now_time)
+            await self._uow.commit()
+            if updated_job is not None:
+                job.status = updated_job.status
+                job.queued_at = updated_job.queued_at
+                job.updated_at = updated_job.updated_at
+                return True
+            return False
+        except Exception as commit_exc:
+            logger.warning(
+                "Failed to commit queued status for job %s: %s",
+                job.id,
+                commit_exc,
+            )
+            return False
+
+    dispatch_pending_job = dispatch

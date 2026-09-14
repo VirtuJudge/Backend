@@ -38,6 +38,7 @@ from app.infrastructure.database import get_session as infrastructure_get_sessio
 from app.infrastructure.documents.document_verifier import DocumentVerifier
 from app.infrastructure.mail import create_mail_sender
 from app.infrastructure.media.ffmpeg_verifier import FFmpegMediaVerifier
+from app.infrastructure.queues.celery_ai_job_queue import CeleryAIJobQueue
 from app.infrastructure.redis.rate_limiter import RedisRateLimiter
 from app.infrastructure.repositories.session_workflow import (
     SqlAlchemyAnalysisAttemptRepository,
@@ -171,6 +172,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     for router in routers:
         application.include_router(router)
     application.state.mail_sender = create_mail_sender(resolved_settings)
+    application.state.ai_job_queue = CeleryAIJobQueue.from_settings(resolved_settings)
     register_error_handlers(application)
 
     return application

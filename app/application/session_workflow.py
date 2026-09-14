@@ -1,9 +1,11 @@
+import contextlib
 import hashlib
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
 
 from app.application.ai_jobs import AIJobs
+from app.application.ports.ai_job_queue import AIJobQueuePort
 from app.application.ports.session_practice.diarization_result_reader import (
     DiarizationResultReader,
     NullDiarizationResultReader,
@@ -46,9 +48,15 @@ class SessionWorkflow:
         uow: UnitOfWork,
         ai_jobs: AIJobs | None = None,
         diarization_reader: DiarizationResultReader | None = None,
+        queue: AIJobQueuePort | None = None,
     ) -> None:
         self._uow = uow
-        self._ai_jobs = ai_jobs or AIJobs(uow)
+        if ai_jobs is not None:
+            self._ai_jobs = ai_jobs
+            if queue is not None and getattr(self._ai_jobs, "queue", None) is None:
+                self._ai_jobs.queue = queue
+        else:
+            self._ai_jobs = AIJobs(uow, queue=queue)
         self._diarization_reader = diarization_reader or NullDiarizationResultReader()
 
     async def _authorize_member(
@@ -337,7 +345,7 @@ class SessionWorkflow:
 
             try:
                 await uow.attempts.create(attempt)
-                await self._ai_jobs.create_pending_job(
+                job = await self._ai_jobs.create_pending_job(
                     session.id,
                     attempt,
                     now,
@@ -347,7 +355,6 @@ class SessionWorkflow:
                 await uow.manifests.update(manifest)
                 await uow.sessions.update(session, expected_version=session.version)
                 await uow.commit()
-                return attempt
             except (IdempotencyConflict, StaleEntityVersion) as err:
                 await uow.rollback()
                 winning = await uow.attempts.get_by_idempotency_key(session.id, idempotency_key)
@@ -360,6 +367,11 @@ class SessionWorkflow:
                 raise IdempotencyConflict(
                     "Another analysis attempt was created concurrently."
                 ) from err
+
+            with contextlib.suppress(Exception):
+                await self._ai_jobs.dispatch(job, now=now)
+
+            return attempt
 
     async def get_analysis_attempts(
         self,
@@ -428,7 +440,7 @@ class SessionWorkflow:
 
             try:
                 await uow.attempts.create(attempt)
-                await self._ai_jobs.create_pending_job(
+                job = await self._ai_jobs.create_pending_job(
                     session.id,
                     attempt,
                     now,
@@ -436,7 +448,6 @@ class SessionWorkflow:
                 )
                 await uow.sessions.update(session, expected_version=session.version)
                 await uow.commit()
-                return attempt
             except (IdempotencyConflict, StaleEntityVersion) as err:
                 await uow.rollback()
                 winning = await uow.attempts.get_by_idempotency_key(session.id, idempotency_key)
@@ -449,6 +460,11 @@ class SessionWorkflow:
                 raise IdempotencyConflict(
                     "Another retry attempt was created concurrently."
                 ) from err
+
+            with contextlib.suppress(Exception):
+                await self._ai_jobs.dispatch(job, now=now)
+
+            return attempt
 
     async def cancel(
         self,
