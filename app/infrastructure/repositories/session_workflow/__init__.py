@@ -2,6 +2,7 @@ from .sqlalchemy_analysis_attempt_repository import SqlAlchemyAnalysisAttemptRep
 from .sqlalchemy_analysis_job_repository import SqlAlchemyAnalysisJobRepository
 from .sqlalchemy_analysis_stage_repository import SqlAlchemyAnalysisStageRepository
 from .sqlalchemy_practice_session_repository import SqlAlchemyPracticeSessionRepository
+from .sqlalchemy_qa_repository import SqlAlchemyQARepository
 from .sqlalchemy_session_command_idempotency_repository import (
     SqlAlchemySessionCommandIdempotencyRepository,
 )
@@ -14,6 +15,7 @@ __all__ = [
     "SqlAlchemyAnalysisJobRepository",
     "SqlAlchemyAnalysisStageRepository",
     "SqlAlchemyPracticeSessionRepository",
+    "SqlAlchemyQARepository",
     "SqlAlchemySessionCommandIdempotencyRepository",
     "SqlAlchemySessionManifestRepository",
     "SqlAlchemySpeakerMappingRepository",

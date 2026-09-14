@@ -29,6 +29,7 @@ from app.domain.session_workflow.entities.analysis_job import (
 from app.domain.session_workflow.entities.session_practice import PracticeSession
 from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
 from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
+from app.domain.session_workflow.enums.qa import QARoundState, QuestionKind, QuestionState
 from app.domain.session_workflow.enums.session_status import SessionStatus
 from app.domain.session_workflow.exceptions import (
     CompletedResultValidationError,
@@ -753,6 +754,50 @@ async def test_completed_valid_analyze_session() -> None:
     assert attempt.status == AnalysisAttemptStatus.COMPLETED
     assert attempt.completed_at == occurred_at
     assert uow.commit_count == 1
+
+
+@pytest.mark.asyncio
+async def test_completed_analyze_session_starts_ordered_qa_round() -> None:
+    job, attempt, uow, service = _build_attempt_and_job(
+        job_status=AnalysisJobStatus.RUNNING,
+        attempt_status=AnalysisAttemptStatus.RUNNING,
+        last_update_sequence=1,
+    )
+
+    class FakeQA:
+        def __init__(self) -> None:
+            self.round = None
+            self.questions = []
+
+        async def get_round_by_session(self, _session_id: UUID) -> Any:
+            return self.round
+
+        async def create_round(self, round_: Any) -> None:
+            self.round = round_
+
+        async def create_questions(self, questions: list[Any]) -> None:
+            self.questions = questions
+
+    uow.qa = FakeQA()
+
+    await service.record_update(
+        job.id,
+        _make_update(
+            AIWorkerUpdateStatus.COMPLETED,
+            sequence=2,
+            payload=_valid_completed_session_payload(),
+        ),
+    )
+
+    assert uow.qa.round.state is QARoundState.IN_PROGRESS
+    assert uow.qa.round.current_question_id == uow.qa.questions[0].id
+    assert [question.position for question in uow.qa.questions] == [1, 2, 3]
+    assert [question.kind for question in uow.qa.questions] == [QuestionKind.PRIMARY] * 3
+    assert [question.state for question in uow.qa.questions] == [
+        QuestionState.ACTIVE,
+        QuestionState.PENDING,
+        QuestionState.PENDING,
+    ]
 
 
 @pytest.mark.asyncio

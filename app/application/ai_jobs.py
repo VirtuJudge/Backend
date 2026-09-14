@@ -15,6 +15,7 @@ from app.application.ai_job_contracts import (
     AnalyzeSessionPayload,
     AssetInput,
     RubricRef,
+    SessionAnalysisCompletedPayload,
 )
 from app.application.ai_job_validation import validate_completed_update
 from app.application.ports.ai_queue import (
@@ -35,9 +36,12 @@ from app.domain.session_workflow.entities.analysis_job import (
     AIJobAncestryContext,
     AnalysisJob,
 )
+from app.domain.session_workflow.entities.qa_round import QARound, Question
 from app.domain.session_workflow.entities.session_manifest import SessionManifest
+from app.domain.session_workflow.entities.session_practice import PracticeSession
 from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
 from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
+from app.domain.session_workflow.enums.qa import QARoundState, QuestionKind, QuestionState
 from app.domain.session_workflow.enums.session_status import SessionStatus
 from app.domain.session_workflow.exceptions import (
     InvalidAttemptState,
@@ -339,6 +343,52 @@ class AIJobs:
                     return int(att.attempt_number)
         return None
 
+    async def _initialize_qa_round(
+        self,
+        payload: SessionAnalysisCompletedPayload,
+        ancestry: AIJobAncestryContext,
+        occurred_at: datetime,
+    ) -> tuple[QARound | None, Question | None]:
+        repository = getattr(self._uow, "qa", None)
+        if repository is None:
+            return None, None
+        existing = await repository.get_round_by_session(ancestry.session.id)
+        if existing is not None:
+            return existing, None
+
+        round_id = uuid4()
+        questions = [
+            Question(
+                id=uuid4(),
+                qa_round_id=round_id,
+                practice_session_id=ancestry.session.id,
+                kind=QuestionKind.PRIMARY,
+                position=index,
+                text=candidate.text,
+                reason=candidate.reason,
+                rubric_dimension=candidate.rubric_dimension,
+                evidence_ids=list(candidate.evidence_ids),
+                parent_answer_id=None,
+                state=(QuestionState.ACTIVE if index == 1 else QuestionState.PENDING),
+                created_at=occurred_at,
+            )
+            for index, candidate in enumerate(payload.primary_questions, start=1)
+        ]
+        round_ = QARound(
+            id=round_id,
+            practice_session_id=ancestry.session.id,
+            analysis_attempt_id=ancestry.attempt.id,
+            state=QARoundState.IN_PROGRESS,
+            current_question_id=questions[0].id,
+            follow_up_count=0,
+            version=1,
+            created_at=occurred_at,
+            updated_at=occurred_at,
+        )
+        await repository.create_round(round_)
+        await repository.create_questions(questions)
+        return round_, questions[0]
+
     async def record_update(
         self,
         job_id: UUID,
@@ -444,6 +494,9 @@ class AIJobs:
 
         payload = update.payload
         progress_notification: PendingSessionNotification | None = None
+        completion_notification: PendingSessionNotification | None = None
+        session_to_update: PracticeSession | None = None
+        initial_session_version = 0
         if job.payload is None:
             job.payload = {}
 
@@ -568,6 +621,33 @@ class AIJobs:
                 job.status = AnalysisJobStatus.COMPLETED
                 job.completed_at = occurred_at
                 job.completed_result = validated_payload.model_dump(mode="json")
+                if isinstance(validated_payload, SessionAnalysisCompletedPayload):
+                    if ancestry is None:
+                        raise InvalidJobStatusTransition("Session ancestry is required.")
+                    round_, first_question = await self._initialize_qa_round(
+                        validated_payload, ancestry, occurred_at
+                    )
+                    if first_question is not None:
+                        assert round_ is not None
+                        session_to_update = ancestry.session
+                        initial_session_version = session_to_update.version
+                        session_to_update.transition_to(SessionStatus.QUESTIONS_READY)
+                        session_to_update.transition_to(SessionStatus.QUESTIONS_IN_PROGRESS)
+                        session_to_update.updated_at = occurred_at
+                        completion_notification = PendingSessionNotification(
+                            event_name=NotificationEventName.QA_QUESTION_AVAILABLE,
+                            practice_session_id=str(job.practice_session_id),
+                            occurred_at=occurred_at,
+                            trace_id=update.trace_id,
+                            payload={
+                                "qa_round_id": str(round_.id),
+                                "question_id": str(first_question.id),
+                                "position": first_question.position,
+                                "kind": first_question.kind.value,
+                                "state": first_question.state.value,
+                                "version": round_.version,
+                            },
+                        )
                 if attempt is not None:
                     attempt.transition_to(AnalysisAttemptStatus.COMPLETED, at=occurred_at)
                     attempt.completed_at = occurred_at
@@ -587,6 +667,13 @@ class AIJobs:
                     update_att = update_fn(attempt, expected_version=initial_attempt_version)
                     if inspect.isawaitable(update_att):
                         await update_att
+            sessions_repo = getattr(self._uow, "sessions", None)
+            if session_to_update is not None and sessions_repo is not None:
+                update_session = sessions_repo.update(
+                    session_to_update, expected_version=initial_session_version
+                )
+                if inspect.isawaitable(update_session):
+                    await update_session
 
             commit_res = self._uow.commit()
             if inspect.isawaitable(commit_res):
@@ -601,6 +688,7 @@ class AIJobs:
             raise
 
         await self._publish(progress_notification)
+        await self._publish(completion_notification)
 
         return job
 
