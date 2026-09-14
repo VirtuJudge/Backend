@@ -21,7 +21,15 @@ from app.application.ports.ai_queue import (
     AIJobQueuePort,
     AIQueueTemporaryFailure,
 )
+from app.application.ports.session_notification import (
+    PendingSessionNotification,
+    SessionNotificationPort,
+)
 from app.application.ports.session_practice.unit_of_work_repository import UnitOfWork
+from app.application.session_notification_contracts import (
+    NotificationEventName,
+    map_to_public_stage,
+)
 from app.domain.session_workflow.entities.analysis_attempt import AnalysisAttempt
 from app.domain.session_workflow.entities.analysis_job import (
     AIJobAncestryContext,
@@ -162,9 +170,23 @@ class AIJobs:
         self,
         uow: UnitOfWork,
         queue: AIJobQueuePort | None = None,
+        notifications: SessionNotificationPort | None = None,
     ) -> None:
         self._uow = uow
         self._queue = queue
+        self._notifications = notifications
+
+    async def _publish(self, notification: PendingSessionNotification | None) -> None:
+        if notification is None or self._notifications is None:
+            return
+        try:
+            await self._notifications.publish(notification)
+        except Exception as exc:
+            logger.warning(
+                "AI job notification publication failed for session %s: %s",
+                notification.practice_session_id,
+                type(exc).__name__,
+            )
 
     @property
     def queue(self) -> AIJobQueuePort | None:
@@ -421,6 +443,7 @@ class AIJobs:
                     initial_attempt_version = attempt.version
 
         payload = update.payload
+        progress_notification: PendingSessionNotification | None = None
         if job.payload is None:
             job.payload = {}
 
@@ -458,6 +481,23 @@ class AIJobs:
                 }
                 if attempt is not None:
                     attempt.transition_to(AnalysisAttemptStatus.RUNNING, at=occurred_at)
+                    progress_notification = PendingSessionNotification(
+                        event_name=(
+                            NotificationEventName.PRACTICE_SESSION_ANALYSIS_PROGRESSED
+                        ),
+                        practice_session_id=str(job.practice_session_id),
+                        occurred_at=occurred_at,
+                        trace_id=update.trace_id,
+                        payload={
+                            "analysis_attempt_id": str(attempt.id),
+                            "analysis_attempt_number": attempt.attempt_number,
+                            "stage": map_to_public_stage(stage).value,
+                            "status": "running",
+                            "progress": (
+                                float(progress_val) if progress_val is not None else 0.0
+                            ),
+                        },
+                    )
 
             elif update.status == AIWorkerUpdateStatus.FAILED:
                 job.status = AnalysisJobStatus.FAILED
@@ -563,6 +603,8 @@ class AIJobs:
             if reloaded_job is not None and reloaded_job.last_update_sequence >= update.sequence:
                 return reloaded_job
             raise
+
+        await self._publish(progress_notification)
 
         return job
 
