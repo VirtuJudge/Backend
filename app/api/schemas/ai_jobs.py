@@ -1,3 +1,7 @@
+from uuid import UUID
+
+from pydantic import BaseModel, ConfigDict
+
 from app.application.ai_job_contracts import (
     SHA256_HEX_PATTERN,
     AIJobPayload,
@@ -51,8 +55,21 @@ from app.application.ai_job_contracts import (
     parse_queue_message,
     parse_worker_update,
 )
+from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
+
+
+class AIJobStatusResponse(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    id: UUID
+    job_id: UUID
+    status: AnalysisJobStatus
+    last_update_sequence: int
+    cancel_requested: bool
+
 
 __all__ = [
+    "AIJobStatusResponse",
     "SHA256_HEX_PATTERN",
     "AIJobPayload",
     "AIJobQueueMessage",

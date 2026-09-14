@@ -247,6 +247,12 @@ class AIJobs:
         await self._uow.jobs.create(job)
         return job
 
+    async def get_job(self, job_id: UUID) -> AnalysisJob | None:
+        return await self._uow.jobs.get_by_id(job_id)
+
+    async def get_job_status(self, job_id: UUID) -> AnalysisJob | None:
+        return await self._uow.jobs.get_by_id(job_id)
+
     async def request_cancellation(
         self,
         attempt_id: UUID,

@@ -1,5 +1,6 @@
 from fastapi import APIRouter
 
+from app.api.routes.ai_jobs import router as ai_jobs_router
 from app.api.routes.asset import router as asset_router
 from app.api.routes.health import router as health_router
 from app.api.routes.invitation import router as invitation_router
@@ -16,6 +17,7 @@ routers: list[APIRouter] = [
     session_practice_router,
     asset_router,
     invitation_router,
+    ai_jobs_router,
 ]
 
 __all__ = ["routers"]

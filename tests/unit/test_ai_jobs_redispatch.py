@@ -378,3 +378,22 @@ async def test_redispatch_pending_skips_ineligible_jobs() -> None:
     assert res.queued == 0
     assert res.failed == 0
     assert queue.count == 0
+
+
+@pytest.mark.asyncio
+async def test_ai_jobs_get_job_and_get_job_status() -> None:
+    job = _make_job()
+    repo = FakeAnalysisJobRepository([job])
+    uow = FakeUnitOfWork(repo)
+    ai_jobs = AIJobs(uow)
+
+    retrieved = await ai_jobs.get_job(job.id)
+    assert retrieved is not None
+    assert retrieved.id == job.id
+
+    status_retrieved = await ai_jobs.get_job_status(job.id)
+    assert status_retrieved is not None
+    assert status_retrieved.id == job.id
+
+    assert await ai_jobs.get_job(uuid4()) is None
+    assert await ai_jobs.get_job_status(uuid4()) is None

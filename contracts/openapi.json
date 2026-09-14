@@ -1,6 +1,41 @@
 {
   "components": {
     "schemas": {
+      "AIJobStatusResponse": {
+        "additionalProperties": false,
+        "properties": {
+          "cancel_requested": {
+            "title": "Cancel Requested",
+            "type": "boolean"
+          },
+          "id": {
+            "format": "uuid",
+            "title": "Id",
+            "type": "string"
+          },
+          "job_id": {
+            "format": "uuid",
+            "title": "Job Id",
+            "type": "string"
+          },
+          "last_update_sequence": {
+            "title": "Last Update Sequence",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AnalysisJobStatus"
+          }
+        },
+        "required": [
+          "id",
+          "job_id",
+          "status",
+          "last_update_sequence",
+          "cancel_requested"
+        ],
+        "title": "AIJobStatusResponse",
+        "type": "object"
+      },
       "AnalysisAttemptListResponse": {
         "properties": {
           "items": {
@@ -88,6 +123,18 @@
           "cancelled"
         ],
         "title": "AnalysisAttemptStatus",
+        "type": "string"
+      },
+      "AnalysisJobStatus": {
+        "enum": [
+          "pending",
+          "queued",
+          "running",
+          "completed",
+          "failed",
+          "cancelled"
+        ],
+        "title": "AnalysisJobStatus",
         "type": "string"
       },
       "AssetPage": {
@@ -6444,6 +6491,60 @@
         "summary": "Health",
         "tags": [
           "system"
+        ]
+      }
+    },
+    "/internal/v1/ai-jobs/{job_id}": {
+      "get": {
+        "operationId": "get_internal_ai_job_status",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AIJobStatusResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "401": {
+            "description": "Unauthorized worker credentials"
+          },
+          "404": {
+            "description": "AI job not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Get Internal Ai Job Status",
+        "tags": [
+          "Internal AI Jobs"
         ]
       }
     }
