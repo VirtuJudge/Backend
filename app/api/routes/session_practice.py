@@ -246,7 +246,7 @@ async def stream_practice_session_events(
     workflow: SessionWorkflow = Depends(get_session_workflow),
     notifications: SessionNotificationPort = Depends(get_session_notifications),
 ) -> Any:
-    parsed_last_event_id = 0
+    parsed_last_event_id: int | None = None
     if last_event_id is not None:
         try:
             parsed_last_event_id = int(last_event_id)
