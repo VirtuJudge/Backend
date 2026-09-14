@@ -46,6 +46,8 @@ services:
         sync: false
       - key: OIDC_JWKS_URL
         sync: false
+      - key: AI_WORKER_SHARED_SECRET
+        sync: false
       - key: FRONTEND_URL
         sync: false
       - key: CORS_ALLOWED_ORIGINS
