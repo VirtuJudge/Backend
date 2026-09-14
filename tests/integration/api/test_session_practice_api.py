@@ -154,6 +154,49 @@ async def test_create_practice_session_returns_201_with_etag_and_location(
 
 
 @pytest.mark.anyio
+async def test_create_practice_session_with_asset_id_and_default_name(
+    client: AsyncClient, workflow_mock: MagicMock
+) -> None:
+    session = _create_session(status=SessionStatus.DRAFT, version=1)
+    workflow_mock.create_session.return_value = session
+
+    async with client:
+        response = await client.post(
+            f"/api/v1/projects/{session.project_id}/practice-sessions",
+            json={
+                "presentation_asset_id": str(uuid4()),
+                "document_asset_ids": [str(uuid4())],
+                "policy_version": "1.0",
+            },
+        )
+
+    assert response.status_code == 201
+    assert response.headers["Location"] == f"/api/v1/practice-sessions/{session.id}"
+    workflow_mock.create_session.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_create_practice_session_returns_409_on_idempotency_conflict(
+    client: AsyncClient, workflow_mock: MagicMock
+) -> None:
+    session = _create_session(status=SessionStatus.DRAFT, version=1)
+    workflow_mock.create_session.side_effect = IdempotencyConflict("Database integrity conflict.")
+
+    async with client:
+        response = await client.post(
+            f"/api/v1/projects/{session.project_id}/practice-sessions",
+            json={
+                "presentation_asset_version_id": str(uuid4()),
+            },
+        )
+
+    assert response.status_code == 409
+    assert response.headers["content-type"] == "application/problem+json"
+    data = response.json()
+    assert data["code"] == "idempotency_conflict"
+
+
+@pytest.mark.anyio
 async def test_get_practice_session_returns_200_with_etag(
     client: AsyncClient, workflow_mock: MagicMock
 ) -> None:

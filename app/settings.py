@@ -30,6 +30,9 @@ class Settings(BaseSettings):
     object_storage_secret_key: SecretStr | None = None
     object_storage_upload_url_ttl_seconds: int = 900
     object_storage_download_url_ttl_seconds: int = 900
+    object_storage_connect_timeout_seconds: float = 10.0
+    object_storage_read_timeout_seconds: float = 60.0
+    document_verifier_timeout_seconds: float = 60.0
     asset_cleanup_enabled: bool | None = None
     asset_cleanup_interval_seconds: float = Field(default=300.0, ge=0.001)
     asset_cleanup_batch_size: int = Field(default=100, ge=1, le=1000)

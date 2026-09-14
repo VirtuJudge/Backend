@@ -355,3 +355,46 @@ async def test_document_verifier_cancellation_reaps_child_process(tmp_path: Path
     task.cancel()
     with pytest.raises(asyncio.CancelledError):
         await task
+
+
+@pytest.mark.anyio
+async def test_document_verifier_accepts_large_pptx_with_large_embedded_media(
+    tmp_path: Path,
+) -> None:
+    verifier = DocumentVerifier()
+    p = tmp_path / "large_media.pptx"
+    slide_xml = (
+        b'<?xml version="1.0" encoding="UTF-8"?>'
+        b'<p:sld xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main" '
+        b'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
+        b"<p:cSld><p:spTree>"
+        b"<p:pic><p:blipFill>"
+        b'<a:blip xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" '
+        b'r:embed="rId2"/></p:blipFill></p:pic>'
+        b"</p:spTree></p:cSld></p:sld>"
+    )
+    slide_rels = (
+        b'<?xml version="1.0" encoding="UTF-8"?>'
+        b'<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+        b'<Relationship Id="rId2" '
+        b'Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" '
+        b'Target="../media/large_image.png"/>'
+        b"</Relationships>"
+    )
+    # Create ~18MB PPTX with a 16MB image inside
+    large_image = b"P" * (16 * 1024 * 1024)
+    p.write_bytes(
+        create_synthetic_pptx(
+            override_files={"ppt/slides/slide1.xml": slide_xml},
+            extra_files={
+                "ppt/slides/_rels/slide1.xml.rels": slide_rels,
+                "ppt/media/large_image.png": large_image,
+            },
+        )
+    )
+    await verifier.verify_document(p, PPTX_TYPE)
+
+
+def test_document_verifier_default_timeout() -> None:
+    verifier = DocumentVerifier()
+    assert verifier.timeout_seconds == 60.0

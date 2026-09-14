@@ -145,6 +145,8 @@ async def create_practice_session(
             supporting_document_version_ids=request.supporting_document_version_ids,
             rubric_id=request.rubric.rubric_id if request.rubric else "startup_pitch",
             rubric_version=request.rubric.version if request.rubric else 1,
+            presentation_asset_id=request.presentation_asset_id,
+            document_asset_ids=request.document_asset_ids,
         )
     except UnauthorizedSessionAction as error:
         return problem_response(
@@ -175,6 +177,14 @@ async def create_practice_session(
             status.HTTP_422_UNPROCESSABLE_CONTENT,
             "validation_failed",
             "Validation failed",
+            str(error),
+            raw_request.url.path,
+        )
+    except IdempotencyConflict as error:
+        return problem_response(
+            status.HTTP_409_CONFLICT,
+            "idempotency_conflict",
+            "Idempotency conflict",
             str(error),
             raw_request.url.path,
         )

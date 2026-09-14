@@ -239,7 +239,20 @@ async def http_exception_handler(
     )
 
 
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
+    trace_id = get_correlation_id() or getattr(request.state, "correlation_id", None)
+    return problem_response(
+        status.HTTP_500_INTERNAL_SERVER_ERROR,
+        "internal_error",
+        "Internal server error",
+        "An unexpected error occurred.",
+        request.url.path,
+        trace_id=trace_id,
+    )
+
+
 def register_error_handlers(app: FastAPI) -> None:
     app.add_exception_handler(RequestValidationError, cast(Any, asset_request_validation_handler))
     app.add_exception_handler(HTTPException, cast(Any, http_exception_handler))
     app.add_exception_handler(StarletteHTTPException, cast(Any, http_exception_handler))
+    app.add_exception_handler(Exception, cast(Any, unhandled_exception_handler))

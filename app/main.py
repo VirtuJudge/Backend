@@ -280,7 +280,9 @@ def asset_store_factory(session: AsyncSession, settings: Settings) -> AssetStore
     return AssetStore(
         repository=SqlAlchemyAssetRepository(session),
         storage=S3ObjectStorage(settings),
-        document_verifier=DocumentVerifier(),
+        document_verifier=DocumentVerifier(
+            timeout_seconds=settings.document_verifier_timeout_seconds
+        ),
         media_verifier=FFmpegMediaVerifier(),
         upload_ttl_seconds=settings.object_storage_upload_url_ttl_seconds,
         download_ttl_seconds=settings.object_storage_download_url_ttl_seconds,

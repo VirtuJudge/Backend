@@ -266,3 +266,16 @@ class SqlAlchemyProjectRepository(ProjectRepository):
             "duration_ms": row[6],
             "size_bytes": row[7],
         }
+
+    async def resolve_asset_version_id(self, asset_id: UUID) -> UUID | None:
+        stmt = select(AssetModel.current_version_id).where(AssetModel.id == asset_id)
+        version_id = cast(UUID | None, await self.session.scalar(stmt))
+        if version_id is not None:
+            return version_id
+        stmt_ver = (
+            select(AssetVersionModel.id)
+            .where(AssetVersionModel.asset_id == asset_id, AssetVersionModel.state == "verified")
+            .order_by(AssetVersionModel.version_number.desc())
+            .limit(1)
+        )
+        return cast(UUID | None, await self.session.scalar(stmt_ver))

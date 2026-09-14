@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
 from app.domain.session_workflow.enums.session_status import SessionStatus
@@ -60,10 +60,20 @@ class PracticeSessionResponse(BaseModel):
 
 
 class CreatePracticeSessionRequest(BaseModel):
-    name: str = Field(min_length=1, max_length=200)
-    presentation_asset_version_id: UUID
+    name: str | None = Field(default="Practice Session", max_length=200)
+    presentation_asset_version_id: UUID | None = None
+    presentation_asset_id: UUID | None = None
     supporting_document_version_ids: list[UUID] = Field(default_factory=list, max_length=5)
+    document_asset_ids: list[UUID] | None = None
+    policy_version: str | int | None = None
     rubric: RubricSpec = Field(default_factory=RubricSpec)
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def set_default_name(cls, v: Any) -> str:
+        if v is None or not str(v).strip():
+            return "Practice Session"
+        return str(v).strip()
 
     @field_validator("supporting_document_version_ids")
     @classmethod
@@ -74,11 +84,21 @@ class CreatePracticeSessionRequest(BaseModel):
             raise ValueError("Supporting document versions cannot exceed 5 items.")
         return v
 
+    @model_validator(mode="after")
+    def validate_presentation_target(self) -> "CreatePracticeSessionRequest":
+        if self.presentation_asset_version_id is None and self.presentation_asset_id is None:
+            raise ValueError(
+                "Either presentation_asset_version_id or presentation_asset_id must be provided."
+            )
+        return self
+
 
 class UpdatePracticeSessionRequest(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=200)
     presentation_asset_version_id: UUID | None = None
+    presentation_asset_id: UUID | None = None
     supporting_document_version_ids: list[UUID] | None = Field(default=None, max_length=5)
+    document_asset_ids: list[UUID] | None = None
     rubric: RubricSpec | None = None
 
     @field_validator("supporting_document_version_ids")

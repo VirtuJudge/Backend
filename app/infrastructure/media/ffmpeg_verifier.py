@@ -55,11 +55,12 @@ class FFmpegMediaVerifier(MediaVerifierPort):
         )
 
     async def verify_media(self, file_path: Path, media_type: str, kind: str) -> int:
+        clean_media_type = media_type.split(";")[0].strip().lower()
         kind_rule = MEDIA_RULES.get(kind)
         if kind_rule is None:
             raise AssetCorrupt("unsupported_media_kind")
 
-        type_rule = kind_rule["media_types"].get(media_type)
+        type_rule = kind_rule["media_types"].get(clean_media_type)
         if type_rule is None:
             raise AssetCorrupt("unsupported_media_type")
 

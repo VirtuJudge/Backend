@@ -26,9 +26,9 @@ EXIT_MACROS = 17
 EXIT_BROKEN_SLIDES = 18
 EXIT_INFRA = 20
 
-MAX_ENTRIES = 1000
-MAX_TOTAL_UNCOMPRESSED = 50 * 1024 * 1024
-MAX_SINGLE_XML_BYTES = 15 * 1024 * 1024
+MAX_ENTRIES = 2000
+MAX_TOTAL_UNCOMPRESSED = 250 * 1024 * 1024
+MAX_SINGLE_XML_BYTES = 25 * 1024 * 1024
 
 NS_CONTENT_TYPES = "http://schemas.openxmlformats.org/package/2006/content-types"
 NS_PACKAGE_RELS = "http://schemas.openxmlformats.org/package/2006/relationships"
@@ -51,10 +51,10 @@ def apply_resource_limits() -> None:
         with contextlib.suppress(ValueError, OSError):
             resource_api["setrlimit"](
                 resource_api["RLIMIT_AS"],
-                (512 * 1024 * 1024, 256 * 1024 * 1024),
+                (1024 * 1024 * 1024, 1024 * 1024 * 1024),
             )
         with contextlib.suppress(ValueError, OSError):
-            resource_api["setrlimit"](resource_api["RLIMIT_CPU"], (30, 30))
+            resource_api["setrlimit"](resource_api["RLIMIT_CPU"], (60, 60))
 
 
 def validate_pdf(target: Path) -> int:
@@ -94,7 +94,7 @@ def validate_pdf(target: Path) -> int:
     ):
         return EXIT_CORRUPT
     except Exception:
-        return EXIT_INFRA
+        return EXIT_CORRUPT
 
 
 def is_unsafe_archive_path(filename: str) -> bool:
@@ -161,15 +161,17 @@ def validate_pptx(target: Path) -> int:
                 return EXIT_ENCRYPTED
             if is_unsafe_archive_path(info.filename):
                 return EXIT_UNSAFE_PATH
-            if info.file_size > MAX_SINGLE_XML_BYTES:
+            lower_name = info.filename.lower().replace("\\", "/")
+            is_xml_part = lower_name.endswith((".xml", ".rels"))
+            if is_xml_part and info.file_size > MAX_SINGLE_XML_BYTES:
                 return EXIT_ZIP_BOMB
             if (
                 info.file_size > 1024
                 and info.compress_size > 0
+                and is_xml_part
                 and (info.file_size / info.compress_size) > 100
             ):
                 return EXIT_ZIP_BOMB
-            lower_name = info.filename.lower().replace("\\", "/")
             base_name = posixpath.basename(lower_name)
             if base_name in ("vbaproject.bin", "vba.bin") or base_name.endswith(
                 (".vba", ".bas", ".cls")
@@ -382,11 +384,15 @@ def main() -> int:
     apply_resource_limits()
     target = Path(path_str)
 
-    if media_type == "application/pdf":
-        return validate_pdf(target)
-    if media_type == "application/vnd.openxmlformats-officedocument.presentationml.presentation":
-        return validate_pptx(target)
-    return EXIT_MALFORMED
+    try:
+        if media_type == "application/pdf":
+            return validate_pdf(target)
+        pptx_type = "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+        if media_type == pptx_type:
+            return validate_pptx(target)
+        return EXIT_MALFORMED
+    except Exception:
+        return EXIT_CORRUPT
 
 
 if __name__ == "__main__":

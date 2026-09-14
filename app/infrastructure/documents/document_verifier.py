@@ -19,7 +19,7 @@ from app.infrastructure.documents.document_worker import (
 
 
 class DocumentVerifier(DocumentVerifierPort):
-    def __init__(self, timeout_seconds: float = 10.0):
+    def __init__(self, timeout_seconds: float = 60.0):
         self.timeout_seconds = timeout_seconds
 
     async def verify_document(self, file_path: Path, media_type: str) -> None:
