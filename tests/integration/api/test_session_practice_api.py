@@ -117,7 +117,8 @@ def client(workflow_mock: MagicMock, current_user: User) -> AsyncClient:
     app = create_app(settings)
     app.dependency_overrides[get_current_user] = lambda: current_user
     app.dependency_overrides[get_session_workflow] = lambda: workflow_mock
-    app.dependency_overrides[get_session_notifications] = FakeSessionNotifications
+    notification_store = FakeSessionNotifications()
+    app.dependency_overrides[get_session_notifications] = lambda: notification_store
 
     transport = ASGITransport(app=app)
     return AsyncClient(transport=transport, base_url="http://test")

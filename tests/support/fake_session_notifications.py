@@ -16,9 +16,7 @@ class FakeSessionNotifications(SessionNotificationPort):
         self._trimmed_before: dict[str, int] = {}
         self._condition = asyncio.Condition()
 
-    async def publish(
-        self, notification: PendingSessionNotification
-    ) -> BasePersistedNotification:
+    async def publish(self, notification: PendingSessionNotification) -> BasePersistedNotification:
         async with self._condition:
             session_id = notification.practice_session_id
             sequence = self._heads.get(session_id, 0) + 1

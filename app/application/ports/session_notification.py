@@ -30,6 +30,16 @@ class PendingSessionNotification(BaseModel):
 
     @model_validator(mode="after")
     def validate_public_payload(self) -> "PendingSessionNotification":
+        reserved = {
+            "event",
+            "event_name",
+            "sequence",
+            "practice_session_id",
+            "occurred_at",
+            "trace_id",
+        }
+        if reserved.intersection(self.payload):
+            raise ValueError("Notification payload cannot override envelope fields")
         if self.event_name == NotificationEventName.PRACTICE_SESSION_RESYNC_REQUIRED:
             raise ValueError("Resync control frames are not persisted")
         parse_notification(

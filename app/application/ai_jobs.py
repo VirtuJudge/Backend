@@ -482,9 +482,7 @@ class AIJobs:
                 if attempt is not None:
                     attempt.transition_to(AnalysisAttemptStatus.RUNNING, at=occurred_at)
                     progress_notification = PendingSessionNotification(
-                        event_name=(
-                            NotificationEventName.PRACTICE_SESSION_ANALYSIS_PROGRESSED
-                        ),
+                        event_name=(NotificationEventName.PRACTICE_SESSION_ANALYSIS_PROGRESSED),
                         practice_session_id=str(job.practice_session_id),
                         occurred_at=occurred_at,
                         trace_id=update.trace_id,
@@ -493,9 +491,7 @@ class AIJobs:
                             "analysis_attempt_number": attempt.attempt_number,
                             "stage": map_to_public_stage(stage).value,
                             "status": "running",
-                            "progress": (
-                                float(progress_val) if progress_val is not None else 0.0
-                            ),
+                            "progress": (float(progress_val) if progress_val is not None else 0.0),
                         },
                     )
 

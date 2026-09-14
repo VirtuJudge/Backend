@@ -56,9 +56,7 @@ async def test_fake_reports_trimmed_and_future_cursors() -> None:
 async def test_fake_waits_for_live_event_and_times_out_cleanly() -> None:
     fake = FakeSessionNotifications()
     session_id = str(uuid4())
-    waiter = asyncio.create_task(
-        fake.wait_for_events(session_id, 0, timeout_seconds=1)
-    )
+    waiter = asyncio.create_task(fake.wait_for_events(session_id, 0, timeout_seconds=1))
     await asyncio.sleep(0)
     await fake.publish(pending(session_id))
 
@@ -82,3 +80,14 @@ def test_pending_notification_rejects_private_or_unknown_fields() -> None:
         pending(str(uuid4())).model_copy(
             update={"payload": {"version": 1, "state": "ready", "transcript": "private"}}
         ).with_sequence(1)
+
+
+def test_pending_notification_cannot_override_envelope() -> None:
+    with pytest.raises(ValueError, match="cannot override"):
+        PendingSessionNotification(
+            event_name=NotificationEventName.PRACTICE_SESSION_UPDATED,
+            practice_session_id=str(uuid4()),
+            occurred_at=datetime.now(UTC),
+            trace_id="trace-test",
+            payload={"sequence": 99, "version": 1, "state": "ready"},
+        )

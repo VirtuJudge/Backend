@@ -93,7 +93,7 @@ async def test_stream_emits_resync_for_missing_or_unavailable_cursor() -> None:
     )
     missing_frame = await anext(missing_cursor_stream)
     assert "event: practice_session.resync_required.v1" in missing_frame
-    assert '\"reason\":\"cursor_missing\"' in missing_frame
+    assert '"reason":"cursor_missing"' in missing_frame
     await missing_cursor_stream.aclose()
 
     future_cursor_stream = stream_live_session_events(
@@ -103,5 +103,5 @@ async def test_stream_emits_resync_for_missing_or_unavailable_cursor() -> None:
         99,
     )
     future_frame = await anext(future_cursor_stream)
-    assert '\"reason\":\"cursor_future\"' in future_frame
+    assert '"reason":"cursor_future"' in future_frame
     await future_cursor_stream.aclose()

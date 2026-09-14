@@ -27,9 +27,7 @@ class RedisSessionNotifications(SessionNotificationPort):
         tag = f"{{{practice_session_id}}}"
         return f"session-events:{tag}:sequence", f"session-events:{tag}:stream"
 
-    async def publish(
-        self, notification: PendingSessionNotification
-    ) -> BasePersistedNotification:
+    async def publish(self, notification: PendingSessionNotification) -> BasePersistedNotification:
         counter_key, stream_key = self._keys(notification.practice_session_id)
         data = notification.model_dump(mode="json", exclude={"event_name", "payload"})
         data.update(notification.payload)
