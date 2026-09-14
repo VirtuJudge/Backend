@@ -36,6 +36,57 @@
         "title": "AIJobStatusResponse",
         "type": "object"
       },
+      "AIWorkerUpdate": {
+        "properties": {
+          "occurred_at": {
+            "format": "date-time",
+            "title": "Occurred At",
+            "type": "string"
+          },
+          "payload": {
+            "title": "Payload"
+          },
+          "schema_version": {
+            "const": 1,
+            "default": 1,
+            "title": "Schema Version",
+            "type": "integer"
+          },
+          "sequence": {
+            "minimum": 1.0,
+            "title": "Sequence",
+            "type": "integer"
+          },
+          "status": {
+            "$ref": "#/components/schemas/AIWorkerUpdateStatus"
+          },
+          "trace_id": {
+            "minLength": 1,
+            "title": "Trace Id",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sequence",
+          "status",
+          "occurred_at",
+          "trace_id",
+          "payload"
+        ],
+        "title": "AIWorkerUpdate",
+        "type": "object"
+      },
+      "AIWorkerUpdateStatus": {
+        "enum": [
+          "started",
+          "progress",
+          "completed",
+          "failed",
+          "cancelled"
+        ],
+        "title": "AIWorkerUpdateStatus",
+        "type": "string"
+      },
       "AnalysisAttemptListResponse": {
         "properties": {
           "items": {
@@ -6543,6 +6594,70 @@
           }
         ],
         "summary": "Get Internal Ai Job Status",
+        "tags": [
+          "Internal AI Jobs"
+        ]
+      }
+    },
+    "/internal/v1/ai-jobs/{job_id}/updates": {
+      "post": {
+        "operationId": "record_internal_ai_job_update",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "job_id",
+            "required": true,
+            "schema": {
+              "format": "uuid",
+              "title": "Job Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AIWorkerUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AIJobStatusResponse"
+                }
+              }
+            },
+            "description": "Current safe AI job state for applied or ignored update"
+          },
+          "401": {
+            "description": "Unauthorized worker credentials"
+          },
+          "404": {
+            "description": "AI job not found"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "security": [
+          {
+            "HTTPBearer": []
+          }
+        ],
+        "summary": "Record Internal Ai Job Update",
         "tags": [
           "Internal AI Jobs"
         ]

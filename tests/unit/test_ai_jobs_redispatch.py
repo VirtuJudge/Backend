@@ -7,6 +7,7 @@ import pytest
 from app.application.ai_job_contracts import (
     AIJobQueueMessage,
     AIJobType,
+    AIWorkerUpdate,
     AnalyzeSessionPayload,
     AssetInput,
     RubricRef,
@@ -397,3 +398,26 @@ async def test_ai_jobs_get_job_and_get_job_status() -> None:
 
     assert await ai_jobs.get_job(uuid4()) is None
     assert await ai_jobs.get_job_status(uuid4()) is None
+
+
+@pytest.mark.asyncio
+async def test_ai_jobs_record_update() -> None:
+    job = _make_job()
+    repo = FakeAnalysisJobRepository([job])
+    uow = FakeUnitOfWork(repo)
+    ai_jobs = AIJobs(uow)
+
+    update = AIWorkerUpdate(
+        schema_version=1,
+        sequence=1,
+        status="started",
+        occurred_at=datetime.now(UTC),
+        trace_id="trc_unit_1",
+        payload={"pipeline_version": "0.1.0"},
+    )
+
+    retrieved = await ai_jobs.record_update(job.id, update)
+    assert retrieved is not None
+    assert retrieved.id == job.id
+
+    assert await ai_jobs.record_update(uuid4(), update) is None

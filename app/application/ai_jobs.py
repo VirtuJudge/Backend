@@ -9,6 +9,7 @@ from uuid import UUID, uuid4
 from app.application.ai_job_contracts import (
     AIJobQueueMessage,
     AIJobType,
+    AIWorkerUpdate,
     AnalyzeSessionPayload,
     AssetInput,
     RubricRef,
@@ -252,6 +253,18 @@ class AIJobs:
 
     async def get_job_status(self, job_id: UUID) -> AnalysisJob | None:
         return await self._uow.jobs.get_by_id(job_id)
+
+    async def record_update(
+        self,
+        job_id: UUID,
+        update: AIWorkerUpdate,
+        *,
+        now: datetime | None = None,
+    ) -> AnalysisJob | None:
+        job = await self._uow.jobs.get_by_id(job_id)
+        if job is None:
+            return None
+        return job
 
     async def request_cancellation(
         self,
