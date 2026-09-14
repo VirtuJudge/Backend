@@ -399,7 +399,9 @@ class AssetStore:
                 await self._reject_version(version, locked_asset, "file_size_exceeded")
                 raise AssetSizeLimitExceeded("file_size_exceeded") from err
 
-            if observed_type.strip().lower() != version.declared_media_type:
+            clean_observed = observed_type.split(";")[0].strip().lower()
+            clean_declared = version.declared_media_type.split(";")[0].strip().lower()
+            if clean_observed != clean_declared:
                 await self._reject_version(version, locked_asset, "media_type_mismatch")
                 raise AssetCorrupt("media_type_mismatch")
 

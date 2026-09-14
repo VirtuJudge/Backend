@@ -70,3 +70,6 @@ class ProjectRepository(ABC):
         self, project_id: UUID, version_id: UUID, kind: str
     ) -> dict[str, Any] | None:
         return None
+
+    async def resolve_asset_version_id(self, asset_id: UUID) -> UUID | None:
+        return None

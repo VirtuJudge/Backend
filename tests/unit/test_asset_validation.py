@@ -71,6 +71,13 @@ def test_validate_asset_file_and_type_valid() -> None:
     assert mime == "video/mp4"
     assert ext == ".mp4"
 
+    name, mime, ext = validate_asset_file_and_type(
+        "presentation_video", "recording.webm", "video/webm;codecs=vp8,opus"
+    )
+    assert name == "recording.webm"
+    assert mime == "video/webm"
+    assert ext == ".webm"
+
 
 def test_validate_asset_file_and_type_invalid_names() -> None:
     for bad_name in ["", "   ", "../escape.pdf", "foo/bar.pdf", "foo\\bar.pdf"]:

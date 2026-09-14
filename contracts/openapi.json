@@ -696,16 +696,71 @@
       },
       "CreatePracticeSessionRequest": {
         "properties": {
+          "document_asset_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Asset Ids"
+          },
           "name": {
-            "maxLength": 200,
-            "minLength": 1,
-            "title": "Name",
-            "type": "string"
+            "anyOf": [
+              {
+                "maxLength": 200,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": "Practice Session",
+            "title": "Name"
+          },
+          "policy_version": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Policy Version"
+          },
+          "presentation_asset_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Presentation Asset Id"
           },
           "presentation_asset_version_id": {
-            "format": "uuid",
-            "title": "Presentation Asset Version Id",
-            "type": "string"
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Presentation Asset Version Id"
           },
           "rubric": {
             "$ref": "#/components/schemas/RubricSpec"
@@ -720,10 +775,6 @@
             "type": "array"
           }
         },
-        "required": [
-          "name",
-          "presentation_asset_version_id"
-        ],
         "title": "CreatePracticeSessionRequest",
         "type": "object"
       },
@@ -1776,6 +1827,21 @@
       },
       "UpdatePracticeSessionRequest": {
         "properties": {
+          "document_asset_ids": {
+            "anyOf": [
+              {
+                "items": {
+                  "format": "uuid",
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Document Asset Ids"
+          },
           "name": {
             "anyOf": [
               {
@@ -1788,6 +1854,18 @@
               }
             ],
             "title": "Name"
+          },
+          "presentation_asset_id": {
+            "anyOf": [
+              {
+                "format": "uuid",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Presentation Asset Id"
           },
           "presentation_asset_version_id": {
             "anyOf": [

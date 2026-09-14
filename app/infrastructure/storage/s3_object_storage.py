@@ -42,6 +42,8 @@ class S3ObjectStorage(ObjectStoragePort):
             if settings.object_storage_secret_key
             else None
         )
+        self.connect_timeout = getattr(settings, "object_storage_connect_timeout_seconds", 10.0)
+        self.read_timeout = getattr(settings, "object_storage_read_timeout_seconds", 60.0)
         self._internal_client: BaseClient | None = None
         self._public_client: BaseClient | None = None
 
@@ -51,9 +53,9 @@ class S3ObjectStorage(ObjectStoragePort):
         config = Config(
             signature_version="s3v4",
             s3={"addressing_style": "path"},
-            connect_timeout=3.0,
-            read_timeout=10.0,
-            retries={"max_attempts": 2, "mode": "standard"},
+            connect_timeout=self.connect_timeout,
+            read_timeout=self.read_timeout,
+            retries={"max_attempts": 3, "mode": "standard"},
         )
         return boto3.client(
             "s3",
@@ -173,7 +175,7 @@ class S3ObjectStorage(ObjectStoragePort):
                         if cancelled.is_set():
                             return 0, "", ""
                         try:
-                            chunk = body.read(64 * 1024) if body is not None else b""
+                            chunk = body.read(1024 * 1024) if body is not None else b""
                         except (botocore.exceptions.BotoCoreError, OSError) as read_err:
                             raise StorageUnavailable(
                                 "Storage read error during stream"

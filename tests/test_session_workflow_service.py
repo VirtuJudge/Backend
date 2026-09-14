@@ -218,6 +218,47 @@ async def test_create_session_creates_session_and_manifest(
 
 
 @pytest.mark.anyio
+async def test_create_session_resolves_asset_ids_to_version_ids(
+    workflow: SessionWorkflow,
+    uow: MagicMock,
+    project_id: UUID,
+    actor_id: UUID,
+) -> None:
+    project = MagicMock()
+    uow.projects.get_by_id.return_value = project
+    uow.projects.is_member.return_value = True
+
+    pres_asset_id = uuid4()
+    pres_ver_id = uuid4()
+    doc_asset_id = uuid4()
+    doc_ver_id = uuid4()
+
+    async def fake_resolve(asset_id: UUID) -> UUID | None:
+        if asset_id == pres_asset_id:
+            return pres_ver_id
+        if asset_id == doc_asset_id:
+            return doc_ver_id
+        return None
+
+    uow.projects.resolve_asset_version_id = AsyncMock(side_effect=fake_resolve)
+    uow.projects.asset_versions_are_verified.return_value = True
+
+    result = await workflow.create_session(
+        project_id=project_id,
+        actor_id=actor_id,
+        presentation_asset_id=pres_asset_id,
+        document_asset_ids=[doc_asset_id],
+    )
+
+    assert result.project_id == project_id
+    assert result.name == "Practice Session"
+    uow.manifests.create.assert_awaited_once()
+    manifest_arg = uow.manifests.create.await_args[0][0]
+    assert manifest_arg.presentation_version_id == pres_ver_id
+    assert manifest_arg.supporting_document_version_ids == [doc_ver_id]
+
+
+@pytest.mark.anyio
 async def test_create_session_publishes_after_commit(
     workflow: SessionWorkflow,
     uow: MagicMock,

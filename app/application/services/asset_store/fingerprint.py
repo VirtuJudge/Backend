@@ -107,7 +107,7 @@ def validate_asset_file_and_type(
         raise AssetUnsupportedMediaType(f"File extension not supported for kind {kind}")
 
     canonical_media_type = kind_types[ext]
-    normalized_media_type = declared_media_type.strip().lower()
+    normalized_media_type = declared_media_type.split(";")[0].strip().lower()
     if normalized_media_type != canonical_media_type:
         raise AssetUnsupportedMediaType(f"Declared media type must be {canonical_media_type}")
 

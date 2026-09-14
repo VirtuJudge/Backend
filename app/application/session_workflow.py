@@ -181,11 +181,13 @@ class SessionWorkflow:
         self,
         project_id: UUID,
         actor_id: UUID,
-        name: str | None,
-        presentation_asset_version_id: UUID,
+        name: str | None = None,
+        presentation_asset_version_id: UUID | None = None,
         supporting_document_version_ids: list[UUID] | None = None,
         rubric_id: str = "startup_pitch",
         rubric_version: int = 1,
+        presentation_asset_id: UUID | None = None,
+        document_asset_ids: list[UUID] | None = None,
     ) -> PracticeSession:
         async with self._uow as uow:
             if await uow.projects.get_by_id(project_id) is None:
@@ -193,7 +195,44 @@ class SessionWorkflow:
             if not await uow.projects.is_member(project_id=project_id, user_id=actor_id):
                 raise UnauthorizedSessionAction("User is not a member of the project team.")
 
+            target_pres_ver_id = presentation_asset_version_id
+            if target_pres_ver_id is None and presentation_asset_id is not None:
+                target_pres_ver_id = await uow.projects.resolve_asset_version_id(
+                    presentation_asset_id
+                )
+            elif (
+                target_pres_ver_id is not None
+                and not await uow.projects.asset_versions_are_verified(
+                    project_id, target_pres_ver_id, []
+                )
+            ):
+                resolved = await uow.projects.resolve_asset_version_id(target_pres_ver_id)
+                if resolved is not None:
+                    target_pres_ver_id = resolved
+
+            if target_pres_ver_id is None:
+                raise UnverifiedAsset("Session presentation asset version could not be resolved.")
+
             doc_ids = list(supporting_document_version_ids or [])
+            if not doc_ids and document_asset_ids:
+                resolved_docs = []
+                for d_id in document_asset_ids:
+                    res = await uow.projects.resolve_asset_version_id(d_id)
+                    resolved_docs.append(res if res is not None else d_id)
+                doc_ids = resolved_docs
+            elif doc_ids:
+                resolved_docs = []
+                for d_id in doc_ids:
+                    verified = await uow.projects.asset_versions_are_verified(
+                        project_id, target_pres_ver_id, [d_id]
+                    )
+                    if not verified:
+                        res = await uow.projects.resolve_asset_version_id(d_id)
+                        resolved_docs.append(res if res is not None else d_id)
+                    else:
+                        resolved_docs.append(d_id)
+                doc_ids = resolved_docs
+
             if len(doc_ids) != len(set(doc_ids)) or len(doc_ids) > 5:
                 raise InvalidManifestDocuments(
                     "Supporting document versions must have 0-5 unique documents."
@@ -201,7 +240,7 @@ class SessionWorkflow:
 
             if not await uow.projects.asset_versions_are_verified(
                 project_id,
-                presentation_asset_version_id,
+                target_pres_ver_id,
                 document_version_ids=doc_ids,
             ):
                 raise UnverifiedAsset("Session assets must be verified and belong to the project.")
@@ -209,7 +248,7 @@ class SessionWorkflow:
             now = datetime.now(UTC)
             session = PracticeSession(
                 id=uuid4(),
-                name=name,
+                name=name or "Practice Session",
                 project_id=project_id,
                 created_by=actor_id,
                 status=SessionStatus.DRAFT,
@@ -224,7 +263,7 @@ class SessionWorkflow:
             manifest = SessionManifest(
                 id=uuid4(),
                 session_id=session.id,
-                presentation_version_id=presentation_asset_version_id,
+                presentation_version_id=target_pres_ver_id,
                 supporting_document_version_ids=doc_ids,
                 rubric_id=rubric_id,
                 rubric_version=rubric_version,
