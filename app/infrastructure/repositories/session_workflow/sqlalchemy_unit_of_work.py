@@ -17,6 +17,7 @@ from .sqlalchemy_practice_session_repository import (
     SqlAlchemyPracticeSessionRepository,
 )
 from .sqlalchemy_qa_repository import SqlAlchemyQARepository
+from .sqlalchemy_report_repository import SqlAlchemyReportRepository
 from .sqlalchemy_session_command_idempotency_repository import (
     SqlAlchemySessionCommandIdempotencyRepository,
 )
@@ -40,6 +41,7 @@ class SqlAlchemyUnitOfWork(UnitOfWork):
         self.speaker_mappings = SqlAlchemySpeakerMappingRepository(session)
         self.idempotency = SqlAlchemySessionCommandIdempotencyRepository(session)
         self.qa = SqlAlchemyQARepository(session)
+        self.reports = SqlAlchemyReportRepository(session)
 
     async def commit(self) -> None:
         try:

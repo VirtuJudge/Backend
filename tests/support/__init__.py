@@ -18,6 +18,7 @@ from .fake_analysis_job_repository import (
     FakeAnalysisJobRepository,
     FakeUnitOfWork,
 )
+from .fake_report_repository import FakeReportRepository
 from .fakes import (
     FakeAIJobQueue,
     FakeAIQueue,
@@ -53,6 +54,7 @@ __all__ = [
     "RecordingAIQueue",
     "FakeAnalysisAttemptRepository",
     "FakeAnalysisJobRepository",
+    "FakeReportRepository",
     "FakeUnitOfWork",
     "create_test_client",
     "FakeCursor",
