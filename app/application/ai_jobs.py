@@ -30,6 +30,7 @@ from app.domain.session_workflow.entities.analysis_job import (
 from app.domain.session_workflow.entities.session_manifest import SessionManifest
 from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
 from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
+from app.domain.session_workflow.enums.session_status import SessionStatus
 from app.domain.session_workflow.exceptions import (
     InvalidAttemptState,
     InvalidJobStatusTransition,
@@ -330,12 +331,6 @@ class AIJobs:
         if update.sequence <= job.last_update_sequence:
             return job
 
-        allowed = _ALLOWED_JOB_TRANSITIONS.get(job.status, set())
-        if update.status not in allowed:
-            raise InvalidJobStatusTransition(
-                f"Cannot transition job {job.id} status '{job.status}' on update '{update.status}'."
-            )
-
         effective_now = now or datetime.now(UTC)
         if effective_now.tzinfo is None:
             effective_now = effective_now.replace(tzinfo=UTC)
@@ -343,6 +338,73 @@ class AIJobs:
         occurred_at = update.occurred_at
         if occurred_at.tzinfo is None:
             occurred_at = occurred_at.replace(tzinfo=UTC)
+
+        ancestry = await self._load_ancestry(job)
+        current_attempt_num = await self._get_current_attempt_number(job.practice_session_id)
+
+        is_cancelled = (
+            job.cancel_requested
+            or job.status == AnalysisJobStatus.CANCELLED
+            or (
+                ancestry is not None
+                and (
+                    ancestry.attempt.status == AnalysisAttemptStatus.CANCELLED
+                    or ancestry.session.status == SessionStatus.CANCELLED
+                )
+            )
+        )
+
+        is_older_attempt = (
+            current_attempt_num is not None and job.analysis_attempt < current_attempt_num
+        )
+
+        if is_cancelled and update.status in {
+            AIWorkerUpdateStatus.PROGRESS,
+            AIWorkerUpdateStatus.COMPLETED,
+            AIWorkerUpdateStatus.FAILED,
+        }:
+            job.last_update_sequence = update.sequence
+            job.cancel_requested = True
+            job.updated_at = effective_now
+            if job.status != AnalysisJobStatus.CANCELLED:
+                job.status = AnalysisJobStatus.CANCELLED
+                if job.completed_at is None:
+                    job.completed_at = occurred_at
+            await self._uow.jobs.update(job)
+            await self._uow.commit()
+            return job
+
+        if is_older_attempt:
+            job.last_update_sequence = update.sequence
+            job.updated_at = effective_now
+            if job.status not in {
+                AnalysisJobStatus.COMPLETED,
+                AnalysisJobStatus.FAILED,
+                AnalysisJobStatus.CANCELLED,
+            }:
+                if update.status == AIWorkerUpdateStatus.STARTED:
+                    job.status = AnalysisJobStatus.RUNNING
+                    if job.started_at is None:
+                        job.started_at = occurred_at
+                elif update.status == AIWorkerUpdateStatus.FAILED:
+                    job.status = AnalysisJobStatus.FAILED
+                    job.completed_at = occurred_at
+                elif update.status == AIWorkerUpdateStatus.CANCELLED:
+                    job.status = AnalysisJobStatus.CANCELLED
+                    job.cancel_requested = True
+                    job.completed_at = occurred_at
+                elif update.status == AIWorkerUpdateStatus.COMPLETED:
+                    job.status = AnalysisJobStatus.COMPLETED
+                    job.completed_at = occurred_at
+            await self._uow.jobs.update(job)
+            await self._uow.commit()
+            return job
+
+        allowed = _ALLOWED_JOB_TRANSITIONS.get(job.status, set())
+        if update.status not in allowed:
+            raise InvalidJobStatusTransition(
+                f"Cannot transition job {job.id} status '{job.status}' on update '{update.status}'."
+            )
 
         attempt: AnalysisAttempt | None = None
         initial_attempt_version = 0
@@ -453,10 +515,6 @@ class AIJobs:
                     attempt.completed_at = occurred_at
 
             elif update.status == AIWorkerUpdateStatus.COMPLETED:
-                ancestry = await self._load_ancestry(job)
-                current_attempt_num = await self._get_current_attempt_number(
-                    job.practice_session_id
-                )
                 if attempt is None and ancestry is not None:
                     attempt = ancestry.attempt
                     initial_attempt_version = attempt.version
@@ -512,8 +570,11 @@ class AIJobs:
         self,
         attempt_id: UUID,
         now: datetime,
+        *,
+        uow: UnitOfWork | None = None,
     ) -> AnalysisJob | None:
-        job = await self._uow.jobs.get_by_attempt_id(attempt_id)
+        target_uow = uow or self._uow
+        job = await target_uow.jobs.get_by_attempt_id(attempt_id)
         if job is None:
             return None
         job.cancel_requested = True
@@ -525,7 +586,7 @@ class AIJobs:
         }:
             job.status = AnalysisJobStatus.CANCELLED
             job.completed_at = now
-        await self._uow.jobs.update(job)
+        await target_uow.jobs.update(job)
         return job
 
     async def dispatch(

@@ -15,8 +15,15 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from app.application.ai_job_contracts import (
     AIJobQueueMessage,
     AIJobType,
+    AIWorkerUpdate,
+    AIWorkerUpdateStatus,
     AnalyzeSessionPayload,
+    ArtifactRef,
+    PrimaryQuestion,
+    ProgressPayload,
+    SessionAnalysisCompletedPayload,
 )
+from app.application.ai_jobs import AIJobs
 from app.application.session_workflow import SessionWorkflow
 from app.domain.session_workflow.entities.analysis_attempt import AnalysisAttempt
 from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
@@ -431,5 +438,422 @@ async def test_simultaneous_retry_is_idempotent_in_postgres() -> None:
         assert parsed.analysis_attempt == 2
         assert parsed.job_type == AIJobType.ANALYZE_SESSION
         assert parsed.practice_session_id == str(session_id)
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_postgres_cancellation_versus_callback_race() -> None:
+    database_url = os.environ.get("ASSET_TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("ASSET_TEST_DATABASE_URL not configured")
+
+    engine = create_async_engine(database_url)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    now = datetime.now(UTC)
+    user_id = uuid4()
+    team_id = uuid4()
+    project_id = uuid4()
+    asset_id = uuid4()
+    asset_version_id = uuid4()
+    session_id = uuid4()
+    manifest_id = uuid4()
+    attempt_id = uuid4()
+    job_id = uuid4()
+
+    try:
+        async with session_factory() as setup_session:
+            setup_session.add_all(
+                [
+                    UserModel(
+                        id=user_id,
+                        email=f"cancel-race-{uuid4().hex[:8]}@example.com",
+                        issuer="https://auth.example",
+                        subject=f"cancel-race-{uuid4()}",
+                        created_at=now,
+                    ),
+                    TeamModel(id=team_id, name=f"Cancel Race Team {uuid4()}", created_at=now),
+                ]
+            )
+            await setup_session.flush()
+            setup_session.add_all(
+                [
+                    TeamMemberModel(
+                        id=uuid4(),
+                        team_id=team_id,
+                        user_id=user_id,
+                        role="owner",
+                        joined_at=now,
+                    ),
+                    ProjectModel(
+                        id=project_id,
+                        team_id=team_id,
+                        name="Cancel Callback Race",
+                        description=None,
+                        created_at=now,
+                    ),
+                ]
+            )
+            await setup_session.flush()
+            setup_session.add(
+                AssetModel(
+                    id=asset_id,
+                    project_id=project_id,
+                    kind="presentation_video",
+                    state="verified",
+                    file_name="presentation.mp4",
+                    current_version_id=asset_version_id,
+                    created_by=user_id,
+                    created_at=now,
+                )
+            )
+            await setup_session.flush()
+            setup_session.add(
+                AssetVersionModel(
+                    id=asset_version_id,
+                    asset_id=asset_id,
+                    version_number=1,
+                    state="verified",
+                    storage_key=f"tests/{asset_version_id}",
+                    file_name="presentation.mp4",
+                    declared_media_type="video/mp4",
+                    declared_size_bytes=1,
+                    media_type="video/mp4",
+                    size_bytes=1,
+                    checksum=f"sha256:{'0' * 64}",
+                    created_by=user_id,
+                    created_at=now,
+                    completed_at=now,
+                    upload_expires_at=now,
+                )
+            )
+            await setup_session.flush()
+            setup_session.add(
+                PracticeSessionModel(
+                    id=session_id,
+                    name="Cancel Callback Race Session",
+                    project_id=project_id,
+                    created_by=user_id,
+                    status=SessionStatus.ANALYZING,
+                    version=1,
+                    created_at=now,
+                    updated_at=now,
+                    consent_granted=True,
+                    started_at=now,
+                )
+            )
+            await setup_session.flush()
+            setup_session.add(
+                SessionManifestModel(
+                    id=manifest_id,
+                    session_id=session_id,
+                    presentation_version_id=asset_version_id,
+                    rubric_id="startup_pitch",
+                    rubric_version=1,
+                    frozen_at=now,
+                )
+            )
+            await setup_session.flush()
+            setup_session.add(
+                AnalysisAttemptModel(
+                    id=attempt_id,
+                    session_id=session_id,
+                    manifest_id=manifest_id,
+                    attempt_number=1,
+                    status=AnalysisAttemptStatus.RUNNING,
+                    version=1,
+                    created_at=now,
+                    started_at=now,
+                )
+            )
+            await setup_session.flush()
+            setup_session.add(
+                AnalysisJobModel(
+                    id=job_id,
+                    practice_session_id=session_id,
+                    attempt_id=attempt_id,
+                    analysis_attempt=1,
+                    job_type="analyze_session",
+                    status=AnalysisJobStatus.RUNNING,
+                    correlation_id=uuid4(),
+                    last_update_sequence=1,
+                    payload_version=1,
+                    attempts=1,
+                    cancel_requested=False,
+                    retry_count=0,
+                    created_at=now,
+                    updated_at=now,
+                    started_at=now,
+                    payload={"trace_id": "trc_cancel_race"},
+                )
+            )
+            await setup_session.commit()
+
+        update = AIWorkerUpdate(
+            schema_version=1,
+            sequence=2,
+            status=AIWorkerUpdateStatus.PROGRESS,
+            occurred_at=datetime.now(UTC),
+            trace_id="trc_cancel_race",
+            payload=ProgressPayload(stage="speech", progress=0.8, message="Transcribing"),
+        )
+
+        async def run_cancel() -> None:
+            async with session_factory() as s:
+                workflow = SessionWorkflow(SqlAlchemyUnitOfWork(s))
+                await workflow.cancel(
+                    session_id=session_id,
+                    actor_id=user_id,
+                    reason="User cancelled",
+                )
+
+        async def run_callback() -> None:
+            async with session_factory() as s:
+                ai_jobs = AIJobs(SqlAlchemyUnitOfWork(s))
+                await ai_jobs.record_update(job_id, update)
+
+        await asyncio.gather(run_cancel(), run_callback())
+
+        async with session_factory() as verify_session:
+            session_model = await verify_session.get(PracticeSessionModel, session_id)
+            job_model = await verify_session.get(AnalysisJobModel, job_id)
+            attempt_model = await verify_session.get(AnalysisAttemptModel, attempt_id)
+
+        assert session_model is not None
+        assert session_model.status == SessionStatus.CANCELLED
+        assert job_model is not None
+        assert job_model.cancel_requested is True
+        assert job_model.status == AnalysisJobStatus.CANCELLED
+        assert attempt_model is not None
+        assert attempt_model.status == AnalysisAttemptStatus.CANCELLED
+    finally:
+        await engine.dispose()
+
+
+@pytest.mark.anyio
+async def test_postgres_retry_versus_stale_completion_race() -> None:
+    database_url = os.environ.get("ASSET_TEST_DATABASE_URL")
+    if not database_url:
+        pytest.skip("ASSET_TEST_DATABASE_URL not configured")
+
+    engine = create_async_engine(database_url)
+    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    now = datetime.now(UTC)
+    user_id = uuid4()
+    team_id = uuid4()
+    project_id = uuid4()
+    asset_id = uuid4()
+    asset_version_id = uuid4()
+    session_id = uuid4()
+    manifest_id = uuid4()
+    attempt_id = uuid4()
+    job_id = uuid4()
+
+    try:
+        async with session_factory() as setup_session:
+            setup_session.add_all(
+                [
+                    UserModel(
+                        id=user_id,
+                        email=f"retry-race-{uuid4().hex[:8]}@example.com",
+                        issuer="https://auth.example",
+                        subject=f"retry-race-{uuid4()}",
+                        created_at=now,
+                    ),
+                    TeamModel(id=team_id, name=f"Retry Race Team {uuid4()}", created_at=now),
+                ]
+            )
+            await setup_session.flush()
+            setup_session.add_all(
+                [
+                    TeamMemberModel(
+                        id=uuid4(),
+                        team_id=team_id,
+                        user_id=user_id,
+                        role="owner",
+                        joined_at=now,
+                    ),
+                    ProjectModel(
+                        id=project_id,
+                        team_id=team_id,
+                        name="Retry Stale Completion Race",
+                        description=None,
+                        created_at=now,
+                    ),
+                ]
+            )
+            await setup_session.flush()
+            setup_session.add(
+                AssetModel(
+                    id=asset_id,
+                    project_id=project_id,
+                    kind="presentation_video",
+                    state="verified",
+                    file_name="presentation.mp4",
+                    current_version_id=asset_version_id,
+                    created_by=user_id,
+                    created_at=now,
+                )
+            )
+            await setup_session.flush()
+            setup_session.add(
+                AssetVersionModel(
+                    id=asset_version_id,
+                    asset_id=asset_id,
+                    version_number=1,
+                    state="verified",
+                    storage_key=f"tests/{asset_version_id}",
+                    file_name="presentation.mp4",
+                    declared_media_type="video/mp4",
+                    declared_size_bytes=1,
+                    media_type="video/mp4",
+                    size_bytes=1,
+                    checksum=f"sha256:{'0' * 64}",
+                    created_by=user_id,
+                    created_at=now,
+                    completed_at=now,
+                    upload_expires_at=now,
+                )
+            )
+            await setup_session.flush()
+            setup_session.add(
+                PracticeSessionModel(
+                    id=session_id,
+                    name="Retry Stale Race Session",
+                    project_id=project_id,
+                    created_by=user_id,
+                    status=SessionStatus.FAILED,
+                    version=1,
+                    created_at=now,
+                    updated_at=now,
+                    consent_granted=True,
+                    started_at=now,
+                )
+            )
+            await setup_session.flush()
+            setup_session.add(
+                SessionManifestModel(
+                    id=manifest_id,
+                    session_id=session_id,
+                    presentation_version_id=asset_version_id,
+                    rubric_id="startup_pitch",
+                    rubric_version=1,
+                    frozen_at=now,
+                )
+            )
+            await setup_session.flush()
+            setup_session.add(
+                AnalysisAttemptModel(
+                    id=attempt_id,
+                    session_id=session_id,
+                    manifest_id=manifest_id,
+                    attempt_number=1,
+                    status=AnalysisAttemptStatus.FAILED,
+                    version=1,
+                    created_at=now,
+                    started_at=now,
+                    failed_at=now,
+                )
+            )
+            await setup_session.flush()
+            setup_session.add(
+                AnalysisJobModel(
+                    id=job_id,
+                    practice_session_id=session_id,
+                    attempt_id=attempt_id,
+                    analysis_attempt=1,
+                    job_type="analyze_session",
+                    status=AnalysisJobStatus.RUNNING,
+                    correlation_id=uuid4(),
+                    last_update_sequence=1,
+                    payload_version=1,
+                    attempts=1,
+                    cancel_requested=False,
+                    retry_count=0,
+                    created_at=now,
+                    updated_at=now,
+                    started_at=now,
+                    payload={"trace_id": "trc_retry_stale_race"},
+                )
+            )
+            await setup_session.commit()
+
+        stale_completed_update = AIWorkerUpdate(
+            schema_version=1,
+            sequence=2,
+            status=AIWorkerUpdateStatus.COMPLETED,
+            occurred_at=datetime.now(UTC),
+            trace_id="trc_retry_stale_race",
+            payload=SessionAnalysisCompletedPayload(
+                analysis_artifact=ArtifactRef(
+                    artifact_id="01JEXAMPLE0000000000000091",
+                    object_key="artifacts/session/analysis.json",
+                    checksum=f"sha256:{'1' * 64}",
+                    schema_version=1,
+                ),
+                primary_questions=[
+                    PrimaryQuestion(
+                        candidate_id="c1",
+                        text="Q1?",
+                        reason="R1",
+                        rubric_dimension="dim1",
+                        evidence_ids=["ev1"],
+                    ),
+                    PrimaryQuestion(
+                        candidate_id="c2",
+                        text="Q2?",
+                        reason="R2",
+                        rubric_dimension="dim2",
+                        evidence_ids=["ev2"],
+                    ),
+                    PrimaryQuestion(
+                        candidate_id="c3",
+                        text="Q3?",
+                        reason="R3",
+                        rubric_dimension="dim3",
+                        evidence_ids=["ev3"],
+                    ),
+                ],
+                speaker_labels=["SPEAKER_00"],
+                limitations=[],
+            ),
+        )
+
+        async def run_retry() -> None:
+            async with session_factory() as s:
+                workflow = SessionWorkflow(SqlAlchemyUnitOfWork(s))
+                await workflow.retry(
+                    session_id=session_id,
+                    actor_id=user_id,
+                    idempotency_key=f"retry-{uuid4()}",
+                )
+
+        async def run_stale_callback() -> None:
+            async with session_factory() as s:
+                ai_jobs = AIJobs(SqlAlchemyUnitOfWork(s))
+                await ai_jobs.record_update(job_id, stale_completed_update)
+
+        await asyncio.gather(run_retry(), run_stale_callback())
+
+        async with session_factory() as verify_session:
+            session_model = await verify_session.get(PracticeSessionModel, session_id)
+            attempt_count = await verify_session.scalar(
+                select(func.count())
+                .select_from(AnalysisAttemptModel)
+                .where(AnalysisAttemptModel.session_id == session_id)
+            )
+            attempts = (
+                await verify_session.scalars(
+                    select(AnalysisAttemptModel)
+                    .where(AnalysisAttemptModel.session_id == session_id)
+                    .order_by(AnalysisAttemptModel.attempt_number)
+                )
+            ).all()
+
+        assert session_model is not None
+        assert session_model.status == SessionStatus.ANALYZING
+        assert attempt_count == 2
+        assert attempts[0].status == AnalysisAttemptStatus.FAILED
+        assert attempts[1].status == AnalysisAttemptStatus.QUEUED
     finally:
         await engine.dispose()

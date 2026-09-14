@@ -458,17 +458,6 @@ async def test_allowed_cancelled_to_cancelled_acknowledgement() -> None:
             AnalysisAttemptStatus.CANCELLED,
             AIWorkerUpdateStatus.STARTED,
         ),
-        (
-            AnalysisJobStatus.CANCELLED,
-            AnalysisAttemptStatus.CANCELLED,
-            AIWorkerUpdateStatus.PROGRESS,
-        ),
-        (AnalysisJobStatus.CANCELLED, AnalysisAttemptStatus.CANCELLED, AIWorkerUpdateStatus.FAILED),
-        (
-            AnalysisJobStatus.CANCELLED,
-            AnalysisAttemptStatus.CANCELLED,
-            AIWorkerUpdateStatus.COMPLETED,
-        ),
     ],
 )
 async def test_forbidden_transitions_raise_exception(
@@ -923,7 +912,7 @@ async def test_completed_invalid_artifact_object_key_scope_mismatch() -> None:
 
 
 @pytest.mark.asyncio
-async def test_completed_stale_attempt() -> None:
+async def test_completed_stale_attempt_acknowledged_and_ignored() -> None:
     job, attempt, uow, service = _build_attempt_and_job(
         job_status=AnalysisJobStatus.RUNNING,
         attempt_status=AnalysisAttemptStatus.RUNNING,
@@ -950,16 +939,17 @@ async def test_completed_stale_attempt() -> None:
 
     update = _make_update(AIWorkerUpdateStatus.COMPLETED, sequence=2)
 
-    with pytest.raises(CompletedResultValidationError) as exc_info:
-        await service.record_update(job.id, update)
-
-    assert "is stale; current attempt is 2" in str(exc_info.value)
-    assert job.status == AnalysisJobStatus.RUNNING
-    assert uow.commit_count == 0
+    result = await service.record_update(job.id, update)
+    assert result is not None
+    assert result.last_update_sequence == 2
+    assert newer_attempt.status == AnalysisAttemptStatus.RUNNING
+    assert newer_attempt.completed_at is None
+    assert result.completed_result is None
+    assert uow.commit_count == 1
 
 
 @pytest.mark.asyncio
-async def test_completed_cancelled_attempt_rejected() -> None:
+async def test_completed_cancelled_attempt_acknowledged_and_ignored() -> None:
     job, attempt, uow, service = _build_attempt_and_job(
         job_status=AnalysisJobStatus.RUNNING,
         attempt_status=AnalysisAttemptStatus.CANCELLED,
@@ -995,12 +985,13 @@ async def test_completed_cancelled_attempt_rejected() -> None:
 
     update = _make_update(AIWorkerUpdateStatus.COMPLETED, sequence=2)
 
-    with pytest.raises(CompletedResultValidationError) as exc_info:
-        await service.record_update(job.id, update)
-
-    assert "Cannot complete cancelled" in str(exc_info.value)
-    assert job.status == AnalysisJobStatus.RUNNING
-    assert uow.commit_count == 0
+    result = await service.record_update(job.id, update)
+    assert result is not None
+    assert result.status == AnalysisJobStatus.CANCELLED
+    assert result.cancel_requested is True
+    assert result.last_update_sequence == 2
+    assert result.completed_result is None
+    assert uow.commit_count == 1
 
 
 @pytest.mark.asyncio

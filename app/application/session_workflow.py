@@ -528,7 +528,7 @@ class SessionWorkflow:
                 if attempt is not None:
                     attempt.transition_to(AnalysisAttemptStatus.CANCELLED, now)
                     await uow.attempts.update(attempt, expected_version=attempt.version)
-                    await self._ai_jobs.request_cancellation(attempt.id, now)
+                    await self._ai_jobs.request_cancellation(attempt.id, now, uow=uow)
 
                 if idempotency_key:
                     await uow.idempotency.create(
