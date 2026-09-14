@@ -4,7 +4,7 @@ import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, cast
 from uuid import UUID, uuid4
 
 from app.application.ai_job_contracts import (
@@ -16,13 +16,17 @@ from app.application.ai_job_contracts import (
     AssetInput,
     RubricRef,
 )
+from app.application.ai_job_validation import validate_completed_update
 from app.application.ports.ai_queue import (
     AIJobQueuePort,
     AIQueueTemporaryFailure,
 )
 from app.application.ports.session_practice.unit_of_work_repository import UnitOfWork
 from app.domain.session_workflow.entities.analysis_attempt import AnalysisAttempt
-from app.domain.session_workflow.entities.analysis_job import AnalysisJob
+from app.domain.session_workflow.entities.analysis_job import (
+    AIJobAncestryContext,
+    AnalysisJob,
+)
 from app.domain.session_workflow.entities.session_manifest import SessionManifest
 from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
 from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
@@ -286,6 +290,32 @@ class AIJobs:
     async def get_job_status(self, job_id: UUID) -> AnalysisJob | None:
         return await self._uow.jobs.get_by_id(job_id)
 
+    async def _load_ancestry(self, job: AnalysisJob) -> AIJobAncestryContext | None:
+        jobs_repo = getattr(self._uow, "jobs", None)
+        if jobs_repo is not None:
+            fn = getattr(jobs_repo, "get_ancestry_context", None) or getattr(
+                jobs_repo, "load_ancestry_context", None
+            )
+            if callable(fn):
+                res = fn(job.id)
+                ctx = await res if inspect.isawaitable(res) else res
+                if ctx is not None:
+                    return cast(AIJobAncestryContext, ctx)
+        return None
+
+    async def _get_current_attempt_number(self, session_id: UUID) -> int | None:
+        attempts_repo = getattr(self._uow, "attempts", None)
+        if attempts_repo is not None:
+            fn = getattr(attempts_repo, "get_current_by_session_id", None) or getattr(
+                attempts_repo, "get_latest", None
+            )
+            if callable(fn):
+                res = fn(session_id)
+                att = await res if inspect.isawaitable(res) else res
+                if att is not None:
+                    return int(att.attempt_number)
+        return None
+
     async def record_update(
         self,
         job_id: UUID,
@@ -423,8 +453,27 @@ class AIJobs:
                     attempt.completed_at = occurred_at
 
             elif update.status == AIWorkerUpdateStatus.COMPLETED:
+                ancestry = await self._load_ancestry(job)
+                current_attempt_num = await self._get_current_attempt_number(
+                    job.practice_session_id
+                )
+                if attempt is None and ancestry is not None:
+                    attempt = ancestry.attempt
+                    initial_attempt_version = attempt.version
+                try:
+                    validated_payload = validate_completed_update(
+                        job, update, ancestry, current_attempt_num
+                    )
+                except Exception:
+                    rollback_fn = getattr(self._uow, "rollback", None)
+                    if callable(rollback_fn):
+                        res = rollback_fn()
+                        if inspect.isawaitable(res):
+                            await res
+                    raise
                 job.status = AnalysisJobStatus.COMPLETED
                 job.completed_at = occurred_at
+                job.completed_result = validated_payload.model_dump(mode="json")
                 if attempt is not None:
                     attempt.transition_to(AnalysisAttemptStatus.COMPLETED, at=occurred_at)
                     attempt.completed_at = occurred_at

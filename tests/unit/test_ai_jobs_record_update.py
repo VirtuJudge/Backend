@@ -1,5 +1,5 @@
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal, cast
 from uuid import UUID, uuid4
 
 import pytest
@@ -7,22 +7,71 @@ import pytest
 from app.application.ai_job_contracts import (
     AIWorkerUpdate,
     AIWorkerUpdateStatus,
+    AnswerAnalysisCompletedPayload,
+    ArtifactRef,
     CancelledPayload,
+    ErasureCompletedPayload,
     FailedPayload,
+    FollowUpQuestion,
+    PrimaryQuestion,
     ProgressPayload,
+    ReportCompletedPayload,
+    SessionAnalysisCompletedPayload,
     StartedPayload,
 )
 from app.application.ai_jobs import AIJobs
 from app.domain.session_workflow.entities.analysis_attempt import AnalysisAttempt
-from app.domain.session_workflow.entities.analysis_job import AnalysisJob
+from app.domain.session_workflow.entities.analysis_job import (
+    AIJobAncestryContext,
+    AnalysisJob,
+)
+from app.domain.session_workflow.entities.session_practice import PracticeSession
 from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
 from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
+from app.domain.session_workflow.enums.session_status import SessionStatus
 from app.domain.session_workflow.exceptions import (
+    CompletedResultValidationError,
     InvalidJobStatusTransition,
     StaleEntityVersion,
 )
 from tests.support.fake_analysis_attempt_repository import FakeAnalysisAttemptRepository
 from tests.support.fake_analysis_job_repository import FakeAnalysisJobRepository, FakeUnitOfWork
+
+
+def _valid_completed_session_payload() -> SessionAnalysisCompletedPayload:
+    return SessionAnalysisCompletedPayload(
+        analysis_artifact=ArtifactRef(
+            artifact_id="01JEXAMPLE0000000000000051",
+            object_key="artifacts/session_analysis.json",
+            checksum="sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            schema_version=1,
+        ),
+        primary_questions=[
+            PrimaryQuestion(
+                candidate_id="cand_001",
+                text="How do you calculate your customer acquisition cost?",
+                reason="Clarifies unit economics model",
+                rubric_dimension="market_and_business_model",
+                evidence_ids=["ev_speech_01", "ev_slide_03"],
+            ),
+            PrimaryQuestion(
+                candidate_id="cand_002",
+                text="What is the technical moat protecting your algorithms?",
+                reason="Evaluates defensive IP claims",
+                rubric_dimension="technology_and_moat",
+                evidence_ids=["ev_slide_06"],
+            ),
+            PrimaryQuestion(
+                candidate_id="cand_003",
+                text="What milestones will prove enterprise pilot conversion?",
+                reason="Assesses go-to-market execution timeline",
+                rubric_dimension="execution_and_milestones",
+                evidence_ids=["ev_slide_09", "ev_speech_04"],
+            ),
+        ],
+        speaker_labels=["SPEAKER_00", "SPEAKER_01"],
+        limitations=[],
+    )
 
 
 def _build_attempt_and_job(
@@ -35,6 +84,9 @@ def _build_attempt_and_job(
     started_at: datetime | None = None,
     completed_at: datetime | None = None,
     payload: dict[str, Any] | None = None,
+    job_type: str = "analyze_session",
+    attempt_number: int = 1,
+    trace_id: str = "trc_test_update",
 ) -> tuple[AnalysisJob, AnalysisAttempt, FakeUnitOfWork, AIJobs]:
     job_id = uuid4()
     session_id = uuid4()
@@ -42,12 +94,16 @@ def _build_attempt_and_job(
     attempt_id = uuid4()
     now = datetime(2026, 9, 14, 12, 0, 0, tzinfo=UTC)
 
+    job_payload = dict(payload) if payload is not None else {}
+    if "trace_id" not in job_payload and trace_id:
+        job_payload["trace_id"] = trace_id
+
     attempt = AnalysisAttempt(
         id=attempt_id,
         session_id=session_id,
         manifest_id=manifest_id,
         idempotency_key=None,
-        attempt_number=1,
+        attempt_number=attempt_number,
         status=attempt_status,
         failure_code=None,
         failure_message=None,
@@ -63,8 +119,8 @@ def _build_attempt_and_job(
         id=job_id,
         practice_session_id=session_id,
         attempt_id=attempt_id,
-        analysis_attempt=1,
-        job_type="analyze_session",
+        analysis_attempt=attempt_number,
+        job_type=job_type,
         status=job_status,
         correlation_id=uuid4(),
         last_update_sequence=last_update_sequence,
@@ -77,7 +133,7 @@ def _build_attempt_and_job(
         updated_at=now,
         started_at=started_at,
         completed_at=completed_at,
-        payload=payload or {},
+        payload=job_payload,
         queued_at=now if job_status == AnalysisJobStatus.QUEUED else None,
     )
 
@@ -93,6 +149,8 @@ def _make_update(
     sequence: int = 1,
     payload: Any = None,
     occurred_at: datetime | None = None,
+    trace_id: str = "trc_test_update",
+    schema_version: int = 1,
 ) -> AIWorkerUpdate:
     occ = occurred_at or datetime(2026, 9, 14, 12, 5, 0, tzinfo=UTC)
     if payload is None:
@@ -111,14 +169,14 @@ def _make_update(
         elif status == AIWorkerUpdateStatus.CANCELLED or status == "cancelled":
             payload = CancelledPayload()
         elif status == AIWorkerUpdateStatus.COMPLETED or status == "completed":
-            payload = {}
+            payload = _valid_completed_session_payload()
 
     return AIWorkerUpdate(
-        schema_version=1,
+        schema_version=schema_version,
         sequence=sequence,
         status=status,
         occurred_at=occ,
-        trace_id="trc_test_update",
+        trace_id=trace_id,
         payload=payload,
     )
 
@@ -219,7 +277,6 @@ async def test_allowed_running_to_completed() -> None:
     update = _make_update(
         AIWorkerUpdateStatus.COMPLETED,
         sequence=3,
-        payload={},
         occurred_at=occurred_at,
     )
 
@@ -229,6 +286,8 @@ async def test_allowed_running_to_completed() -> None:
     assert result.status == AnalysisJobStatus.COMPLETED
     assert result.completed_at == occurred_at
     assert result.last_update_sequence == 3
+    assert result.completed_result is not None
+    assert len(result.completed_result["primary_questions"]) == 3
     assert attempt.status == AnalysisAttemptStatus.COMPLETED
     assert attempt.completed_at == occurred_at
     assert uow.commit_count == 1
@@ -633,3 +692,607 @@ async def test_record_update_unknown_job_returns_none() -> None:
     result = await service.record_update(uuid4(), update)
 
     assert result is None
+
+
+# ===========================================================================
+# Completed Callback Handling Tests
+# ===========================================================================
+
+
+@pytest.mark.asyncio
+async def test_completed_valid_analyze_session() -> None:
+    job, attempt, uow, service = _build_attempt_and_job(
+        job_status=AnalysisJobStatus.RUNNING,
+        attempt_status=AnalysisAttemptStatus.RUNNING,
+        last_update_sequence=1,
+    )
+    occurred_at = datetime(2026, 9, 14, 12, 10, 0, tzinfo=UTC)
+    payload = _valid_completed_session_payload()
+    update = _make_update(
+        AIWorkerUpdateStatus.COMPLETED,
+        sequence=2,
+        payload=payload,
+        occurred_at=occurred_at,
+    )
+
+    result = await service.record_update(job.id, update)
+
+    assert result is not None
+    assert result.status == AnalysisJobStatus.COMPLETED
+    assert result.completed_at == occurred_at
+    assert result.last_update_sequence == 2
+    assert result.completed_result is not None
+    assert (
+        result.completed_result["analysis_artifact"]["object_key"]
+        == "artifacts/session_analysis.json"
+    )
+    assert len(result.completed_result["primary_questions"]) == 3
+    assert attempt.status == AnalysisAttemptStatus.COMPLETED
+    assert attempt.completed_at == occurred_at
+    assert uow.commit_count == 1
+
+
+@pytest.mark.asyncio
+async def test_completed_wrong_result_type() -> None:
+    job, attempt, uow, service = _build_attempt_and_job(
+        job_status=AnalysisJobStatus.RUNNING,
+        attempt_status=AnalysisAttemptStatus.RUNNING,
+        last_update_sequence=1,
+        job_type="analyze_session",
+    )
+    wrong_payload = AnswerAnalysisCompletedPayload(
+        answer_id="ans_123",
+        transcript_artifact_id="art_trans_1",
+        assessment_artifact_id="art_assess_1",
+    )
+    update = _make_update(
+        AIWorkerUpdateStatus.COMPLETED,
+        sequence=2,
+        payload=wrong_payload,
+    )
+
+    with pytest.raises(CompletedResultValidationError) as exc_info:
+        await service.record_update(job.id, update)
+
+    assert "Completed payload validation failed for job_type 'analyze_session'" in str(
+        exc_info.value
+    )
+    assert job.status == AnalysisJobStatus.RUNNING
+    assert attempt.status == AnalysisAttemptStatus.RUNNING
+    assert uow.commit_count == 0
+
+
+@pytest.mark.asyncio
+async def test_completed_trace_mismatch() -> None:
+    job, attempt, uow, service = _build_attempt_and_job(
+        job_status=AnalysisJobStatus.RUNNING,
+        attempt_status=AnalysisAttemptStatus.RUNNING,
+        last_update_sequence=1,
+        trace_id="trc_dispatched_exact",
+    )
+    update = _make_update(
+        AIWorkerUpdateStatus.COMPLETED,
+        sequence=2,
+        trace_id="trc_foreign_worker",
+    )
+
+    with pytest.raises(CompletedResultValidationError) as exc_info:
+        await service.record_update(job.id, update)
+
+    assert "does not match dispatched job trace_id" in str(exc_info.value)
+    assert job.status == AnalysisJobStatus.RUNNING
+    assert uow.commit_count == 0
+
+
+@pytest.mark.asyncio
+async def test_completed_ancestry_mismatch_missing_context() -> None:
+    job, attempt, uow, service = _build_attempt_and_job(
+        job_status=AnalysisJobStatus.RUNNING,
+        attempt_status=AnalysisAttemptStatus.RUNNING,
+        last_update_sequence=1,
+    )
+    assert isinstance(uow.jobs, FakeAnalysisJobRepository)
+    uow.jobs.set_ancestry_context(job.id, None)
+
+    update = _make_update(AIWorkerUpdateStatus.COMPLETED, sequence=2)
+
+    with pytest.raises(CompletedResultValidationError) as exc_info:
+        await service.record_update(job.id, update)
+
+    assert "ancestry context could not be resolved" in str(exc_info.value)
+    assert job.status == AnalysisJobStatus.RUNNING
+    assert uow.commit_count == 0
+
+
+@pytest.mark.asyncio
+async def test_completed_ancestry_mismatch_session_id() -> None:
+    job, attempt, uow, service = _build_attempt_and_job(
+        job_status=AnalysisJobStatus.RUNNING,
+        attempt_status=AnalysisAttemptStatus.RUNNING,
+        last_update_sequence=1,
+    )
+    wrong_session = PracticeSession(
+        id=uuid4(),
+        project_id=uuid4(),
+        created_by=uuid4(),
+        name="Different Session",
+        status=SessionStatus.ANALYZING,
+        version=1,
+        created_at=job.created_at,
+        updated_at=job.updated_at,
+        consent_granted=True,
+        started_at=job.started_at,
+        completed_at=None,
+        cancelled_at=None,
+    )
+    ancestry = AIJobAncestryContext(
+        job=job,
+        attempt=attempt,
+        session=wrong_session,
+        project_id=wrong_session.project_id,
+        team_id=uuid4(),
+    )
+    assert isinstance(uow.jobs, FakeAnalysisJobRepository)
+    uow.jobs.set_ancestry_context(job.id, ancestry)
+
+    update = _make_update(AIWorkerUpdateStatus.COMPLETED, sequence=2)
+
+    with pytest.raises(CompletedResultValidationError) as exc_info:
+        await service.record_update(job.id, update)
+
+    assert "does not match session ancestry" in str(exc_info.value)
+    assert job.status == AnalysisJobStatus.RUNNING
+    assert uow.commit_count == 0
+
+
+@pytest.mark.asyncio
+async def test_completed_invalid_artifact_checksum() -> None:
+    job, attempt, uow, service = _build_attempt_and_job(
+        job_status=AnalysisJobStatus.RUNNING,
+        attempt_status=AnalysisAttemptStatus.RUNNING,
+        last_update_sequence=1,
+    )
+    payload_dict = _valid_completed_session_payload().model_dump(mode="json")
+    payload_dict["analysis_artifact"]["checksum"] = "sha256:invalid_checksum_not_64_hex"
+    update = _make_update(AIWorkerUpdateStatus.COMPLETED, sequence=2, payload=payload_dict)
+
+    with pytest.raises(CompletedResultValidationError) as exc_info:
+        await service.record_update(job.id, update)
+
+    assert "checksum" in str(exc_info.value).lower()
+    assert job.status == AnalysisJobStatus.RUNNING
+    assert uow.commit_count == 0
+
+
+@pytest.mark.asyncio
+async def test_completed_invalid_artifact_schema_version() -> None:
+    job, attempt, uow, service = _build_attempt_and_job(
+        job_status=AnalysisJobStatus.RUNNING,
+        attempt_status=AnalysisAttemptStatus.RUNNING,
+        last_update_sequence=1,
+    )
+    payload = _valid_completed_session_payload()
+    payload.analysis_artifact.schema_version = 2
+    update = _make_update(AIWorkerUpdateStatus.COMPLETED, sequence=2, payload=payload)
+
+    with pytest.raises(CompletedResultValidationError) as exc_info:
+        await service.record_update(job.id, update)
+
+    assert "schema_version must be 1" in str(exc_info.value)
+    assert job.status == AnalysisJobStatus.RUNNING
+    assert uow.commit_count == 0
+
+
+@pytest.mark.asyncio
+async def test_completed_invalid_artifact_object_key_path_traversal() -> None:
+    job, attempt, uow, service = _build_attempt_and_job(
+        job_status=AnalysisJobStatus.RUNNING,
+        attempt_status=AnalysisAttemptStatus.RUNNING,
+        last_update_sequence=1,
+    )
+    payload = _valid_completed_session_payload()
+    payload.analysis_artifact.object_key = "../../etc/shadow"
+    update = _make_update(AIWorkerUpdateStatus.COMPLETED, sequence=2, payload=payload)
+
+    with pytest.raises(CompletedResultValidationError) as exc_info:
+        await service.record_update(job.id, update)
+
+    assert "invalid traversal" in str(exc_info.value)
+    assert job.status == AnalysisJobStatus.RUNNING
+    assert uow.commit_count == 0
+
+
+@pytest.mark.asyncio
+async def test_completed_invalid_artifact_object_key_scope_mismatch() -> None:
+    job, attempt, uow, service = _build_attempt_and_job(
+        job_status=AnalysisJobStatus.RUNNING,
+        attempt_status=AnalysisAttemptStatus.RUNNING,
+        last_update_sequence=1,
+    )
+    foreign_team_id = uuid4()
+    payload = _valid_completed_session_payload()
+    payload.analysis_artifact.object_key = f"teams/{foreign_team_id}/session_analysis.json"
+    update = _make_update(AIWorkerUpdateStatus.COMPLETED, sequence=2, payload=payload)
+
+    with pytest.raises(CompletedResultValidationError) as exc_info:
+        await service.record_update(job.id, update)
+
+    assert "scope mismatch" in str(exc_info.value) or "unauthorized resource" in str(exc_info.value)
+    assert job.status == AnalysisJobStatus.RUNNING
+    assert uow.commit_count == 0
+
+
+@pytest.mark.asyncio
+async def test_completed_stale_attempt() -> None:
+    job, attempt, uow, service = _build_attempt_and_job(
+        job_status=AnalysisJobStatus.RUNNING,
+        attempt_status=AnalysisAttemptStatus.RUNNING,
+        last_update_sequence=1,
+        attempt_number=1,
+    )
+    newer_attempt = AnalysisAttempt(
+        id=uuid4(),
+        session_id=job.practice_session_id,
+        manifest_id=uuid4(),
+        idempotency_key=None,
+        attempt_number=2,
+        status=AnalysisAttemptStatus.RUNNING,
+        failure_code=None,
+        failure_message=None,
+        created_at=datetime.now(UTC),
+        started_at=datetime.now(UTC),
+        completed_at=None,
+        failed_at=None,
+        cancelled_at=None,
+        version=1,
+    )
+    await uow.attempts.create(newer_attempt)
+
+    update = _make_update(AIWorkerUpdateStatus.COMPLETED, sequence=2)
+
+    with pytest.raises(CompletedResultValidationError) as exc_info:
+        await service.record_update(job.id, update)
+
+    assert "is stale; current attempt is 2" in str(exc_info.value)
+    assert job.status == AnalysisJobStatus.RUNNING
+    assert uow.commit_count == 0
+
+
+@pytest.mark.asyncio
+async def test_completed_cancelled_attempt_rejected() -> None:
+    job, attempt, uow, service = _build_attempt_and_job(
+        job_status=AnalysisJobStatus.RUNNING,
+        attempt_status=AnalysisAttemptStatus.CANCELLED,
+        last_update_sequence=1,
+    )
+    ancestry = await uow.jobs.get_ancestry_context(job.id)
+    assert ancestry is not None
+    cancelled_attempt = AnalysisAttempt(
+        id=attempt.id,
+        session_id=attempt.session_id,
+        manifest_id=attempt.manifest_id,
+        idempotency_key=None,
+        attempt_number=attempt.attempt_number,
+        status=AnalysisAttemptStatus.CANCELLED,
+        failure_code=None,
+        failure_message=None,
+        created_at=attempt.created_at,
+        started_at=attempt.started_at,
+        completed_at=None,
+        failed_at=None,
+        cancelled_at=datetime.now(UTC),
+        version=attempt.version,
+    )
+    updated_ancestry = AIJobAncestryContext(
+        job=job,
+        attempt=cancelled_attempt,
+        session=ancestry.session,
+        project_id=ancestry.project_id,
+        team_id=ancestry.team_id,
+    )
+    assert isinstance(uow.jobs, FakeAnalysisJobRepository)
+    uow.jobs.set_ancestry_context(job.id, updated_ancestry)
+
+    update = _make_update(AIWorkerUpdateStatus.COMPLETED, sequence=2)
+
+    with pytest.raises(CompletedResultValidationError) as exc_info:
+        await service.record_update(job.id, update)
+
+    assert "Cannot complete cancelled" in str(exc_info.value)
+    assert job.status == AnalysisJobStatus.RUNNING
+    assert uow.commit_count == 0
+
+
+@pytest.mark.asyncio
+async def test_completed_duplicate_sequence_no_side_effects() -> None:
+    job, attempt, uow, service = _build_attempt_and_job(
+        job_status=AnalysisJobStatus.RUNNING,
+        attempt_status=AnalysisAttemptStatus.RUNNING,
+        last_update_sequence=2,
+    )
+    update = _make_update(AIWorkerUpdateStatus.COMPLETED, sequence=2)
+
+    result = await service.record_update(job.id, update)
+
+    assert result is not None
+    assert result.status == AnalysisJobStatus.RUNNING
+    assert result.last_update_sequence == 2
+    assert uow.commit_count == 0
+    assert uow.rollback_count == 0
+
+
+@pytest.mark.asyncio
+async def test_completed_duplicate_when_job_already_completed() -> None:
+    job, attempt, uow, service = _build_attempt_and_job(
+        job_status=AnalysisJobStatus.COMPLETED,
+        attempt_status=AnalysisAttemptStatus.COMPLETED,
+        last_update_sequence=2,
+    )
+    update = _make_update(AIWorkerUpdateStatus.COMPLETED, sequence=2)
+
+    result = await service.record_update(job.id, update)
+
+    assert result is not None
+    assert result.status == AnalysisJobStatus.COMPLETED
+    assert result.last_update_sequence == 2
+    assert uow.commit_count == 0
+    assert uow.rollback_count == 0
+
+
+@pytest.mark.asyncio
+async def test_completed_atomic_rollback_on_validation_failure() -> None:
+    job, attempt, uow, service = _build_attempt_and_job(
+        job_status=AnalysisJobStatus.RUNNING,
+        attempt_status=AnalysisAttemptStatus.RUNNING,
+        last_update_sequence=1,
+    )
+    update = _make_update(
+        AIWorkerUpdateStatus.COMPLETED,
+        sequence=2,
+        trace_id="trc_completely_wrong_trace",
+    )
+
+    with pytest.raises(CompletedResultValidationError):
+        await service.record_update(job.id, update)
+
+    assert job.status == AnalysisJobStatus.RUNNING
+    assert job.last_update_sequence == 1
+    assert job.completed_result is None
+    assert attempt.status == AnalysisAttemptStatus.RUNNING
+    assert attempt.completed_at is None
+    assert uow.commit_count == 0
+    assert uow.rollback_count >= 1
+
+
+@pytest.mark.asyncio
+async def test_completed_empty_evidence_rejected() -> None:
+    job, attempt, uow, service = _build_attempt_and_job(
+        job_status=AnalysisJobStatus.RUNNING,
+        attempt_status=AnalysisAttemptStatus.RUNNING,
+        last_update_sequence=1,
+    )
+    payload_dict = _valid_completed_session_payload().model_dump(mode="json")
+    payload_dict["primary_questions"][0]["evidence_ids"] = []
+    update = _make_update(AIWorkerUpdateStatus.COMPLETED, sequence=2, payload=payload_dict)
+
+    with pytest.raises(CompletedResultValidationError) as exc_info:
+        await service.record_update(job.id, update)
+
+    assert "evidence_ids" in str(exc_info.value)
+    assert job.status == AnalysisJobStatus.RUNNING
+    assert uow.commit_count == 0
+
+
+@pytest.mark.asyncio
+async def test_completed_question_count_under_rejected() -> None:
+    job, attempt, uow, service = _build_attempt_and_job(
+        job_status=AnalysisJobStatus.RUNNING,
+        attempt_status=AnalysisAttemptStatus.RUNNING,
+        last_update_sequence=1,
+    )
+    payload_dict = _valid_completed_session_payload().model_dump(mode="json")
+    payload_dict["primary_questions"] = payload_dict["primary_questions"][:2]
+    update = _make_update(AIWorkerUpdateStatus.COMPLETED, sequence=2, payload=payload_dict)
+
+    with pytest.raises(CompletedResultValidationError) as exc_info:
+        await service.record_update(job.id, update)
+
+    assert "primary_questions" in str(exc_info.value)
+    assert job.status == AnalysisJobStatus.RUNNING
+    assert uow.commit_count == 0
+
+
+@pytest.mark.asyncio
+async def test_completed_question_count_over_rejected() -> None:
+    job, attempt, uow, service = _build_attempt_and_job(
+        job_status=AnalysisJobStatus.RUNNING,
+        attempt_status=AnalysisAttemptStatus.RUNNING,
+        last_update_sequence=1,
+    )
+    payload_dict = _valid_completed_session_payload().model_dump(mode="json")
+    extra_q = dict(payload_dict["primary_questions"][0])
+    extra_q["candidate_id"] = "cand_004"
+    payload_dict["primary_questions"].append(extra_q)
+    update = _make_update(AIWorkerUpdateStatus.COMPLETED, sequence=2, payload=payload_dict)
+
+    with pytest.raises(CompletedResultValidationError) as exc_info:
+        await service.record_update(job.id, update)
+
+    assert "primary_questions" in str(exc_info.value)
+    assert job.status == AnalysisJobStatus.RUNNING
+    assert uow.commit_count == 0
+
+
+@pytest.mark.asyncio
+async def test_completed_duplicate_candidate_ids_rejected() -> None:
+    job, attempt, uow, service = _build_attempt_and_job(
+        job_status=AnalysisJobStatus.RUNNING,
+        attempt_status=AnalysisAttemptStatus.RUNNING,
+        last_update_sequence=1,
+    )
+    payload_dict = _valid_completed_session_payload().model_dump(mode="json")
+    payload_dict["primary_questions"][1]["candidate_id"] = payload_dict["primary_questions"][0][
+        "candidate_id"
+    ]
+    update = _make_update(AIWorkerUpdateStatus.COMPLETED, sequence=2, payload=payload_dict)
+
+    with pytest.raises(CompletedResultValidationError) as exc_info:
+        await service.record_update(job.id, update)
+
+    assert "candidate_id" in str(exc_info.value).lower()
+    assert job.status == AnalysisJobStatus.RUNNING
+    assert uow.commit_count == 0
+
+
+@pytest.mark.asyncio
+async def test_completed_valid_analyze_answer() -> None:
+    job, attempt, uow, service = _build_attempt_and_job(
+        job_status=AnalysisJobStatus.RUNNING,
+        attempt_status=AnalysisAttemptStatus.RUNNING,
+        last_update_sequence=1,
+        job_type="analyze_answer",
+    )
+    payload = AnswerAnalysisCompletedPayload(
+        answer_id="ans_001",
+        transcript_artifact_id="01JEXAMPLE0000000000000061",
+        assessment_artifact_id="01JEXAMPLE0000000000000062",
+        follow_up=FollowUpQuestion(
+            text="Can you elaborate on your churn assumptions?",
+            reason="Clarify customer retention metrics",
+            rubric_dimension="customer_retention",
+            evidence_ids=["ev_answer_001"],
+        ),
+    )
+    update = _make_update(
+        AIWorkerUpdateStatus.COMPLETED,
+        sequence=2,
+        payload=payload,
+    )
+
+    result = await service.record_update(job.id, update)
+
+    assert result is not None
+    assert result.status == AnalysisJobStatus.COMPLETED
+    assert result.completed_result is not None
+    assert result.completed_result["answer_id"] == "ans_001"
+    assert result.completed_result["follow_up"]["rubric_dimension"] == "customer_retention"
+    assert uow.commit_count == 1
+
+
+@pytest.mark.asyncio
+async def test_completed_valid_generate_report() -> None:
+    job, attempt, uow, service = _build_attempt_and_job(
+        job_status=AnalysisJobStatus.RUNNING,
+        attempt_status=AnalysisAttemptStatus.RUNNING,
+        last_update_sequence=1,
+        job_type="generate_report",
+    )
+    payload = ReportCompletedPayload(
+        evaluation_artifact=ArtifactRef(
+            artifact_id="01JEXAMPLE0000000000000071",
+            object_key="artifacts/evaluation.json",
+            checksum="sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            schema_version=1,
+        ),
+        report_artifact=ArtifactRef(
+            artifact_id="01JEXAMPLE0000000000000072",
+            object_key="artifacts/report.json",
+            checksum="sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            schema_version=1,
+        ),
+        member_feedback_user_ids=["user_001", "user_002"],
+        limitations=[],
+    )
+    update = _make_update(
+        AIWorkerUpdateStatus.COMPLETED,
+        sequence=2,
+        payload=payload,
+    )
+
+    result = await service.record_update(job.id, update)
+
+    assert result is not None
+    assert result.status == AnalysisJobStatus.COMPLETED
+    assert result.completed_result is not None
+    assert result.completed_result["member_feedback_user_ids"] == ["user_001", "user_002"]
+    assert uow.commit_count == 1
+
+
+@pytest.mark.asyncio
+async def test_completed_valid_erase_ai_data() -> None:
+    job, attempt, uow, service = _build_attempt_and_job(
+        job_status=AnalysisJobStatus.RUNNING,
+        attempt_status=AnalysisAttemptStatus.RUNNING,
+        last_update_sequence=1,
+        job_type="erase_ai_data",
+    )
+    payload = ErasureCompletedPayload(
+        erasure_request_id="era_001",
+        deleted_records=14,
+        deleted_objects=6,
+    )
+    update = _make_update(
+        AIWorkerUpdateStatus.COMPLETED,
+        sequence=2,
+        payload=payload,
+    )
+
+    result = await service.record_update(job.id, update)
+
+    assert result is not None
+    assert result.status == AnalysisJobStatus.COMPLETED
+    assert result.completed_result is not None
+    assert result.completed_result["deleted_records"] == 14
+    assert result.completed_result["deleted_objects"] == 6
+    assert uow.commit_count == 1
+
+
+@pytest.mark.asyncio
+async def test_completed_negative_deleted_records_rejected() -> None:
+    job, attempt, uow, service = _build_attempt_and_job(
+        job_status=AnalysisJobStatus.RUNNING,
+        attempt_status=AnalysisAttemptStatus.RUNNING,
+        last_update_sequence=1,
+        job_type="erase_ai_data",
+    )
+    payload_dict = {
+        "erasure_request_id": "era_001",
+        "deleted_records": -1,
+        "deleted_objects": 6,
+    }
+    update = _make_update(
+        AIWorkerUpdateStatus.COMPLETED,
+        sequence=2,
+        payload=payload_dict,
+    )
+
+    with pytest.raises(CompletedResultValidationError) as exc_info:
+        await service.record_update(job.id, update)
+
+    assert "deleted_records" in str(exc_info.value)
+    assert job.status == AnalysisJobStatus.RUNNING
+    assert uow.commit_count == 0
+
+
+@pytest.mark.asyncio
+async def test_completed_unsupported_schema_version_rejected() -> None:
+    job, attempt, uow, service = _build_attempt_and_job(
+        job_status=AnalysisJobStatus.RUNNING,
+        attempt_status=AnalysisAttemptStatus.RUNNING,
+        last_update_sequence=1,
+    )
+    update = AIWorkerUpdate.model_construct(
+        schema_version=cast(Literal[1], 2),
+        sequence=2,
+        status=AIWorkerUpdateStatus.COMPLETED,
+        occurred_at=datetime.now(UTC),
+        trace_id="trc_test_update",
+        payload=_valid_completed_session_payload(),
+    )
+
+    with pytest.raises(CompletedResultValidationError) as exc_info:
+        await service.record_update(job.id, update)
+
+    assert "Unsupported schema version" in str(exc_info.value)
+    assert job.status == AnalysisJobStatus.RUNNING
+    assert uow.commit_count == 0

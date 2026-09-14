@@ -1,23 +1,36 @@
 from datetime import UTC, datetime
 from typing import Any
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from app.application.ports.session_practice.analysis_job_repository import (
     AnalysisJobRepository,
 )
+from app.domain.session_workflow.entities.analysis_attempt import AnalysisAttempt
 from app.domain.session_workflow.entities.analysis_job import (
     AIJobAncestryContext,
     AnalysisJob,
 )
+from app.domain.session_workflow.entities.session_practice import PracticeSession
+from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
 from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
+from app.domain.session_workflow.enums.session_status import SessionStatus
 from tests.support.fake_analysis_attempt_repository import FakeAnalysisAttemptRepository
 
 _DEFAULT_ATTEMPTS = object()
 
 
 class FakeAnalysisJobRepository(AnalysisJobRepository):
-    def __init__(self, initial_jobs: list[AnalysisJob] | None = None) -> None:
+    def __init__(
+        self,
+        initial_jobs: list[AnalysisJob] | None = None,
+        ancestry_contexts: dict[UUID, AIJobAncestryContext | None] | None = None,
+        auto_ancestry: bool = True,
+    ) -> None:
         self.jobs: dict[UUID, AnalysisJob] = {j.id: j for j in (initial_jobs or [])}
+        self.ancestry_contexts: dict[UUID, AIJobAncestryContext | None] = (
+            dict(ancestry_contexts) if ancestry_contexts else {}
+        )
+        self.auto_ancestry = auto_ancestry
 
     async def get_by_id(self, job_id: UUID) -> AnalysisJob | None:
         return self.jobs.get(job_id)
@@ -184,15 +197,68 @@ class FakeAnalysisJobRepository(AnalysisJobRepository):
             job.attempts = attempts
         return job
 
+    def set_ancestry_context(self, job_id: UUID, context: AIJobAncestryContext | None) -> None:
+        self.ancestry_contexts[job_id] = context
+
     async def get_ancestry_context(self, job_id: UUID) -> AIJobAncestryContext | None:
-        return None
+        if job_id in self.ancestry_contexts:
+            return self.ancestry_contexts[job_id]
+        if not self.auto_ancestry:
+            return None
+        job = self.jobs.get(job_id)
+        if job is None:
+            return None
+        project_id = uuid4()
+        team_id = uuid4()
+        attempt = AnalysisAttempt(
+            id=job.attempt_id,
+            session_id=job.practice_session_id,
+            manifest_id=uuid4(),
+            idempotency_key=None,
+            attempt_number=job.analysis_attempt,
+            status=AnalysisAttemptStatus.RUNNING,
+            failure_code=None,
+            failure_message=None,
+            created_at=job.created_at,
+            started_at=job.started_at,
+            completed_at=None,
+            failed_at=None,
+            cancelled_at=None,
+            version=1,
+        )
+        session = PracticeSession(
+            id=job.practice_session_id,
+            project_id=project_id,
+            created_by=uuid4(),
+            name="Test Session",
+            status=SessionStatus.ANALYZING,
+            version=1,
+            created_at=job.created_at,
+            updated_at=job.updated_at,
+            consent_granted=True,
+            started_at=job.started_at,
+            completed_at=None,
+            cancelled_at=None,
+        )
+        context = AIJobAncestryContext(
+            job=job,
+            attempt=attempt,
+            session=session,
+            project_id=project_id,
+            team_id=team_id,
+        )
+        self.ancestry_contexts[job_id] = context
+        return context
 
     async def load_ancestry_context(self, job_id: UUID) -> AIJobAncestryContext | None:
-        return None
+        return await self.get_ancestry_context(job_id)
 
     async def get_ancestry_context_by_attempt_id(
         self, attempt_id: UUID
     ) -> AIJobAncestryContext | None:
+        for ctx in self.ancestry_contexts.values():
+            if ctx is not None and ctx.attempt_id == attempt_id:
+                return ctx
         return None
 
 

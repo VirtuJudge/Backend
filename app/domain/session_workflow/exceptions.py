@@ -123,3 +123,9 @@ class InvalidJobStatusTransition(Exception):
 
 
 InvalidJobStateTransition = InvalidJobStatusTransition
+
+
+class CompletedResultValidationError(InvalidJobStatusTransition):
+    """Exception raised when an AI job completed result fails contract or semantic validation."""
+
+    pass

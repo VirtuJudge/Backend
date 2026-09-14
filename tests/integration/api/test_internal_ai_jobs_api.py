@@ -27,23 +27,33 @@ def _create_test_job(
     last_update_sequence: int = 0,
     cancel_requested: bool = False,
     include_sensitive_fields: bool = False,
+    completed_result: dict[str, Any] | None = None,
+    payload: dict[str, Any] | None = None,
 ) -> AnalysisJob:
     now = datetime.now(UTC)
-    payload = (
-        {
-            "presentation": {
-                "artifact_id": str(uuid4()),
-                "object_key": "private/raw/secret_video.mp4",
-            },
-            "internal_secret": "must-not-be-leaked",
-        }
-        if include_sensitive_fields
-        else None
+    effective_payload = (
+        payload
+        if payload is not None
+        else (
+            {
+                "presentation": {
+                    "artifact_id": str(uuid4()),
+                    "object_key": "private/raw/secret_video.mp4",
+                },
+                "internal_secret": "must-not-be-leaked",
+            }
+            if include_sensitive_fields
+            else None
+        )
     )
     completed_result = (
-        {"private_score": 95, "internal_evaluation": "do-not-expose"}
-        if include_sensitive_fields
-        else None
+        completed_result
+        if completed_result is not None
+        else (
+            {"private_score": 95, "internal_evaluation": "do-not-expose"}
+            if include_sensitive_fields
+            else None
+        )
     )
     last_error = (
         "Internal DB failure at 192.168.1.1: secret stacktrace"
@@ -69,7 +79,7 @@ def _create_test_job(
         updated_at=now,
         started_at=None,
         completed_at=None,
-        payload=payload,
+        payload=effective_payload,
         queued_at=now,
         next_dispatch_at=None,
         dispatch_retry_count=2 if include_sensitive_fields else 0,
@@ -698,7 +708,11 @@ async def test_post_internal_ai_job_updates_delegation() -> None:
                 if update_status == "started"
                 else AnalysisJobStatus.RUNNING
             )
-            target_job = _create_test_job(status=job_status, last_update_sequence=0)
+            target_job = _create_test_job(
+                status=job_status,
+                last_update_sequence=0,
+                payload={"trace_id": body["trace_id"]},
+            )
             await repo.create(target_job)
 
             res = await client.post(
