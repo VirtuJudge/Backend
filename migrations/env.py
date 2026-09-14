@@ -1,7 +1,7 @@
 from logging.config import fileConfig
 
 from alembic import context
-from sqlalchemy import Column, MetaData, String, Table, inspect, pool
+from sqlalchemy import Column, MetaData, String, Table, inspect, pool, select
 from sqlalchemy.engine import Connection, engine_from_config, make_url
 
 import app.infrastructure.persistence.configurations  # noqa: F401
@@ -41,10 +41,12 @@ def build_migration_url(raw_url: str) -> str:
     url = make_url(raw_url)
     driver = {
         "postgresql+asyncpg": "postgresql+psycopg",
+        "postgresql": "postgresql+psycopg",
+        "postgres": "postgresql+psycopg",
         "sqlite+aiosqlite": "sqlite+pysqlite",
     }.get(url.drivername, url.drivername)
     query = dict(url.query)
-    if driver == "postgresql+psycopg" and "ssl" in query:
+    if ("psycopg" in driver or driver == "postgresql") and "ssl" in query:
         ssl_val = query.pop("ssl")
         if "sslmode" not in query:
             query["sslmode"] = ssl_val
@@ -55,10 +57,34 @@ def migration_url() -> str:
     return build_migration_url(database_url())
 
 
+REVISION_ORDER = [
+    "287738efa54f",
+    "8005859f45dd",
+    "9d6a1b2c3e4f",
+    "a1b2c3d4e5f6",
+    "b2c3d4e5f6a7",
+    "c4d5e6f7a8b9",
+    "d5e6f7a8b9c0",
+    "edf3ff11ceff",
+    "a58101e6379c",
+    "c06eb23ba31c",
+    "b5af41259a43",
+    "0989108a15b1",
+    "c210932aac79",
+    "d0bab208d7c4",
+    "13b7d8c79976",
+    "ef143c2a901b",
+    "40d664ee8b4d",
+    "f31a1f55d085",
+    "3f9a7c2d1e6b",
+    "7b4e1a6d2c8f",
+]
+
+
 def stamp_legacy_backend_schema(connection: Connection) -> None:
     inspector = inspect(connection)
     tables = set(inspector.get_table_names())
-    if VERSION_TABLE in tables or "users" not in tables:
+    if "users" not in tables:
         return
 
     detected_rev: str | None = None
@@ -90,14 +116,25 @@ def stamp_legacy_backend_schema(connection: Connection) -> None:
         if columns_match:
             detected_rev = LEGACY_BACKEND_REVISION
 
-    if detected_rev is not None:
-        version_table = Table(
-            VERSION_TABLE,
-            MetaData(),
-            Column("version_num", String(32), primary_key=True, nullable=False),
-        )
+    if detected_rev is None:
+        return
+
+    version_table = Table(
+        VERSION_TABLE,
+        MetaData(),
+        Column("version_num", String(32), primary_key=True, nullable=False),
+    )
+    if VERSION_TABLE not in tables:
         version_table.create(connection)
         connection.execute(version_table.insert().values(version_num=detected_rev))
+    else:
+        current_rev = connection.execute(select(version_table.c.version_num)).scalar_one_or_none()
+        if current_rev is None or (
+            current_rev in REVISION_ORDER
+            and detected_rev in REVISION_ORDER
+            and REVISION_ORDER.index(detected_rev) > REVISION_ORDER.index(current_rev)
+        ):
+            connection.execute(version_table.update().values(version_num=detected_rev))
 
 
 def run_migrations_offline() -> None:

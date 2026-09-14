@@ -101,6 +101,33 @@ def test_backend_migrations_adopt_existing_analysis_jobs_schema(tmp_path: Path) 
     engine.dispose()
 
 
+def test_backend_migrations_advance_stale_backend_alembic_version_when_practice_sessions_exist(
+    tmp_path: Path,
+) -> None:
+    database_path = tmp_path / "stale-version.db"
+    sync_url = f"sqlite:///{database_path}"
+    configuration = migration_configuration(sync_url)
+
+    command.upgrade(configuration, "d0bab208d7c4")
+
+    engine = create_engine(sync_url)
+    with engine.begin() as connection:
+        connection.exec_driver_sql(
+            "UPDATE backend_alembic_version SET version_num = 'c210932aac79'"
+        )
+
+    command.upgrade(configuration, "head")
+
+    inspector = inspect(engine)
+    assert "ai_jobs" in inspector.get_table_names()
+    with engine.connect() as connection:
+        backend_revision = connection.exec_driver_sql(
+            "SELECT version_num FROM backend_alembic_version"
+        ).scalar_one()
+    assert backend_revision == "7b4e1a6d2c8f"
+    engine.dispose()
+
+
 def test_migration_url_translates_ssl_to_sslmode_for_psycopg() -> None:
     import importlib.util
 

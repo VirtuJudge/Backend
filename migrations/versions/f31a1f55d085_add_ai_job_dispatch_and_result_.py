@@ -17,26 +17,38 @@ depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
+    bind = op.get_bind()
+    inspector = sa.inspect(bind)
+    existing_cols = {c["name"] for c in inspector.get_columns("ai_jobs")}
     with op.batch_alter_table("ai_jobs") as batch_op:
-        batch_op.add_column(sa.Column("payload", sa.JSON(), nullable=True))
-        batch_op.add_column(sa.Column("queued_at", sa.DateTime(timezone=True), nullable=True))
-        batch_op.add_column(
-            sa.Column("next_dispatch_at", sa.DateTime(timezone=True), nullable=True)
-        )
-        batch_op.add_column(
-            sa.Column(
-                "dispatch_retry_count",
-                sa.Integer(),
-                nullable=False,
-                server_default="0",
+        if "payload" not in existing_cols:
+            batch_op.add_column(sa.Column("payload", sa.JSON(), nullable=True))
+        if "queued_at" not in existing_cols:
+            batch_op.add_column(sa.Column("queued_at", sa.DateTime(timezone=True), nullable=True))
+        if "next_dispatch_at" not in existing_cols:
+            batch_op.add_column(
+                sa.Column("next_dispatch_at", sa.DateTime(timezone=True), nullable=True)
             )
-        )
-        batch_op.add_column(
-            sa.Column("last_dispatch_error_category", sa.String(length=100), nullable=True)
-        )
-        batch_op.add_column(sa.Column("completed_result", sa.JSON(), nullable=True))
-        batch_op.create_index(
+        if "dispatch_retry_count" not in existing_cols:
+            batch_op.add_column(
+                sa.Column(
+                    "dispatch_retry_count",
+                    sa.Integer(),
+                    nullable=False,
+                    server_default="0",
+                )
+            )
+        if "last_dispatch_error_category" not in existing_cols:
+            batch_op.add_column(
+                sa.Column("last_dispatch_error_category", sa.String(length=100), nullable=True)
+            )
+        if "completed_result" not in existing_cols:
+            batch_op.add_column(sa.Column("completed_result", sa.JSON(), nullable=True))
+    existing_indexes = {i["name"] for i in inspector.get_indexes("ai_jobs")}
+    if "ix_ai_jobs_pending_dispatch" not in existing_indexes:
+        op.create_index(
             "ix_ai_jobs_pending_dispatch",
+            "ai_jobs",
             ["status", "next_dispatch_at", "created_at", "id"],
         )
 
