@@ -96,6 +96,30 @@ class SessionResourceNotifications:
             )
         )
 
+    async def erasure_updated(
+        self,
+        *,
+        practice_session_id: str,
+        erasure_request_id: str,
+        scope: str,
+        status: str,
+        occurred_at: datetime,
+        trace_id: str,
+    ) -> None:
+        await self._publish(
+            PendingSessionNotification(
+                event_name=NotificationEventName.ERASURE_UPDATED,
+                practice_session_id=practice_session_id,
+                occurred_at=occurred_at,
+                trace_id=trace_id,
+                payload={
+                    "erasure_request_id": erasure_request_id,
+                    "scope": scope,
+                    "status": status,
+                },
+            )
+        )
+
     async def _publish(self, notification: PendingSessionNotification) -> None:
         try:
             await self._notifications.publish(notification)

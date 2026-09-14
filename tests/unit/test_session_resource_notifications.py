@@ -72,3 +72,26 @@ async def test_publication_failure_is_best_effort() -> None:
         occurred_at=datetime.now(UTC),
         trace_id="trace-test",
     )
+
+
+@pytest.mark.anyio
+async def test_publishes_safe_erasure_update() -> None:
+    notifications = FakeSessionNotifications()
+    service = SessionResourceNotifications(notifications)
+    session_id = str(uuid4())
+
+    await service.erasure_updated(
+        practice_session_id=session_id,
+        erasure_request_id=str(uuid4()),
+        scope="project",
+        status="in_progress",
+        occurred_at=datetime.now(UTC),
+        trace_id="trace-test",
+    )
+
+    event = (await notifications.replay(session_id, 0)).events[0]
+    assert event.event_name == NotificationEventName.ERASURE_UPDATED
+    data = event.model_dump()
+    assert data["scope"] == "project"
+    assert data["status"] == "in_progress"
+    assert "object_key" not in data
