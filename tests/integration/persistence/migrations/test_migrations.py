@@ -39,7 +39,7 @@ def test_backend_migrations_ignore_a_foreign_alembic_revision(tmp_path: Path) ->
         ).scalar_one()
 
     assert foreign_revision == "d0bab208d7c4"
-    assert backend_revision == "f31a1f55d085"
+    assert backend_revision == "7b4e1a6d2c8f"
     assert "users" in inspect(engine).get_table_names()
     engine.dispose()
 
@@ -72,9 +72,62 @@ def test_backend_migrations_adopt_an_existing_legacy_schema(tmp_path: Path) -> N
         ).scalar_one()
 
     assert foreign_revision == "d0bab208d7c4"
-    assert backend_revision == "f31a1f55d085"
+    assert backend_revision == "7b4e1a6d2c8f"
     assert "practice_sessions" in inspect(engine).get_table_names()
     engine.dispose()
+
+
+def test_backend_migrations_adopt_existing_analysis_jobs_schema(tmp_path: Path) -> None:
+    database_path = tmp_path / "legacy-analysis-jobs-schema.db"
+    sync_url = f"sqlite:///{database_path}"
+    configuration = migration_configuration(sync_url)
+
+    command.upgrade(configuration, "ef143c2a901b")
+
+    engine = create_engine(sync_url)
+    with engine.begin() as connection:
+        connection.exec_driver_sql("DROP TABLE backend_alembic_version")
+
+    command.upgrade(configuration, "head")
+
+    inspector = inspect(engine)
+    assert "ai_jobs" in inspector.get_table_names()
+    assert "analysis_jobs" not in inspector.get_table_names()
+    with engine.connect() as connection:
+        backend_revision = connection.exec_driver_sql(
+            "SELECT version_num FROM backend_alembic_version"
+        ).scalar_one()
+    assert backend_revision == "7b4e1a6d2c8f"
+    engine.dispose()
+
+
+def test_migration_url_translates_ssl_to_sslmode_for_psycopg() -> None:
+    import importlib.util
+
+    env_path = ROOT / "migrations" / "env.py"
+    spec = importlib.util.spec_from_file_location("alembic_env_module", env_path)
+    assert spec is not None and spec.loader is not None
+    env_module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(env_module)
+
+    raw_url = "postgresql+asyncpg://postgres:pass@db.example.supabase.co:5432/postgres?ssl=require"
+    converted = env_module.build_migration_url(raw_url)
+    assert "postgresql+psycopg" in converted
+    assert "sslmode=require" in converted
+    assert "ssl=require" not in converted
+
+
+def test_create_database_engine_translates_sslmode_for_asyncpg() -> None:
+    from app.infrastructure.database import create_database_engine
+    from app.settings import Settings
+
+    settings = Settings(
+        database_url="postgresql://postgres:pass@localhost:5432/postgres?sslmode=require"
+    )
+    engine = create_database_engine(settings)
+    assert str(engine.url).startswith("postgresql+asyncpg://")
+    assert "ssl=require" in str(engine.url)
+    assert "sslmode" not in str(engine.url)
 
 
 def test_migration_upgrade_and_downgrade(tmp_path: Path) -> None:

@@ -89,7 +89,8 @@ def test_last_submitted_answer_keeps_round_open_while_analysis_is_pending() -> N
 
     round_.finalize_answer(active, None, AnswerStatus.SUBMITTED, NOW, awaiting_analysis=True)
 
-    assert round_.state is QARoundState.IN_PROGRESS
+    initial_state = round_.state
+    assert initial_state is QARoundState.IN_PROGRESS
     assert round_.current_question_id is None
     assert round_.complete_if_idle(NOW, has_pending_questions=False)
     assert round_.state is QARoundState.COMPLETED

@@ -773,8 +773,8 @@ async def test_completed_analyze_session_starts_ordered_qa_round() -> None:
 
     class FakeQA:
         def __init__(self) -> None:
-            self.round = None
-            self.questions = []
+            self.round: Any = None
+            self.questions: list[Any] = []
 
         async def get_round_by_session(self, _session_id: UUID) -> Any:
             return self.round

@@ -280,6 +280,7 @@ class FakeUnitOfWork:
     jobs: AnalysisJobRepository
     speaker_mappings: Any
     idempotency: Any
+    qa: Any
 
     def __init__(
         self,

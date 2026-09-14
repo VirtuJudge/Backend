@@ -29,6 +29,12 @@ def create_database_engine(settings: Settings) -> AsyncEngine:
     }.get(url.drivername)
     if async_driver is not None:
         url = url.set(drivername=async_driver)
+    query = dict(url.query)
+    if url.drivername == "postgresql+asyncpg" and "sslmode" in query:
+        sslmode_val = query.pop("sslmode")
+        if "ssl" not in query:
+            query["ssl"] = sslmode_val
+        url = url.set(query=query)
     return create_async_engine(url, pool_pre_ping=True)
 
 
