@@ -1,18 +1,28 @@
 import hashlib
+import json
 from datetime import UTC, datetime
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
+from jsonschema import Draft202012Validator
 
+from app.application.ai_job_contracts import (
+    AIJobQueueMessage,
+    AIJobType,
+    AnalyzeSessionPayload,
+)
 from app.application.session_workflow import CURRENT_CONSENT_POLICY_VERSION, SessionWorkflow
 from app.domain.project import ProjectNotFoundError
 from app.domain.session_workflow.entities.analysis_attempt import AnalysisAttempt
+from app.domain.session_workflow.entities.analysis_job import AnalysisJob
 from app.domain.session_workflow.entities.session_manifest import SessionManifest
 from app.domain.session_workflow.entities.session_practice import PracticeSession
 from app.domain.session_workflow.entities.speaker_mapping import SpeakerMapping
 from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
+from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
 from app.domain.session_workflow.enums.session_status import SessionStatus
 from app.domain.session_workflow.exceptions import (
     AnalysisNotReady,
@@ -486,6 +496,24 @@ async def test_retry_creates_new_attempt_after_failed_attempt(
     uow.jobs.create.assert_awaited_once()
     uow.commit.assert_awaited_once()
 
+    retried_job: AnalysisJob = uow.jobs.create.call_args[0][0]
+    assert retried_job.practice_session_id == practice_session.id
+    assert retried_job.attempt_id == result.id
+    assert retried_job.analysis_attempt == 2
+    assert retried_job.status == AnalysisJobStatus.PENDING
+    assert retried_job.job_type == "analyze_session"
+    assert retried_job.payload is not None
+    assert retried_job.payload["schema_version"] == 1
+    assert retried_job.payload["analysis_attempt"] == 2
+    assert retried_job.payload["payload"]["requested_capabilities"] == [
+        "speech",
+        "diarization",
+        "vision",
+        "audio",
+        "documents",
+        "questions",
+    ]
+
 
 @pytest.mark.anyio
 async def test_retry_rejects_when_latest_attempt_is_not_failed(
@@ -622,6 +650,29 @@ async def test_create_analysis_attempt_success(
     uow.sessions.update.assert_awaited_once()
     uow.commit.assert_awaited_once()
 
+    created_job: AnalysisJob = uow.jobs.create.call_args[0][0]
+    assert created_job.practice_session_id == practice_session.id
+    assert created_job.attempt_id == result.id
+    assert created_job.analysis_attempt == 1
+    assert created_job.status == AnalysisJobStatus.PENDING
+    assert created_job.job_type == "analyze_session"
+    assert created_job.payload is not None
+    assert created_job.payload["schema_version"] == 1
+    assert created_job.payload["job_type"] == "analyze_session"
+    assert created_job.payload["practice_session_id"] == str(practice_session.id)
+    assert created_job.payload["analysis_attempt"] == 1
+    assert created_job.payload["trace_id"].startswith("trc_")
+    assert "presentation" in created_job.payload["payload"]
+    assert "rubric" in created_job.payload["payload"]
+    assert created_job.payload["payload"]["requested_capabilities"] == [
+        "speech",
+        "diarization",
+        "vision",
+        "audio",
+        "documents",
+        "questions",
+    ]
+
 
 @pytest.mark.anyio
 async def test_create_analysis_attempt_returns_existing_when_idempotent(
@@ -646,6 +697,7 @@ async def test_create_analysis_attempt_returns_existing_when_idempotent(
 
     assert result == existing_attempt
     uow.attempts.create.assert_not_awaited()
+    uow.jobs.create.assert_not_awaited()
     uow.commit.assert_not_awaited()
 
 
@@ -782,6 +834,7 @@ async def test_retry_returns_existing_when_idempotent(
 
     assert result == existing_attempt
     uow.attempts.create.assert_not_awaited()
+    uow.jobs.create.assert_not_awaited()
     uow.commit.assert_not_awaited()
 
 
@@ -1424,3 +1477,100 @@ async def test_cancel_concurrent_race_with_active_attempt_stale_version_returns_
 
     assert result == cancelled_session
     uow.rollback.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_create_analysis_attempt_produces_contract_valid_message(
+    workflow: SessionWorkflow,
+    uow: MagicMock,
+    practice_session: PracticeSession,
+    manifest: SessionManifest,
+    actor_id: UUID,
+) -> None:
+    practice_session.status = SessionStatus.READY
+    manifest.session_id = practice_session.id
+    manifest.frozen_at = None
+
+    uow.sessions.get_by_id.return_value = practice_session
+    uow.manifests.get_by_session_id.return_value = manifest
+    uow.attempts.get_by_idempotency_key.return_value = None
+    uow.projects.asset_versions_are_verified.return_value = True
+
+    await workflow.create_analysis_attempt(
+        session_id=practice_session.id,
+        actor_id=actor_id,
+        idempotency_key="contract-valid-start",
+        consent_accepted=True,
+        consent_policy_version=CURRENT_CONSENT_POLICY_VERSION,
+    )
+
+    created_job: AnalysisJob = uow.jobs.create.call_args[0][0]
+    schema_path = (
+        Path(__file__).resolve().parent.parent / "contracts" / "schemas" / "ai_job.schema.json"
+    )
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    Draft202012Validator(schema).validate(created_job.payload)
+
+    parsed = AIJobQueueMessage.model_validate(created_job.payload)
+    assert parsed.schema_version == 1
+    assert parsed.job_type == AIJobType.ANALYZE_SESSION
+    assert parsed.practice_session_id == str(practice_session.id)
+    assert parsed.analysis_attempt == 1
+    assert parsed.trace_id.startswith("trc_")
+    assert isinstance(parsed.payload, AnalyzeSessionPayload)
+    assert parsed.payload.rubric.rubric_id == "startup_pitch"
+    assert parsed.payload.rubric.version == 1
+    assert parsed.payload.presentation.artifact_id is not None
+    assert parsed.payload.presentation.object_key is not None
+    assert parsed.payload.presentation.checksum.startswith("sha256:")
+    assert parsed.payload.presentation.media_type is not None
+    assert parsed.payload.requested_capabilities == [
+        "speech",
+        "diarization",
+        "vision",
+        "audio",
+        "documents",
+        "questions",
+    ]
+
+
+@pytest.mark.anyio
+async def test_retry_produces_contract_valid_message(
+    workflow: SessionWorkflow,
+    uow: MagicMock,
+    practice_session: PracticeSession,
+    manifest: SessionManifest,
+    actor_id: UUID,
+) -> None:
+    practice_session.status = SessionStatus.FAILED
+    manifest.session_id = practice_session.id
+    manifest.frozen_at = datetime.now(UTC)
+
+    failed_attempt = MagicMock()
+    failed_attempt.status = AnalysisAttemptStatus.FAILED
+
+    uow.sessions.get_by_id.return_value = practice_session
+    uow.projects.is_member.return_value = True
+    uow.attempts.get_latest.return_value = failed_attempt
+    uow.manifests.get_by_session_id.return_value = manifest
+    uow.attempts.get_next_attempt_number.return_value = 2
+
+    await workflow.retry(
+        session_id=practice_session.id,
+        actor_id=actor_id,
+        idempotency_key="contract-valid-retry",
+    )
+
+    retried_job: AnalysisJob = uow.jobs.create.call_args[0][0]
+    schema_path = (
+        Path(__file__).resolve().parent.parent / "contracts" / "schemas" / "ai_job.schema.json"
+    )
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    Draft202012Validator(schema).validate(retried_job.payload)
+
+    parsed = AIJobQueueMessage.model_validate(retried_job.payload)
+    assert parsed.schema_version == 1
+    assert parsed.job_type == AIJobType.ANALYZE_SESSION
+    assert parsed.practice_session_id == str(practice_session.id)
+    assert parsed.analysis_attempt == 2
+    assert parsed.trace_id.startswith("trc_")

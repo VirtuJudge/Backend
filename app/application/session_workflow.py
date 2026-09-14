@@ -337,7 +337,13 @@ class SessionWorkflow:
 
             try:
                 await uow.attempts.create(attempt)
-                await self._ai_jobs.create_pending_job(session.id, attempt, now)
+                await self._ai_jobs.create_pending_job(
+                    session.id,
+                    attempt,
+                    now,
+                    manifest=manifest,
+                    snapshots=snapshots,
+                )
                 await uow.manifests.update(manifest)
                 await uow.sessions.update(session, expected_version=session.version)
                 await uow.commit()
@@ -422,7 +428,12 @@ class SessionWorkflow:
 
             try:
                 await uow.attempts.create(attempt)
-                await self._ai_jobs.create_pending_job(session.id, attempt, now)
+                await self._ai_jobs.create_pending_job(
+                    session.id,
+                    attempt,
+                    now,
+                    manifest=manifest,
+                )
                 await uow.sessions.update(session, expected_version=session.version)
                 await uow.commit()
                 return attempt

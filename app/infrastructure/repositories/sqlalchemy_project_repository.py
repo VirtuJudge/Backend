@@ -208,15 +208,24 @@ class SqlAlchemyProjectRepository(ProjectRepository):
                         AssetVersionModel.id,
                         AssetVersionModel.asset_id,
                         AssetVersionModel.checksum,
+                        AssetVersionModel.storage_key,
+                        AssetVersionModel.media_type,
+                        AssetVersionModel.declared_media_type,
+                        AssetVersionModel.duration_ms,
                     ).where(AssetVersionModel.id.in_(version_ids))
                 )
             ).all()
         )
         return {
             row[0]: {
+                "artifact_id": str(row[0]),
                 "asset_id": str(row[1]),
                 "asset_version_id": str(row[0]),
+                "storage_key": row[3],
+                "object_key": row[3],
                 "checksum": row[2] or "",
+                "media_type": row[4] or row[5] or "application/octet-stream",
+                "duration_ms": row[6],
             }
             for row in rows
         }
