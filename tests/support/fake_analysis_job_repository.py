@@ -242,7 +242,11 @@ class FakeAnalysisJobRepository(AnalysisJobRepository):
             project_id=project_id,
             created_by=uuid4(),
             name="Test Session",
-            status=SessionStatus.ANALYZING,
+            status=(
+                SessionStatus.REPORT_GENERATING
+                if job.job_type == "generate_report"
+                else SessionStatus.ANALYZING
+            ),
             version=1,
             created_at=job.created_at,
             updated_at=job.updated_at,
@@ -289,9 +293,10 @@ class FakeUnitOfWork:
         jobs: AnalysisJobRepository | None = None,
         attempts: Any = _DEFAULT_ATTEMPTS,
         reports: Any = None,
+        sessions: Any = None,
     ) -> None:
         self.jobs = jobs or FakeAnalysisJobRepository()
-        self.sessions = None
+        self.sessions = sessions
         self.manifests = None
         self.attempts = (
             FakeAnalysisAttemptRepository() if attempts is _DEFAULT_ATTEMPTS else attempts

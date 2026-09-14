@@ -1,0 +1,293 @@
+from datetime import UTC, datetime
+from typing import Any
+from unittest.mock import AsyncMock, MagicMock
+from uuid import uuid4
+
+import pytest
+
+from app.application.ai_job_contracts import (
+    AIWorkerUpdateStatus,
+    ArtifactRef,
+    ReportCompletedPayload,
+)
+from app.application.ai_jobs import AIJobs
+from app.domain.session_workflow.entities.analysis_attempt import AnalysisAttempt
+from app.domain.session_workflow.entities.analysis_job import (
+    AIJobAncestryContext,
+    AnalysisJob,
+)
+from app.domain.session_workflow.entities.qa_round import QARound
+from app.domain.session_workflow.entities.session_manifest import SessionManifest
+from app.domain.session_workflow.entities.session_practice import PracticeSession
+from app.domain.session_workflow.entities.speaker_mapping import SpeakerMapping
+from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
+from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
+from app.domain.session_workflow.enums.qa import QARoundState
+from app.domain.session_workflow.enums.session_status import SessionStatus
+from app.domain.session_workflow.exceptions import CompletedResultValidationError
+from tests.support import FakeUnitOfWork
+from tests.support.fake_ai_job_queue import FakeAIJobQueue
+from tests.support.fake_analysis_attempt_repository import FakeAnalysisAttemptRepository
+from tests.support.fake_analysis_job_repository import FakeAnalysisJobRepository
+from tests.support.fake_report_repository import FakeReportRepository
+from tests.unit.test_ai_jobs_record_update import _make_update
+
+NOW = datetime(2026, 9, 14, 12, 0, 0, tzinfo=UTC)
+
+
+class _FakeSessionsRepo:
+    def __init__(self, sessions: list[PracticeSession]) -> None:
+        self.sessions = {s.id: s for s in sessions}
+
+    async def get_by_id(self, session_id: Any) -> PracticeSession | None:
+        return self.sessions.get(session_id)
+
+    async def update(
+        self, session: PracticeSession, *, expected_version: int | None = None
+    ) -> PracticeSession:
+        self.sessions[session.id] = session
+        return session
+
+
+def _setup_report_pipeline() -> tuple[
+    AIJobs, FakeUnitOfWork, PracticeSession, AnalysisAttempt, AnalysisJob, QARound
+]:
+    session_id = uuid4()
+    project_id = uuid4()
+    attempt_id = uuid4()
+    round_id = uuid4()
+    actor_id = uuid4()
+    manifest_id = uuid4()
+    job_id = uuid4()
+
+    session = PracticeSession(
+        id=session_id,
+        project_id=project_id,
+        created_by=actor_id,
+        name="Pitch Session",
+        status=SessionStatus.REPORT_GENERATING,
+        version=3,
+        created_at=NOW,
+        updated_at=NOW,
+        consent_granted=True,
+        started_at=NOW,
+        completed_at=None,
+        cancelled_at=None,
+    )
+
+    attempt = AnalysisAttempt(
+        id=attempt_id,
+        session_id=session_id,
+        manifest_id=manifest_id,
+        idempotency_key=None,
+        attempt_number=1,
+        status=AnalysisAttemptStatus.RUNNING,
+        failure_code=None,
+        failure_message=None,
+        created_at=NOW,
+        started_at=NOW,
+        completed_at=None,
+        failed_at=None,
+        cancelled_at=None,
+        version=1,
+    )
+
+    manifest = SessionManifest(
+        id=manifest_id,
+        session_id=session_id,
+        presentation_version_id=uuid4(),
+        supporting_document_version_ids=[],
+        rubric_id="startup_pitch",
+        rubric_version=1,
+        snapshot={},
+        frozen_at=NOW,
+    )
+
+    round_ = QARound(
+        id=round_id,
+        practice_session_id=session_id,
+        analysis_attempt_id=attempt_id,
+        state=QARoundState.COMPLETED,
+        current_question_id=None,
+        follow_up_count=0,
+        version=2,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+    job = AnalysisJob(
+        id=job_id,
+        practice_session_id=session_id,
+        attempt_id=attempt_id,
+        analysis_attempt=1,
+        job_type="generate_report",
+        status=AnalysisJobStatus.RUNNING,
+        correlation_id=uuid4(),
+        last_update_sequence=1,
+        payload_version=1,
+        attempts=1,
+        cancel_requested=False,
+        retry_count=0,
+        last_error=None,
+        created_at=NOW,
+        updated_at=NOW,
+        started_at=NOW,
+        completed_at=None,
+        payload={"trace_id": "trc_test_report_01", "payload": {"report_id": str(uuid4())}},
+    )
+
+    presenter_id = uuid4()
+    speaker_mapping = SpeakerMapping(
+        id=uuid4(),
+        attempt_id=attempt_id,
+        speaker_label="SPEAKER_00",
+        member_id=uuid4(),
+        mapped_by=actor_id,
+        mapped_at=NOW,
+        user_id=presenter_id,
+    )
+
+    sessions_repo = _FakeSessionsRepo([session])
+    attempts_repo = FakeAnalysisAttemptRepository([attempt])
+    ancestry = AIJobAncestryContext(
+        job=job,
+        attempt=attempt,
+        session=session,
+        project_id=project_id,
+        team_id=uuid4(),
+    )
+    jobs_repo = FakeAnalysisJobRepository([job], ancestry_contexts={job.id: ancestry})
+    reports_repo = FakeReportRepository()
+
+    uow = FakeUnitOfWork(
+        sessions=sessions_repo,
+        attempts=attempts_repo,
+        jobs=jobs_repo,
+        reports=reports_repo,
+    )
+    uow.manifests = MagicMock()
+    uow.manifests.get_by_session_id = AsyncMock(return_value=manifest)
+    uow.qa.get_round_by_session = AsyncMock(return_value=round_)
+    uow.speaker_mappings = MagicMock()
+    uow.speaker_mappings.get_by_attempt_id = AsyncMock(return_value=[speaker_mapping])
+
+    notifications = AsyncMock()
+    notifications.publish = AsyncMock()
+
+    service = AIJobs(uow, queue=FakeAIJobQueue(), notifications=notifications)
+    return service, uow, session, attempt, job, round_
+
+
+@pytest.mark.asyncio
+async def test_record_update_report_completed_persists_canonical_report_and_evaluation() -> None:
+    service, uow, session, attempt, job, round_ = _setup_report_pipeline()
+
+    payload = ReportCompletedPayload(
+        evaluation_artifact=ArtifactRef(
+            artifact_id="01JEXAMPLE0000000000000071",
+            object_key=f"projects/{session.project_id}/sessions/{session.id}/attempts/1/evaluation.json",
+            checksum="sha256:" + "a" * 64,
+            schema_version=1,
+        ),
+        report_artifact=ArtifactRef(
+            artifact_id="01JEXAMPLE0000000000000072",
+            object_key=f"projects/{session.project_id}/sessions/{session.id}/attempts/1/report.json",
+            checksum="sha256:" + "b" * 64,
+            schema_version=1,
+        ),
+        member_feedback_user_ids=[],
+        limitations=[],
+    )
+    update = _make_update(
+        AIWorkerUpdateStatus.COMPLETED,
+        sequence=2,
+        payload=payload,
+        trace_id="trc_test_report_01",
+    )
+
+    result = await service.record_update(job.id, update)
+
+    assert result is not None
+    assert result.status is AnalysisJobStatus.COMPLETED
+
+    # Verify session and attempt advanced to COMPLETED
+    updated_session = await uow.sessions.get_by_id(session.id)
+    assert updated_session is not None
+    assert updated_session.status is SessionStatus.COMPLETED
+
+    updated_attempt = await uow.attempts.get_by_id(attempt.id)
+    assert updated_attempt is not None
+    assert updated_attempt.status is AnalysisAttemptStatus.COMPLETED
+
+    # Verify report and evaluation persisted
+    stored_report = await uow.reports.get_report_by_session(session.id)
+    assert stored_report is not None
+    assert stored_report.overall_score == 0.76
+    assert len(stored_report.score_components) == 5
+
+    # Check 20% Q&A weight constraint
+    qa_component = next((c for c in stored_report.score_components if c.dimension == "qa"), None)
+    assert qa_component is not None
+    assert qa_component.configured_weight == 0.20
+
+    stored_eval = await uow.reports.get_evaluation_by_session(session.id)
+    assert stored_eval is not None
+    assert stored_eval.rubric_id == "startup_pitch"
+
+    # Presenter feedback exists for mapped presenter
+    assert len(stored_report.member_feedback) == 1
+    assert len(stored_eval.member_feedback) == 1
+
+    # Notification published
+    notifications = service._notifications  # type: ignore[attr-defined]
+    notifications.publish.assert_awaited_once()
+    published_notification = notifications.publish.call_args[0][0]
+    assert published_notification.event_name == "report.ready.v1"
+    assert published_notification.payload["status"] == "ready"
+    assert published_notification.payload["report_id"] == str(stored_report.id)
+
+
+@pytest.mark.asyncio
+async def test_record_update_rejects_mismatched_trace_id() -> None:
+    service, uow, session, attempt, job, round_ = _setup_report_pipeline()
+
+    payload = ReportCompletedPayload(
+        evaluation_artifact=ArtifactRef(
+            artifact_id="01JEXAMPLE0000000000000071",
+            object_key=f"projects/{session.project_id}/sessions/{session.id}/attempts/1/evaluation.json",
+            checksum="sha256:" + "a" * 64,
+            schema_version=1,
+        ),
+        report_artifact=ArtifactRef(
+            artifact_id="01JEXAMPLE0000000000000072",
+            object_key=f"projects/{session.project_id}/sessions/{session.id}/attempts/1/report.json",
+            checksum="sha256:" + "b" * 64,
+            schema_version=1,
+        ),
+        member_feedback_user_ids=[],
+        limitations=[],
+    )
+    update = _make_update(
+        AIWorkerUpdateStatus.COMPLETED,
+        sequence=2,
+        payload=payload,
+        trace_id="trc_wrong_trace_id",
+    )
+
+    with pytest.raises(CompletedResultValidationError) as exc:
+        await service.record_update(job.id, update)
+
+    assert "trace_id" in str(exc.value)
+
+
+@pytest.mark.asyncio
+async def test_record_update_rejects_invalid_artifact_checksum() -> None:
+    service, uow, session, attempt, job, round_ = _setup_report_pipeline()
+
+    with pytest.raises(ValueError):
+        ArtifactRef(
+            artifact_id="01JEXAMPLE0000000000000071",
+            object_key=f"projects/{session.project_id}/sessions/{session.id}/attempts/1/evaluation.json",
+            checksum="invalid_checksum_format",
+            schema_version=1,
+        )
