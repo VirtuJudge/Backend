@@ -1,5 +1,7 @@
 import hashlib
 import logging
+from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID, uuid4
@@ -22,6 +24,44 @@ from app.domain.session_workflow.entities.session_manifest import SessionManifes
 from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True, slots=True)
+class RedispatchResult:
+    processed: int = 0
+    queued: int = 0
+    failed: int = 0
+
+    def __int__(self) -> int:
+        return self.queued
+
+    def __bool__(self) -> bool:
+        return self.processed > 0
+
+    def __eq__(self, other: object) -> bool:
+        if isinstance(other, int):
+            return self.queued == other
+        if isinstance(other, RedispatchResult):
+            return (
+                self.processed == other.processed
+                and self.queued == other.queued
+                and self.failed == other.failed
+            )
+        return False
+
+
+def _calculate_backoff_delay(
+    attempt_count: int,
+    base_seconds: float = 30.0,
+    factor: float = 2.0,
+    max_seconds: float = 3600.0,
+    explicit_retry_after: float | None = None,
+) -> float:
+    if explicit_retry_after is not None and explicit_retry_after > 0:
+        return min(float(explicit_retry_after), max_seconds)
+    delay = base_seconds * (factor ** max(0, attempt_count - 1))
+    return min(delay, max_seconds)
+
 
 DEFAULT_REQUESTED_CAPABILITIES: list[str] = [
     "speech",
@@ -232,6 +272,9 @@ class AIJobs:
         job_or_id: AnalysisJob | UUID,
         *,
         now: datetime | None = None,
+        base_backoff_seconds: float = 30.0,
+        max_backoff_seconds: float = 3600.0,
+        backoff_factor: float = 2.0,
     ) -> bool:
         if isinstance(job_or_id, UUID):
             job = await self._uow.jobs.get_by_id(job_or_id)
@@ -250,8 +293,17 @@ class AIJobs:
             return False
 
         now_time = now or datetime.now(UTC)
-        if job.next_dispatch_at is not None and now_time < job.next_dispatch_at:
-            return False
+        if now_time.tzinfo is None:
+            now_time = now_time.replace(tzinfo=UTC)
+
+        if job.next_dispatch_at is not None:
+            job_next = (
+                job.next_dispatch_at.replace(tzinfo=UTC)
+                if job.next_dispatch_at.tzinfo is None
+                else job.next_dispatch_at
+            )
+            if now_time < job_next:
+                return False
 
         try:
             envelope = (
@@ -267,8 +319,12 @@ class AIJobs:
                 else exc.__class__.__name__
             )
             retry_after = getattr(exc, "retry_after_seconds", None)
-            retry_delay = (
-                float(retry_after) if retry_after is not None and retry_after > 0 else 30.0
+            retry_delay = _calculate_backoff_delay(
+                attempt_count=job.dispatch_retry_count + 1,
+                base_seconds=base_backoff_seconds,
+                factor=backoff_factor,
+                max_seconds=max_backoff_seconds,
+                explicit_retry_after=retry_after,
             )
             next_eligible_at = now_time + timedelta(seconds=retry_delay)
             error_msg = str(exc)[:255] if str(exc) else exc.__class__.__name__
@@ -319,3 +375,56 @@ class AIJobs:
             return False
 
     dispatch_pending_job = dispatch
+
+    async def redispatch_pending(
+        self,
+        limit: int = 10,
+        *,
+        now: datetime | None = None,
+        clock: Callable[[], datetime] | None = None,
+        batch_size: int | None = None,
+        base_backoff_seconds: float = 30.0,
+        max_backoff_seconds: float = 3600.0,
+        backoff_factor: float = 2.0,
+    ) -> RedispatchResult:
+        effective_limit = batch_size if batch_size is not None else limit
+        bounded_limit = max(1, min(effective_limit, 1000))
+
+        now_time = clock() if clock is not None else (now or datetime.now(UTC))
+        if now_time.tzinfo is None:
+            now_time = now_time.replace(tzinfo=UTC)
+
+        if self._queue is None:
+            return RedispatchResult(0, 0, 0)
+
+        get_batch = getattr(self._uow.jobs, "get_eligible_pending_jobs", None) or getattr(
+            self._uow.jobs, "load_eligible_pending_batch", None
+        )
+        if get_batch is None:
+            return RedispatchResult(0, 0, 0)
+
+        jobs = await get_batch(now_time, limit=bounded_limit)
+
+        processed = 0
+        queued = 0
+        failed = 0
+
+        for job in jobs:
+            processed += 1
+            try:
+                success = await self.dispatch(
+                    job,
+                    now=now_time,
+                    base_backoff_seconds=base_backoff_seconds,
+                    max_backoff_seconds=max_backoff_seconds,
+                    backoff_factor=backoff_factor,
+                )
+                if success:
+                    queued += 1
+                else:
+                    failed += 1
+            except Exception as exc:
+                logger.warning("Unexpected error redispatching job %s: %s", job.id, exc)
+                failed += 1
+
+        return RedispatchResult(processed=processed, queued=queued, failed=failed)

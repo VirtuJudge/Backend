@@ -13,6 +13,10 @@ from .documents import (
     create_synthetic_pptx,
     make_pdf,
 )
+from .fake_analysis_job_repository import (
+    FakeAnalysisJobRepository,
+    FakeUnitOfWork,
+)
 from .fakes import (
     FakeAIJobQueue,
     FakeAIQueue,
@@ -46,6 +50,8 @@ __all__ = [
     "RecordingAIJobQueue",
     "FakeAIQueue",
     "RecordingAIQueue",
+    "FakeAnalysisJobRepository",
+    "FakeUnitOfWork",
     "create_test_client",
     "FakeCursor",
     "FakeConnection",
