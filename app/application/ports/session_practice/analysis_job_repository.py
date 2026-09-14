@@ -15,10 +15,14 @@ class AnalysisJobRepository(Protocol):
         job_id: UUID,
     ) -> AnalysisJob | None: ...
 
+    async def get_by_id_for_update(self, job_id: UUID) -> AnalysisJob | None: ...
+
     async def get_by_attempt_id(
         self,
         attempt_id: UUID,
     ) -> AnalysisJob | None: ...
+
+    async def get_by_answer_id(self, answer_id: UUID) -> AnalysisJob | None: ...
 
     async def create(
         self,

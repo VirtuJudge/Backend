@@ -30,6 +30,7 @@ def to_domain(model: AnalysisJobModel) -> AnalysisJob:
         dispatch_retry_count=model.dispatch_retry_count,
         last_dispatch_error_category=model.last_dispatch_error_category,
         completed_result=model.completed_result,
+        answer_id=model.answer_id,
     )
 
 
@@ -58,4 +59,5 @@ def to_model(entity: AnalysisJob) -> AnalysisJobModel:
         dispatch_retry_count=entity.dispatch_retry_count,
         last_dispatch_error_category=entity.last_dispatch_error_category,
         completed_result=entity.completed_result,
+        answer_id=entity.answer_id,
     )

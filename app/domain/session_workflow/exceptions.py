@@ -34,6 +34,12 @@ class UnverifiedAsset(Exception):
     pass
 
 
+class AnswerDurationExceeded(Exception):
+    """Exception raised when submitted answer audio exceeds the public duration limit."""
+
+    pass
+
+
 class InvalidAttemptState(Exception):
     """Exception raised when an invalid state is encountered in an analysis attempt."""
 
@@ -128,4 +134,28 @@ InvalidJobStateTransition = InvalidJobStatusTransition
 class CompletedResultValidationError(InvalidJobStatusTransition):
     """Exception raised when an AI job completed result fails contract or semantic validation."""
 
+    pass
+
+
+class QuestionsNotReady(Exception):
+    pass
+
+
+class QuestionNotFound(Exception):
+    pass
+
+
+class AnswerNotFound(Exception):
+    pass
+
+
+class QuestionNotActive(Exception):
+    pass
+
+
+class AnswerAlreadyFinalized(Exception):
+    pass
+
+
+class FollowUpLimitReached(Exception):
     pass

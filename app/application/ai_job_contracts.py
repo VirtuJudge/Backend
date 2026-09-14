@@ -69,14 +69,14 @@ class Limitation(BaseModel):
 
 class PrimaryQuestion(BaseModel):
     candidate_id: str = Field(min_length=1)
-    text: str = Field(min_length=1)
+    text: str = Field(min_length=1, max_length=1000)
     reason: str = Field(min_length=1)
     rubric_dimension: str = Field(min_length=1)
     evidence_ids: list[Annotated[str, Field(min_length=1)]] = Field(min_length=1)
 
 
 class FollowUpQuestion(BaseModel):
-    text: str = Field(min_length=1)
+    text: str = Field(min_length=1, max_length=1000)
     reason: str = Field(min_length=1)
     rubric_dimension: str = Field(min_length=1)
     evidence_ids: list[Annotated[str, Field(min_length=1)]] = Field(default_factory=list)

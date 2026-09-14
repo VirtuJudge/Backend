@@ -28,6 +28,7 @@ from .session_workflow.analysis_job_configuration import (
     AnalysisJobModel,
 )
 from .session_workflow.analysis_stage_configuration import AnalysisStageModel
+from .session_workflow.qa_configuration import AnswerModel, QARoundModel, QuestionModel
 from .session_workflow.session_command_idempotency_configuration import (
     SessionCommandIdempotencyModel,
 )
@@ -63,4 +64,7 @@ __all__ = [
     "AnalysisJobModel",
     "AnalysisStageModel",
     "SpeakerMappingModel",
+    "QARoundModel",
+    "QuestionModel",
+    "AnswerModel",
 ]

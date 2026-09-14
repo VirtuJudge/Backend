@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from typing import Any
+from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 from app.application.ports.session_practice.analysis_job_repository import (
@@ -35,9 +36,18 @@ class FakeAnalysisJobRepository(AnalysisJobRepository):
     async def get_by_id(self, job_id: UUID) -> AnalysisJob | None:
         return self.jobs.get(job_id)
 
+    async def get_by_id_for_update(self, job_id: UUID) -> AnalysisJob | None:
+        return self.jobs.get(job_id)
+
     async def get_by_attempt_id(self, attempt_id: UUID) -> AnalysisJob | None:
         for job in self.jobs.values():
             if job.attempt_id == attempt_id:
+                return job
+        return None
+
+    async def get_by_answer_id(self, answer_id: UUID) -> AnalysisJob | None:
+        for job in self.jobs.values():
+            if job.answer_id == answer_id:
                 return job
         return None
 
@@ -270,6 +280,7 @@ class FakeUnitOfWork:
     jobs: AnalysisJobRepository
     speaker_mappings: Any
     idempotency: Any
+    qa: Any
 
     def __init__(
         self,
@@ -285,6 +296,10 @@ class FakeUnitOfWork:
         self.projects = None
         self.speaker_mappings = None
         self.idempotency = None
+        self.qa = MagicMock()
+        self.qa.get_round_by_session = AsyncMock(return_value=None)
+        self.qa.create_round = AsyncMock()
+        self.qa.create_questions = AsyncMock()
         self.commit_count = 0
         self.rollback_count = 0
 

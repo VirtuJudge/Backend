@@ -196,6 +196,9 @@ def validate_completed_update(
                 f"primary_questions must have unique candidate_ids, "
                 f"got duplicates: {candidate_ids}."
             )
+        normalized_texts = [" ".join(q.text.lower().split()) for q in payload.primary_questions]
+        if len(normalized_texts) != len(set(normalized_texts)):
+            raise CompletedResultValidationError("primary_questions must not contain duplicates.")
         for idx, q in enumerate(payload.primary_questions):
             if not q.evidence_ids:
                 raise CompletedResultValidationError(
@@ -210,7 +213,15 @@ def validate_completed_update(
     elif isinstance(payload, AnswerAnalysisCompletedPayload):
         if not payload.answer_id or not payload.answer_id.strip():
             raise CompletedResultValidationError("answer_id must not be empty.")
+        if job.answer_id is not None and payload.answer_id != str(job.answer_id):
+            raise CompletedResultValidationError(
+                f"answer_id '{payload.answer_id}' does not match job answer '{job.answer_id}'."
+            )
         if payload.follow_up is not None:
+            if not payload.follow_up.evidence_ids:
+                raise CompletedResultValidationError(
+                    "follow_up.evidence_ids must contain grounding Evidence."
+                )
             if not payload.follow_up.text or not payload.follow_up.text.strip():
                 raise CompletedResultValidationError("follow_up text must not be empty.")
             if not payload.follow_up.reason or not payload.follow_up.reason.strip():

@@ -51,10 +51,10 @@ def apply_resource_limits() -> None:
         with contextlib.suppress(ValueError, OSError):
             resource_api["setrlimit"](
                 resource_api["RLIMIT_AS"],
-                (256 * 1024 * 1024, 256 * 1024 * 1024),
+                (512 * 1024 * 1024, 256 * 1024 * 1024),
             )
         with contextlib.suppress(ValueError, OSError):
-            resource_api["setrlimit"](resource_api["RLIMIT_CPU"], (5, 5))
+            resource_api["setrlimit"](resource_api["RLIMIT_CPU"], (30, 30))
 
 
 def validate_pdf(target: Path) -> int:

@@ -8,6 +8,7 @@ from app.application.ports.session_practice.analysis_attempt_repository import (
 from app.application.ports.session_practice.analysis_job_repository import (
     AnalysisJobRepository,
 )
+from app.application.ports.session_practice.qa_repository import QARepository
 from app.application.ports.session_practice.session_command_idempotency_repository import (
     SessionCommandIdempotencyRepository,
 )
@@ -30,6 +31,7 @@ class UnitOfWork(Protocol):
     jobs: AnalysisJobRepository
     speaker_mappings: SpeakerMappingRepository
     idempotency: SessionCommandIdempotencyRepository
+    qa: QARepository
 
     async def commit(self) -> None: ...
 

@@ -229,3 +229,40 @@ class SqlAlchemyProjectRepository(ProjectRepository):
             }
             for row in rows
         }
+
+    async def get_verified_asset_version_snapshot(
+        self, project_id: UUID, version_id: UUID, kind: str
+    ) -> dict[str, Any] | None:
+        row = (
+            await self.session.execute(
+                select(
+                    AssetVersionModel.id,
+                    AssetVersionModel.asset_id,
+                    AssetVersionModel.checksum,
+                    AssetVersionModel.storage_key,
+                    AssetVersionModel.media_type,
+                    AssetVersionModel.declared_media_type,
+                    AssetVersionModel.duration_ms,
+                    AssetVersionModel.size_bytes,
+                )
+                .join(AssetModel, AssetModel.id == AssetVersionModel.asset_id)
+                .where(
+                    AssetVersionModel.id == version_id,
+                    AssetVersionModel.state == "verified",
+                    AssetModel.project_id == project_id,
+                    AssetModel.kind == kind,
+                )
+            )
+        ).one_or_none()
+        if row is None:
+            return None
+        return {
+            "artifact_id": str(row[0]),
+            "asset_id": str(row[1]),
+            "asset_version_id": str(row[0]),
+            "object_key": row[3],
+            "checksum": row[2],
+            "media_type": row[4] or row[5],
+            "duration_ms": row[6],
+            "size_bytes": row[7],
+        }

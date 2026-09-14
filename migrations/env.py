@@ -8,9 +8,9 @@ import app.infrastructure.persistence.configurations  # noqa: F401
 from app.infrastructure.database import metadata
 from app.settings import Settings
 
-config = context.config
+config = getattr(context, "config", None)
 
-if config.config_file_name is not None:
+if config is not None and config.config_file_name is not None:
     fileConfig(config.config_file_name, disable_existing_loggers=False)
 
 target_metadata = metadata
@@ -33,41 +33,71 @@ LEGACY_SCHEMA_ABSENT_TABLES = {"invitation_idempotency_keys", "practice_sessions
 
 
 def database_url() -> str:
-    configured_url = config.get_main_option("sqlalchemy.url")
+    configured_url = config.get_main_option("sqlalchemy.url") if config is not None else None
     return configured_url or Settings().database_url
 
 
-def migration_url() -> str:
-    url = make_url(database_url())
+def build_migration_url(raw_url: str) -> str:
+    url = make_url(raw_url)
     driver = {
         "postgresql+asyncpg": "postgresql+psycopg",
         "sqlite+aiosqlite": "sqlite+pysqlite",
     }.get(url.drivername, url.drivername)
-    return url.set(drivername=driver).render_as_string(hide_password=False)
+    query = dict(url.query)
+    if driver == "postgresql+psycopg" and "ssl" in query:
+        ssl_val = query.pop("ssl")
+        if "sslmode" not in query:
+            query["sslmode"] = ssl_val
+    return url.set(drivername=driver, query=query).render_as_string(hide_password=False)
+
+
+def migration_url() -> str:
+    return build_migration_url(database_url())
 
 
 def stamp_legacy_backend_schema(connection: Connection) -> None:
     inspector = inspect(connection)
     tables = set(inspector.get_table_names())
-    if (
-        VERSION_TABLE in tables
-        or not LEGACY_SCHEMA_COLUMNS.keys() <= tables
-        or LEGACY_SCHEMA_ABSENT_TABLES & tables
-    ):
+    if VERSION_TABLE in tables or "users" not in tables:
         return
 
-    for table_name, required_columns in LEGACY_SCHEMA_COLUMNS.items():
-        columns = {column["name"] for column in inspector.get_columns(table_name)}
-        if not required_columns <= columns:
-            return
+    detected_rev: str | None = None
+    if "ai_jobs" in tables:
+        ai_jobs_cols = {c["name"] for c in inspector.get_columns("ai_jobs")}
+        if "answer_id" in ai_jobs_cols:
+            detected_rev = "7b4e1a6d2c8f"
+        elif "qa_rounds" in tables:
+            detected_rev = "3f9a7c2d1e6b"
+        elif "payload" in ai_jobs_cols:
+            detected_rev = "f31a1f55d085"
+        else:
+            detected_rev = "40d664ee8b4d"
+    elif "analysis_jobs" in tables:
+        detected_rev = "ef143c2a901b"
+    elif "practice_sessions" in tables:
+        if "analysis_attempts" in tables:
+            attempt_cols = {c["name"] for c in inspector.get_columns("analysis_attempts")}
+            detected_rev = "13b7d8c79976" if "failed_at" in attempt_cols else "d0bab208d7c4"
+        else:
+            detected_rev = "d0bab208d7c4"
+    elif LEGACY_SCHEMA_COLUMNS.keys() <= tables and not (LEGACY_SCHEMA_ABSENT_TABLES & tables):
+        columns_match = True
+        for table_name, required_columns in LEGACY_SCHEMA_COLUMNS.items():
+            cols = {c["name"] for c in inspector.get_columns(table_name)}
+            if not required_columns <= cols:
+                columns_match = False
+                break
+        if columns_match:
+            detected_rev = LEGACY_BACKEND_REVISION
 
-    version_table = Table(
-        VERSION_TABLE,
-        MetaData(),
-        Column("version_num", String(32), primary_key=True, nullable=False),
-    )
-    version_table.create(connection)
-    connection.execute(version_table.insert().values(version_num=LEGACY_BACKEND_REVISION))
+    if detected_rev is not None:
+        version_table = Table(
+            VERSION_TABLE,
+            MetaData(),
+            Column("version_num", String(32), primary_key=True, nullable=False),
+        )
+        version_table.create(connection)
+        connection.execute(version_table.insert().values(version_num=detected_rev))
 
 
 def run_migrations_offline() -> None:
@@ -98,7 +128,7 @@ def run_sync_migrations(connection: Connection) -> None:
 
 
 def run_migrations_online() -> None:
-    configuration = config.get_section(config.config_ini_section, {})
+    configuration = config.get_section(config.config_ini_section, {}) if config is not None else {}
     configuration["sqlalchemy.url"] = migration_url()
     connectable = engine_from_config(
         configuration,
@@ -110,7 +140,8 @@ def run_migrations_online() -> None:
         run_sync_migrations(connection)
 
 
-if context.is_offline_mode():
-    run_migrations_offline()
-else:
-    run_migrations_online()
+if config is not None:
+    if context.is_offline_mode():
+        run_migrations_offline()
+    else:
+        run_migrations_online()
