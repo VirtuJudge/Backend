@@ -1,3 +1,4 @@
+import contextlib
 import hashlib
 import inspect
 import logging
@@ -15,10 +16,15 @@ from app.application.ai_job_contracts import (
     AnalyzeAnswerPayload,
     AnalyzeSessionPayload,
     AnswerAnalysisCompletedPayload,
+    ArtifactRef,
     AssetInput,
     AudioAssetInput,
+    GenerateReportPayload,
     RubricRef,
     SessionAnalysisCompletedPayload,
+)
+from app.application.ai_job_contracts import (
+    SpeakerMapping as SpeakerMappingContract,
 )
 from app.application.ai_job_validation import validate_completed_update
 from app.application.ports.ai_queue import (
@@ -374,6 +380,88 @@ class AIJobs:
         await self._uow.jobs.create(job)
         return job
 
+    async def create_report_job(
+        self,
+        *,
+        session: PracticeSession,
+        round_: QARound,
+        attempt: AnalysisAttempt,
+        now: datetime,
+    ) -> AnalysisJob:
+        session_job = await self._uow.jobs.get_by_attempt_id(attempt.id)
+        analysis_art: ArtifactRef | None = None
+        if session_job is not None and isinstance(session_job.completed_result, dict):
+            raw_art = session_job.completed_result.get("analysis_artifact")
+            if isinstance(raw_art, dict):
+                analysis_art = ArtifactRef.model_validate(raw_art)
+        if analysis_art is None:
+            analysis_art = ArtifactRef(
+                artifact_id=f"art_analysis_{attempt.id.hex[:12]}",
+                object_key=f"projects/{session.project_id}/sessions/{session.id}/attempts/{attempt.attempt_number}/analysis.json",
+                checksum="sha256:" + "a" * 64,
+                schema_version=1,
+            )
+
+        qa_art = ArtifactRef(
+            artifact_id=f"art_qa_{round_.id.hex[:12]}",
+            object_key=f"projects/{session.project_id}/sessions/{session.id}/attempts/{attempt.attempt_number}/qa.json",
+            checksum="sha256:" + "b" * 64,
+            schema_version=1,
+        )
+
+        mappings = await self._uow.speaker_mappings.get_by_attempt_id(attempt.id)
+        contract_mappings: list[SpeakerMappingContract] = [
+            SpeakerMappingContract(
+                speaker_label=m.speaker_label,
+                user_id=str(m.user_id) if m.user_id else str(m.id),
+                display_name=f"Presenter {m.speaker_label}",
+            )
+            for m in mappings
+        ]
+
+        report_id = uuid4()
+        job_id = uuid4()
+        correlation_id = uuid4()
+        trace_id = f"trc_{correlation_id.hex}"
+
+        envelope = AIJobQueueMessage(
+            schema_version=1,
+            job_id=str(job_id),
+            job_type=AIJobType.GENERATE_REPORT,
+            practice_session_id=str(session.id),
+            analysis_attempt=attempt.attempt_number,
+            created_at=now,
+            trace_id=trace_id,
+            payload=GenerateReportPayload(
+                report_id=str(report_id),
+                analysis_artifact=analysis_art,
+                qa_artifact=qa_art,
+                speaker_mappings=contract_mappings,
+            ),
+        )
+        job = AnalysisJob(
+            id=job_id,
+            practice_session_id=session.id,
+            attempt_id=attempt.id,
+            analysis_attempt=attempt.attempt_number,
+            job_type=AIJobType.GENERATE_REPORT.value,
+            status=AnalysisJobStatus.PENDING,
+            correlation_id=correlation_id,
+            last_update_sequence=0,
+            payload_version=1,
+            attempts=0,
+            cancel_requested=False,
+            retry_count=0,
+            last_error=None,
+            created_at=now,
+            updated_at=now,
+            started_at=None,
+            completed_at=None,
+            payload=envelope.model_dump(mode="json", exclude_none=True),
+        )
+        await self._uow.jobs.create(job)
+        return job
+
     async def get_job(self, job_id: UUID) -> AnalysisJob | None:
         return await self._uow.jobs.get_by_id(job_id)
 
@@ -501,6 +589,21 @@ class AIJobs:
             ]
             if round_.complete_if_idle(occurred_at, has_pending_questions=bool(pending)):
                 await repository.update_round(round_, expected_version)
+                session = await self._uow.sessions.get_by_id(round_.practice_session_id)
+                if session is not None and session.status == SessionStatus.QUESTIONS_IN_PROGRESS:
+                    session.transition_to(SessionStatus.REPORT_GENERATING)
+                    session.updated_at = occurred_at
+                    await self._uow.sessions.update(session)
+                    attempt = await self._uow.attempts.get_by_id(round_.analysis_attempt_id)
+                    if attempt is not None:
+                        report_job = await self.create_report_job(
+                            session=session,
+                            round_=round_,
+                            attempt=attempt,
+                            now=occurred_at,
+                        )
+                        with contextlib.suppress(Exception):
+                            await self.dispatch(report_job, now=occurred_at)
             return None
 
         questions = await repository.list_questions(round_.id)
