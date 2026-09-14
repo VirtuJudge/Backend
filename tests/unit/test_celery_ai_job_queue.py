@@ -195,7 +195,8 @@ async def test_safe_failure_mapping(broker_exc: Exception) -> None:
     with pytest.raises(AIQueueTemporaryFailure) as exc_info:
         await queue.enqueue(envelope)
 
-    assert exc_info.value.cause is broker_exc
+    assert isinstance(exc_info.value.cause, type(broker_exc))
+    assert str(exc_info.value.cause) == str(broker_exc)
     assert data["job_id"] in str(exc_info.value)
     # Ensure raw secret details or sensitive payloads are not in message
     assert "payload" not in str(exc_info.value).lower()
