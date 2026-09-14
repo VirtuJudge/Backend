@@ -269,7 +269,7 @@ class SqlAlchemyProjectRepository(ProjectRepository):
 
     async def resolve_asset_version_id(self, asset_id: UUID) -> UUID | None:
         stmt = select(AssetModel.current_version_id).where(AssetModel.id == asset_id)
-        version_id = await self.session.scalar(stmt)
+        version_id = cast(UUID | None, await self.session.scalar(stmt))
         if version_id is not None:
             return version_id
         stmt_ver = (
@@ -278,5 +278,4 @@ class SqlAlchemyProjectRepository(ProjectRepository):
             .order_by(AssetVersionModel.version_number.desc())
             .limit(1)
         )
-        return await self.session.scalar(stmt_ver)
-
+        return cast(UUID | None, await self.session.scalar(stmt_ver))

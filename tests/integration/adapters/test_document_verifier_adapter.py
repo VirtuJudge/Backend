@@ -358,7 +358,9 @@ async def test_document_verifier_cancellation_reaps_child_process(tmp_path: Path
 
 
 @pytest.mark.anyio
-async def test_document_verifier_accepts_large_pptx_with_large_embedded_media(tmp_path: Path) -> None:
+async def test_document_verifier_accepts_large_pptx_with_large_embedded_media(
+    tmp_path: Path,
+) -> None:
     verifier = DocumentVerifier()
     p = tmp_path / "large_media.pptx"
     slide_xml = (

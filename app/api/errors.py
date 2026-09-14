@@ -239,9 +239,7 @@ async def http_exception_handler(
     )
 
 
-async def unhandled_exception_handler(
-    request: Request, exc: Exception
-) -> JSONResponse:
+async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
     trace_id = get_correlation_id() or getattr(request.state, "correlation_id", None)
     return problem_response(
         status.HTTP_500_INTERNAL_SERVER_ERROR,
