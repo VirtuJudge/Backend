@@ -39,9 +39,7 @@ def upgrade() -> None:
             sa.ForeignKeyConstraint(
                 ["analysis_attempt_id"], ["analysis_attempts.id"], ondelete="CASCADE"
             ),
-            sa.ForeignKeyConstraint(
-                ["qa_round_id"], ["qa_rounds.id"], ondelete="CASCADE"
-            ),
+            sa.ForeignKeyConstraint(["qa_round_id"], ["qa_rounds.id"], ondelete="CASCADE"),
             sa.PrimaryKeyConstraint("id"),
         )
         op.create_index(
@@ -50,9 +48,7 @@ def upgrade() -> None:
         op.create_index(
             "ix_evaluations_analysis_attempt_id", "evaluations", ["analysis_attempt_id"]
         )
-        op.create_index(
-            "ix_evaluations_qa_round_id", "evaluations", ["qa_round_id"]
-        )
+        op.create_index("ix_evaluations_qa_round_id", "evaluations", ["qa_round_id"])
 
     if "reports" not in tables:
         op.create_table(
@@ -69,16 +65,12 @@ def upgrade() -> None:
             sa.ForeignKeyConstraint(
                 ["practice_session_id"], ["practice_sessions.id"], ondelete="CASCADE"
             ),
-            sa.ForeignKeyConstraint(
-                ["evaluation_id"], ["evaluations.id"], ondelete="CASCADE"
-            ),
+            sa.ForeignKeyConstraint(["evaluation_id"], ["evaluations.id"], ondelete="CASCADE"),
             sa.PrimaryKeyConstraint("id"),
             sa.UniqueConstraint("practice_session_id", name="uq_reports_practice_session_id"),
             sa.UniqueConstraint("evaluation_id", name="uq_reports_evaluation_id"),
         )
-        op.create_index(
-            "ix_reports_practice_session_id", "reports", ["practice_session_id"]
-        )
+        op.create_index("ix_reports_practice_session_id", "reports", ["practice_session_id"])
 
     if "report_exports" not in tables:
         op.create_table(
@@ -101,9 +93,7 @@ def upgrade() -> None:
             ),
             sa.PrimaryKeyConstraint("id"),
         )
-        op.create_index(
-            "ix_report_exports_report_id", "report_exports", ["report_id"]
-        )
+        op.create_index("ix_report_exports_report_id", "report_exports", ["report_id"])
         op.create_index(
             "ix_report_exports_practice_session_id", "report_exports", ["practice_session_id"]
         )

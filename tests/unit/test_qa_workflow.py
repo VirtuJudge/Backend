@@ -347,4 +347,3 @@ async def test_skipping_final_question_transitions_session_to_report_generating(
     assert session.status is SessionStatus.REPORT_GENERATING
     uow.sessions.update.assert_awaited()
     uow.jobs.create.assert_awaited()
-
