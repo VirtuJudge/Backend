@@ -6,7 +6,10 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 
 from app.api.dependencies.auth import get_current_user
-from app.api.dependencies.session_notifications import get_session_notifications
+from app.api.dependencies.session_notifications import (
+    get_session_notifications,
+    reject_access_token_query,
+)
 from app.api.dependencies.session_workflow import get_session_workflow
 from app.api.errors import problem_response
 from app.api.schemas.session_practice import (
@@ -231,9 +234,11 @@ async def get_practice_session(
 @router.get(
     "/practice-sessions/{session_id}/events",
     response_class=StreamingResponse,
+    dependencies=[Depends(reject_access_token_query)],
     responses={
         200: {"content": {"text/event-stream": {}}},
         400: _problem_response_doc("Invalid Last-Event-ID"),
+        401: _problem_response_doc("Invalid or missing bearer token"),
         403: _problem_response_doc("Forbidden"),
         404: _problem_response_doc("Session not found"),
     },

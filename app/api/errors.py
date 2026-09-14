@@ -199,7 +199,10 @@ async def http_exception_handler(
 ) -> JSONResponse:
     trace_id = get_correlation_id() or getattr(request.state, "correlation_id", None)
     status_code = exc.status_code
-    if status_code == 401:
+    if status_code == 401 and exc.detail == "invalid_token":
+        code = "invalid_token"
+        title = "Invalid token"
+    elif status_code == 401:
         code = "unauthorized"
         title = "Unauthorized"
     elif status_code == 403:
