@@ -29,11 +29,12 @@ from app.domain.session_workflow.entities.session_manifest import SessionManifes
 from app.domain.session_workflow.entities.session_practice import PracticeSession
 from app.domain.session_workflow.entities.speaker_mapping import SpeakerMapping
 from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
-from app.domain.session_workflow.enums.qa import AnswerStatus, QARoundState, QuestionState
+from app.domain.session_workflow.enums.qa import AnswerStatus, QuestionState
 from app.domain.session_workflow.enums.session_status import SessionStatus
 from app.domain.session_workflow.exceptions import (
     AnalysisNotReady,
     AnswerAlreadyFinalized,
+    AnswerDurationExceeded,
     AnswerNotFound,
     ConsentPolicyOutdated,
     ConsentRequiredError,
@@ -352,6 +353,14 @@ class SessionWorkflow:
             if session is None:
                 raise AnswerNotFound("Answer not found.")
             await self._authorize_member(uow, session, actor_id)
+            round_ = await uow.qa.get_round_for_update(answer.qa_round_id)
+            if round_ is None:
+                raise QuestionNotActive("Only the active question accepts an Answer.")
+            # Reload after acquiring the Round lock so a concurrent same-key
+            # request observes and replays the winner's finalized Answer.
+            answer = await uow.qa.get_answer_for_update(answer_id)
+            if answer is None:
+                raise AnswerNotFound("Answer not found.")
             if answer.is_final:
                 if (
                     answer.idempotency_key == idempotency_key
@@ -359,8 +368,7 @@ class SessionWorkflow:
                 ):
                     return answer
                 raise AnswerAlreadyFinalized("A submitted or skipped Answer is immutable.")
-            round_ = await uow.qa.get_round_for_update(answer.qa_round_id)
-            if round_ is None or round_.current_question_id != question.id:
+            if round_.current_question_id != question.id:
                 raise QuestionNotActive("Only the active question accepts an Answer.")
             if answer.audio_asset_version_id is None:
                 raise UnverifiedAsset("Answer audio has not been uploaded.")
@@ -372,9 +380,10 @@ class SessionWorkflow:
                 or snapshot.get("checksum") != checksum
                 or snapshot.get("size_bytes") != size_bytes
                 or snapshot.get("duration_ms") is None
-                or int(snapshot["duration_ms"]) > 120_000
             ):
                 raise UnverifiedAsset("Answer audio is not a matching verified Asset.")
+            if int(snapshot["duration_ms"]) > 120_000:
+                raise AnswerDurationExceeded("Answer audio cannot exceed 120 seconds.")
 
             questions = await uow.qa.list_questions(round_.id)
             next_question = next(
@@ -382,9 +391,13 @@ class SessionWorkflow:
             )
             now = datetime.now(UTC)
             expected_version = round_.version
-            round_.finalize_answer(question, next_question, AnswerStatus.SUBMITTED, now)
-            if next_question is None:
-                round_.state = QARoundState.IN_PROGRESS
+            round_.finalize_answer(
+                question,
+                next_question,
+                AnswerStatus.SUBMITTED,
+                now,
+                awaiting_analysis=next_question is None,
+            )
             answer.status = AnswerStatus.SUBMITTED
             answer.duration_ms = int(snapshot["duration_ms"])
             answer.submitted_at = now
@@ -456,6 +469,10 @@ class SessionWorkflow:
             if session is None:
                 raise QuestionNotFound("Question not found.")
             await self._authorize_member(uow, session, actor_id)
+            round_ = await uow.qa.get_round_for_update(question.qa_round_id)
+            if round_ is None:
+                raise QuestionNotActive("Only the active question can be skipped.")
+            # Reload under the Round lock for deterministic idempotent replay.
             existing = await uow.qa.get_answer_by_question(question.id)
             if existing is not None and existing.is_final:
                 if (
@@ -464,8 +481,7 @@ class SessionWorkflow:
                 ):
                     return existing
                 raise AnswerAlreadyFinalized("A submitted or skipped Answer is immutable.")
-            round_ = await uow.qa.get_round_for_update(question.qa_round_id)
-            if round_ is None or round_.current_question_id != question.id:
+            if round_.current_question_id != question.id:
                 raise QuestionNotActive("Only the active question can be skipped.")
             questions = await uow.qa.list_questions(round_.id)
             next_question = next(

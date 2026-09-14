@@ -101,6 +101,15 @@ class SqlAlchemyQARepository(QARepository):
         model = await self._session.get(AnswerModel, answer_id)
         return _answer(model) if model is not None else None
 
+    async def get_answer_for_update(self, answer_id: UUID) -> Answer | None:
+        model = await self._session.scalar(
+            select(AnswerModel)
+            .where(AnswerModel.id == answer_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return _answer(model) if model is not None else None
+
     async def get_answer_by_question(self, question_id: UUID) -> Answer | None:
         model = await self._session.scalar(
             select(AnswerModel).where(AnswerModel.question_id == question_id)

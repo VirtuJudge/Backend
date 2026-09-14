@@ -17,23 +17,41 @@ from app.api.schemas.qa import (
     SkipQuestionRequest,
     SubmitAnswerRequest,
 )
+from app.api.schemas.session_practice import ProblemDetails
 from app.application.services.asset_store import AssetStore
 from app.application.session_workflow import SessionWorkflow
 from app.domain.asset import AssetDomainError
 from app.domain.session_workflow.entities.qa_round import Answer, Question
 from app.domain.session_workflow.exceptions import (
     AnswerAlreadyFinalized,
+    AnswerDurationExceeded,
     AnswerNotFound,
     QuestionNotActive,
     QuestionNotFound,
     QuestionsNotReady,
     SessionNotFoundError,
+    StaleEntityVersion,
     UnauthorizedSessionAction,
     UnverifiedAsset,
 )
 from app.domain.user import User
 
 router = APIRouter(prefix="/api/v1", tags=["Q&A"])
+
+
+def _problem_response_doc(description: str) -> dict[str, Any]:
+    return {
+        "description": description,
+        "content": {"application/problem+json": {"schema": ProblemDetails.model_json_schema()}},
+    }
+
+
+QA_COMMON_RESPONSES: dict[int | str, dict[str, Any]] = {
+    403: _problem_response_doc("The caller is not a member of the session project."),
+    404: _problem_response_doc("The Q&A resource was not found."),
+    409: _problem_response_doc("The Q&A command conflicts with current state."),
+    422: _problem_response_doc("The answer audio or request is invalid."),
+}
 
 
 def _answer(answer: Answer) -> AnswerResponse:
@@ -79,7 +97,7 @@ def _qa_error(error: Exception, request: Request) -> Any:
         return problem_response(
             409, "questions_not_ready", "Questions not ready", str(error), request.url.path
         )
-    if isinstance(error, QuestionNotActive):
+    if isinstance(error, (QuestionNotActive, StaleEntityVersion)):
         return problem_response(
             409, "question_not_active", "Question not active", str(error), request.url.path
         )
@@ -91,10 +109,18 @@ def _qa_error(error: Exception, request: Request) -> Any:
         return problem_response(
             422, "invalid_answer_audio", "Invalid answer audio", str(error), request.url.path
         )
+    if isinstance(error, AnswerDurationExceeded):
+        return problem_response(
+            422, "duration_exceeded", "Answer duration exceeded", str(error), request.url.path
+        )
     raise error
 
 
-@router.get("/practice-sessions/{session_id}/qa", response_model=QARoundResponse)
+@router.get(
+    "/practice-sessions/{session_id}/qa",
+    response_model=QARoundResponse,
+    responses={code: value for code, value in QA_COMMON_RESPONSES.items() if code != 422},
+)
 async def get_qa_round(
     session_id: UUID,
     request: Request,
@@ -123,6 +149,11 @@ async def get_qa_round(
     "/questions/{question_id}/answer-upload-intents",
     response_model=AnswerUploadIntentResponse,
     status_code=status.HTTP_201_CREATED,
+    responses={
+        **QA_COMMON_RESPONSES,
+        413: _problem_response_doc("The declared answer audio is too large."),
+        415: _problem_response_doc("The answer audio media type is unsupported."),
+    },
 )
 async def create_answer_upload_intent(
     question_id: UUID,
@@ -161,7 +192,12 @@ async def create_answer_upload_intent(
     )
 
 
-@router.post("/answers/{answer_id}/submit", response_model=AnswerResponse, status_code=202)
+@router.post(
+    "/answers/{answer_id}/submit",
+    response_model=AnswerResponse,
+    status_code=202,
+    responses=QA_COMMON_RESPONSES,
+)
 async def submit_answer(
     answer_id: UUID,
     payload: SubmitAnswerRequest,
@@ -183,7 +219,11 @@ async def submit_answer(
     return _answer(answer)
 
 
-@router.post("/questions/{question_id}/skip", response_model=AnswerResponse)
+@router.post(
+    "/questions/{question_id}/skip",
+    response_model=AnswerResponse,
+    responses=QA_COMMON_RESPONSES,
+)
 async def skip_question(
     question_id: UUID,
     payload: SkipQuestionRequest,

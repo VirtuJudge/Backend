@@ -73,6 +73,28 @@ def test_non_active_question_cannot_be_finalized() -> None:
         round_.finalize_answer(question, None, AnswerStatus.SKIPPED, NOW)
 
 
+def test_last_submitted_answer_keeps_round_open_while_analysis_is_pending() -> None:
+    active = _question(3, QuestionState.ACTIVE)
+    round_ = QARound(
+        id=active.qa_round_id,
+        practice_session_id=active.practice_session_id,
+        analysis_attempt_id=uuid4(),
+        state=QARoundState.IN_PROGRESS,
+        current_question_id=active.id,
+        follow_up_count=0,
+        version=1,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+    round_.finalize_answer(active, None, AnswerStatus.SUBMITTED, NOW, awaiting_analysis=True)
+
+    assert round_.state is QARoundState.IN_PROGRESS
+    assert round_.current_question_id is None
+    assert round_.complete_if_idle(NOW, has_pending_questions=False)
+    assert round_.state is QARoundState.COMPLETED
+
+
 def test_round_rejects_third_follow_up() -> None:
     active = _question(3, QuestionState.ACTIVE)
     round_ = QARound(

@@ -50,6 +50,15 @@ class SqlAlchemyAnalysisJobRepository(AnalysisJobRepository):
         model = result.scalar_one_or_none()
         return None if model is None else to_domain(model)
 
+    async def get_by_id_for_update(self, job_id: UUID) -> AnalysisJob | None:
+        model = await self._session.scalar(
+            select(AnalysisJobModel)
+            .where(AnalysisJobModel.id == job_id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        return None if model is None else to_domain(model)
+
     async def get_by_attempt_id(
         self,
         attempt_id: UUID,

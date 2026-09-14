@@ -196,6 +196,9 @@ def validate_completed_update(
                 f"primary_questions must have unique candidate_ids, "
                 f"got duplicates: {candidate_ids}."
             )
+        normalized_texts = [" ".join(q.text.lower().split()) for q in payload.primary_questions]
+        if len(normalized_texts) != len(set(normalized_texts)):
+            raise CompletedResultValidationError("primary_questions must not contain duplicates.")
         for idx, q in enumerate(payload.primary_questions):
             if not q.evidence_ids:
                 raise CompletedResultValidationError(

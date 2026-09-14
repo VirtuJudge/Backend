@@ -29,6 +29,8 @@ class QARound:
         next_question: "Question | None",
         answer_status: AnswerStatus,
         at: datetime,
+        *,
+        awaiting_analysis: bool = False,
     ) -> None:
         if (
             self.state is not QARoundState.IN_PROGRESS
@@ -43,12 +45,22 @@ class QARound:
         )
         if next_question is None:
             self.current_question_id = None
-            self.state = QARoundState.COMPLETED
+            self.state = QARoundState.IN_PROGRESS if awaiting_analysis else QARoundState.COMPLETED
         else:
             next_question.state = QuestionState.ACTIVE
             self.current_question_id = next_question.id
         self.version += 1
         self.updated_at = at
+
+    def complete_if_idle(self, at: datetime, *, has_pending_questions: bool) -> bool:
+        if self.current_question_id is not None or has_pending_questions:
+            return False
+        if self.state is QARoundState.COMPLETED:
+            return False
+        self.state = QARoundState.COMPLETED
+        self.version += 1
+        self.updated_at = at
+        return True
 
     def add_follow_up(self, question_id: UUID, at: datetime, *, activate: bool = True) -> None:
         if self.follow_up_count >= 2:

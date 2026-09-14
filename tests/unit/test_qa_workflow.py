@@ -1,3 +1,4 @@
+import hashlib
 from datetime import UTC, datetime
 from unittest.mock import AsyncMock, MagicMock
 from uuid import uuid4
@@ -16,6 +17,10 @@ from app.domain.session_workflow.enums.qa import (
     QuestionState,
 )
 from app.domain.session_workflow.enums.session_status import SessionStatus
+from app.domain.session_workflow.exceptions import (
+    AnswerDurationExceeded,
+    UnauthorizedSessionAction,
+)
 from tests.support.fake_ai_job_queue import FakeAIJobQueue
 
 NOW = datetime(2026, 9, 14, tzinfo=UTC)
@@ -80,6 +85,7 @@ def _setup() -> tuple[SessionWorkflow, MagicMock, QARound, list[Question], Pract
         )
     )
     uow.qa.get_round_for_update = AsyncMock(return_value=round_)
+    uow.qa.get_answer_for_update = AsyncMock(return_value=None)
     uow.qa.get_answer_by_question = AsyncMock(return_value=None)
     uow.qa.list_questions = AsyncMock(return_value=questions)
     uow.qa.create_answer = AsyncMock()
@@ -116,6 +122,28 @@ async def test_skipping_active_question_records_skip_and_advances() -> None:
 
 
 @pytest.mark.asyncio
+async def test_replaying_skip_returns_the_original_answer() -> None:
+    workflow, uow, _round, questions, session = _setup()
+    first = await workflow.skip_answer(
+        question_id=questions[0].id,
+        actor_id=session.created_by,
+        reason="Need more research",
+        idempotency_key="skip-1",
+    )
+    uow.qa.get_answer_by_question.return_value = first
+
+    replay = await workflow.skip_answer(
+        question_id=questions[0].id,
+        actor_id=session.created_by,
+        reason="Need more research",
+        idempotency_key="skip-1",
+    )
+
+    assert replay.id == first.id
+    uow.qa.create_answer.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_submitting_verified_audio_creates_one_answer_analysis_job() -> None:
     workflow, uow, round_, questions, session = _setup()
     answer = Answer(
@@ -134,6 +162,7 @@ async def test_submitting_verified_audio_creates_one_answer_analysis_job() -> No
     )
     checksum = "sha256:" + "a" * 64
     uow.qa.get_answer = AsyncMock(return_value=answer)
+    uow.qa.get_answer_for_update.return_value = answer
     uow.projects.get_verified_asset_version_snapshot = AsyncMock(
         return_value={
             "artifact_id": str(answer.audio_asset_version_id),
@@ -177,3 +206,92 @@ async def test_submitting_verified_audio_creates_one_answer_analysis_job() -> No
     assert created_job.job_type == "analyze_answer"
     assert created_job.answer_id == answer.id
     assert created_job.payload["payload"]["remaining_follow_ups"] == 2
+
+
+@pytest.mark.asyncio
+async def test_concurrent_same_key_submit_reloads_after_round_lock() -> None:
+    workflow, uow, round_, questions, session = _setup()
+    answer = Answer(
+        id=uuid4(),
+        qa_round_id=round_.id,
+        question_id=questions[0].id,
+        answered_by=session.created_by,
+        status=AnswerStatus.DRAFT,
+        audio_asset_version_id=uuid4(),
+        duration_ms=None,
+        transcript_artifact_id=None,
+        assessment_artifact_id=None,
+        submitted_at=None,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    checksum = "sha256:" + "a" * 64
+
+    async def load_final_answer(_answer_id: object) -> Answer:
+        answer.status = AnswerStatus.SUBMITTED
+        answer.idempotency_key = "submit-1"
+        answer.request_hash = hashlib.sha256(f"{checksum}:1234".encode()).hexdigest()
+        round_.current_question_id = questions[1].id
+        return answer
+
+    uow.qa.get_answer = AsyncMock(return_value=answer)
+    uow.qa.get_answer_for_update.side_effect = load_final_answer
+
+    result = await workflow.submit_answer(
+        answer_id=answer.id,
+        actor_id=session.created_by,
+        checksum=checksum,
+        size_bytes=1234,
+        idempotency_key="submit-1",
+    )
+
+    assert result is answer
+    uow.qa.get_answer_for_update.assert_awaited_once_with(answer.id)
+    uow.jobs.create.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_submit_rejects_audio_over_public_duration_limit() -> None:
+    workflow, uow, round_, questions, session = _setup()
+    answer = Answer(
+        id=uuid4(),
+        qa_round_id=round_.id,
+        question_id=questions[0].id,
+        answered_by=session.created_by,
+        status=AnswerStatus.DRAFT,
+        audio_asset_version_id=uuid4(),
+        duration_ms=None,
+        transcript_artifact_id=None,
+        assessment_artifact_id=None,
+        submitted_at=None,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+    checksum = "sha256:" + "b" * 64
+    uow.qa.get_answer = AsyncMock(return_value=answer)
+    uow.qa.get_answer_for_update.return_value = answer
+    uow.projects.get_verified_asset_version_snapshot = AsyncMock(
+        return_value={
+            "checksum": checksum,
+            "size_bytes": 1234,
+            "duration_ms": 120_001,
+        }
+    )
+
+    with pytest.raises(AnswerDurationExceeded):
+        await workflow.submit_answer(
+            answer_id=answer.id,
+            actor_id=session.created_by,
+            checksum=checksum,
+            size_bytes=1234,
+            idempotency_key="submit-long",
+        )
+
+
+@pytest.mark.asyncio
+async def test_get_qa_round_rejects_project_outsider() -> None:
+    workflow, uow, _round, _questions, session = _setup()
+    uow.projects.is_member.return_value = False
+
+    with pytest.raises(UnauthorizedSessionAction):
+        await workflow.get_qa_round(session.id, uuid4())

@@ -47,6 +47,7 @@ from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
 from app.domain.session_workflow.enums.qa import QARoundState, QuestionKind, QuestionState
 from app.domain.session_workflow.enums.session_status import SessionStatus
 from app.domain.session_workflow.exceptions import (
+    CompletedResultValidationError,
     InvalidAttemptState,
     InvalidJobStatusTransition,
     StaleEntityVersion,
@@ -411,9 +412,7 @@ class AIJobs:
         ancestry: AIJobAncestryContext,
         occurred_at: datetime,
     ) -> tuple[QARound | None, Question | None]:
-        repository = getattr(self._uow, "qa", None)
-        if repository is None:
-            return None, None
+        repository = self._uow.qa
         existing = await repository.get_round_by_session(ancestry.session.id)
         if existing is not None:
             return existing, None
@@ -459,17 +458,12 @@ class AIJobs:
         occurred_at: datetime,
         trace_id: str,
     ) -> PendingSessionNotification | None:
-        repository = getattr(self._uow, "qa", None)
-        if repository is None or job.answer_id is None:
+        if job.answer_id is None:
             return None
+        repository = self._uow.qa
         answer = await repository.get_answer(job.answer_id)
         if answer is None:
             return None
-        answer.transcript_artifact_id = payload.transcript_artifact_id
-        answer.assessment_artifact_id = payload.assessment_artifact_id
-        answer.updated_at = occurred_at
-        await repository.update_answer(answer)
-
         round_ = await repository.get_round_for_update(answer.qa_round_id)
         if round_ is None or round_.analysis_attempt_id != job.attempt_id:
             return None
@@ -482,18 +476,30 @@ class AIJobs:
         if latest is None or latest.id != answer.id:
             return None
 
-        expected_version = round_.version
+        parent_question = await repository.get_question(answer.question_id)
+        if parent_question is None:
+            return None
         follow_up = payload.follow_up
+        if follow_up is not None and not set(follow_up.evidence_ids).issubset(
+            set(parent_question.evidence_ids)
+        ):
+            raise CompletedResultValidationError(
+                "follow_up.evidence_ids must reference Evidence grounding the parent Question."
+            )
+
+        answer.transcript_artifact_id = payload.transcript_artifact_id
+        answer.assessment_artifact_id = payload.assessment_artifact_id
+        answer.updated_at = occurred_at
+        await repository.update_answer(answer)
+
+        expected_version = round_.version
         if follow_up is None or round_.follow_up_count >= 2:
             pending = [
                 item
                 for item in await repository.list_questions(round_.id)
                 if item.state is QuestionState.PENDING
             ]
-            if round_.current_question_id is None and not pending:
-                round_.state = QARoundState.COMPLETED
-                round_.version += 1
-                round_.updated_at = occurred_at
+            if round_.complete_if_idle(occurred_at, has_pending_questions=bool(pending)):
                 await repository.update_round(round_, expected_version)
             return None
 
@@ -541,7 +547,7 @@ class AIJobs:
         *,
         now: datetime | None = None,
     ) -> AnalysisJob | None:
-        job = await self._uow.jobs.get_by_id(job_id)
+        job = await self._uow.jobs.get_by_id_for_update(job_id)
         if job is None:
             return None
 
@@ -764,9 +770,6 @@ class AIJobs:
                         if inspect.isawaitable(res):
                             await res
                     raise
-                job.status = AnalysisJobStatus.COMPLETED
-                job.completed_at = occurred_at
-                job.completed_result = validated_payload.model_dump(mode="json")
                 if isinstance(validated_payload, SessionAnalysisCompletedPayload):
                     if ancestry is None:
                         raise InvalidJobStatusTransition("Session ancestry is required.")
@@ -801,6 +804,9 @@ class AIJobs:
                         occurred_at=occurred_at,
                         trace_id=update.trace_id,
                     )
+                job.status = AnalysisJobStatus.COMPLETED
+                job.completed_at = occurred_at
+                job.completed_result = validated_payload.model_dump(mode="json")
                 if attempt is not None:
                     attempt.transition_to(AnalysisAttemptStatus.COMPLETED, at=occurred_at)
                     attempt.completed_at = occurred_at

@@ -168,6 +168,8 @@ async def asset_request_validation_handler(
     if (
         "/assets" in request.url.path
         or "/practice-sessions" in request.url.path
+        or "/questions/" in request.url.path
+        or "/answers/" in request.url.path
         or "/internal" in request.url.path
         or "/ai-jobs" in request.url.path
     ):

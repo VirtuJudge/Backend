@@ -22,11 +22,13 @@ def upgrade() -> None:
     with op.batch_alter_table(
         "ai_jobs", naming_convention=naming_convention if bind.dialect.name == "sqlite" else None
     ) as batch_op:
-        constraint_name = (
-            "uq_ai_jobs_attempt_id"
-            if bind.dialect.name == "sqlite"
-            else "analysis_jobs_attempt_id_key"
-        )
+        constraint_name = "uq_ai_jobs_attempt_id"
+        if bind.dialect.name != "sqlite":
+            constraint_name = next(
+                constraint["name"]
+                for constraint in sa.inspect(bind).get_unique_constraints("ai_jobs")
+                if constraint.get("column_names") == ["attempt_id"] and constraint.get("name")
+            )
         batch_op.drop_constraint(constraint_name, type_="unique")
         batch_op.add_column(sa.Column("answer_id", sa.Uuid(), nullable=True))
         batch_op.create_foreign_key(

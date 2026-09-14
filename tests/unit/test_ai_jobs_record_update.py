@@ -1341,7 +1341,7 @@ async def test_current_answer_result_adds_grounded_follow_up() -> None:
             text="How was that evidence measured?",
             reason="The measurement method remains unclear.",
             rubric_dimension="business_reasoning",
-            evidence_ids=["ev-answer-1"],
+            evidence_ids=["ev-1"],
         ),
     )
 
@@ -1400,6 +1400,55 @@ async def test_stale_answer_result_does_not_add_follow_up() -> None:
 
     uow.qa.create_questions.assert_not_awaited()
     uow.qa.update_round.assert_not_awaited()
+    uow.qa.update_answer.assert_not_awaited()
+    assert job.status is AnalysisJobStatus.COMPLETED
+
+
+@pytest.mark.asyncio
+async def test_answer_result_rejects_follow_up_with_unrelated_evidence() -> None:
+    job, attempt, uow, service = _build_attempt_and_job(
+        job_status=AnalysisJobStatus.RUNNING,
+        attempt_status=AnalysisAttemptStatus.COMPLETED,
+        last_update_sequence=1,
+        job_type="analyze_answer",
+    )
+    answer_id = uuid4()
+    job.answer_id = answer_id
+    answer = MagicMock(
+        id=answer_id,
+        question_id=uuid4(),
+        qa_round_id=uuid4(),
+        is_final=True,
+        submitted_at=job.updated_at,
+    )
+    round_ = MagicMock(id=answer.qa_round_id, analysis_attempt_id=attempt.id, version=2)
+    question = MagicMock(evidence_ids=["ev-grounded"])
+    uow.qa = MagicMock()
+    uow.qa.get_answer = AsyncMock(return_value=answer)
+    uow.qa.get_round_for_update = AsyncMock(return_value=round_)
+    uow.qa.list_answers = AsyncMock(return_value=[answer])
+    uow.qa.get_question = AsyncMock(return_value=question)
+    uow.qa.update_answer = AsyncMock()
+    payload = AnswerAnalysisCompletedPayload(
+        answer_id=str(answer_id),
+        transcript_artifact_id="transcript-1",
+        assessment_artifact_id="assessment-1",
+        follow_up=FollowUpQuestion(
+            text="Unsupported follow-up?",
+            reason="It cites unrelated evidence.",
+            rubric_dimension="business_reasoning",
+            evidence_ids=["ev-unrelated"],
+        ),
+    )
+
+    with pytest.raises(CompletedResultValidationError, match="parent Question"):
+        await service.record_update(
+            job.id,
+            _make_update(AIWorkerUpdateStatus.COMPLETED, sequence=2, payload=payload),
+        )
+
+    uow.qa.update_answer.assert_not_awaited()
+    assert job.status is AnalysisJobStatus.RUNNING
 
 
 @pytest.mark.asyncio

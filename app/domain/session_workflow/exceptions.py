@@ -34,6 +34,12 @@ class UnverifiedAsset(Exception):
     pass
 
 
+class AnswerDurationExceeded(Exception):
+    """Exception raised when submitted answer audio exceeds the public duration limit."""
+
+    pass
+
+
 class InvalidAttemptState(Exception):
     """Exception raised when an invalid state is encountered in an analysis attempt."""
 
