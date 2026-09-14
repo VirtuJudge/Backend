@@ -10,6 +10,9 @@ from app.domain.session_workflow.entities.analysis_job import (
     AnalysisJob,
 )
 from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
+from tests.support.fake_analysis_attempt_repository import FakeAnalysisAttemptRepository
+
+_DEFAULT_ATTEMPTS = object()
 
 
 class FakeAnalysisJobRepository(AnalysisJobRepository):
@@ -202,11 +205,17 @@ class FakeUnitOfWork:
     speaker_mappings: Any
     idempotency: Any
 
-    def __init__(self, jobs: AnalysisJobRepository | None = None) -> None:
+    def __init__(
+        self,
+        jobs: AnalysisJobRepository | None = None,
+        attempts: Any = _DEFAULT_ATTEMPTS,
+    ) -> None:
         self.jobs = jobs or FakeAnalysisJobRepository()
         self.sessions = None
         self.manifests = None
-        self.attempts = None
+        self.attempts = (
+            FakeAnalysisAttemptRepository() if attempts is _DEFAULT_ATTEMPTS else attempts
+        )
         self.projects = None
         self.speaker_mappings = None
         self.idempotency = None

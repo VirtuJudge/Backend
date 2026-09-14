@@ -16,7 +16,7 @@ from app.domain.session_workflow.entities.analysis_job import AnalysisJob
 from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
 from app.main import create_app
 from app.settings import Settings
-from tests.support.fake_analysis_job_repository import FakeAnalysisJobRepository
+from tests.support import FakeAnalysisJobRepository, FakeUnitOfWork
 
 SHARED_SECRET = "test-worker-shared-secret-key-12345"
 
@@ -86,8 +86,7 @@ def _build_test_app() -> tuple[FastAPI, FakeAnalysisJobRepository, MagicMock]:
     )
     app = create_app(settings)
     fake_repo = FakeAnalysisJobRepository()
-    fake_uow = MagicMock()
-    fake_uow.jobs = fake_repo
+    fake_uow = FakeUnitOfWork(fake_repo)
 
     ai_jobs = AIJobs(fake_uow)
     ai_jobs_spy = MagicMock(wraps=ai_jobs)
@@ -693,8 +692,17 @@ async def test_post_internal_ai_job_updates_delegation() -> None:
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         for idx, body in enumerate(valid_updates, start=1):
+            update_status = body["status"]
+            job_status = (
+                AnalysisJobStatus.PENDING
+                if update_status == "started"
+                else AnalysisJobStatus.RUNNING
+            )
+            target_job = _create_test_job(status=job_status, last_update_sequence=0)
+            await repo.create(target_job)
+
             res = await client.post(
-                f"/internal/v1/ai-jobs/{job.id}/updates",
+                f"/internal/v1/ai-jobs/{target_job.id}/updates",
                 headers={"Authorization": f"Bearer {SHARED_SECRET}"},
                 json=body,
             )
@@ -705,7 +713,7 @@ async def test_post_internal_ai_job_updates_delegation() -> None:
 
             call_args = ai_jobs_spy.record_update.call_args
             called_job_id, update_arg = call_args[0]
-            assert called_job_id == job.id
+            assert called_job_id == target_job.id
             assert isinstance(update_arg, AIWorkerUpdate)
             assert update_arg.sequence == body["sequence"]
             assert update_arg.status == body["status"]
@@ -804,7 +812,7 @@ async def test_post_internal_ai_job_updates_no_callback_body_logging(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
     app, repo, _ = _build_test_app()
-    job = _create_test_job()
+    job = _create_test_job(status=AnalysisJobStatus.RUNNING, last_update_sequence=0)
     await repo.create(job)
 
     secret_marker_payload = "SECRET_CALLBACK_PAYLOAD_CONTENT_77777"
@@ -838,3 +846,26 @@ async def test_post_internal_ai_job_updates_no_callback_body_logging(
     assert secret_marker_payload not in caplog.text
     assert secret_marker_stage not in caplog.text
     assert SHARED_SECRET not in caplog.text
+
+
+@pytest.mark.anyio
+async def test_post_internal_ai_job_updates_invalid_transition_returns_409() -> None:
+    app, repo, _ = _build_test_app()
+    job = _create_test_job(status=AnalysisJobStatus.COMPLETED, last_update_sequence=3)
+    await repo.create(job)
+
+    revive_update = _valid_started_update(sequence=4)
+
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        res = await client.post(
+            f"/internal/v1/ai-jobs/{job.id}/updates",
+            headers={"Authorization": f"Bearer {SHARED_SECRET}"},
+            json=revive_update,
+        )
+
+    assert res.status_code == status.HTTP_409_CONFLICT
+    assert res.headers["content-type"] == "application/problem+json"
+    data = res.json()
+    assert data["status"] == 409
+    assert data["code"] == "http_409"

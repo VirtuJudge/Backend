@@ -1,4 +1,5 @@
 import hashlib
+import inspect
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -10,6 +11,7 @@ from app.application.ai_job_contracts import (
     AIJobQueueMessage,
     AIJobType,
     AIWorkerUpdate,
+    AIWorkerUpdateStatus,
     AnalyzeSessionPayload,
     AssetInput,
     RubricRef,
@@ -22,9 +24,39 @@ from app.application.ports.session_practice.unit_of_work_repository import UnitO
 from app.domain.session_workflow.entities.analysis_attempt import AnalysisAttempt
 from app.domain.session_workflow.entities.analysis_job import AnalysisJob
 from app.domain.session_workflow.entities.session_manifest import SessionManifest
+from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
 from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
+from app.domain.session_workflow.exceptions import (
+    InvalidAttemptState,
+    InvalidJobStatusTransition,
+    StaleEntityVersion,
+)
 
 logger = logging.getLogger(__name__)
+
+_ALLOWED_JOB_TRANSITIONS: dict[AnalysisJobStatus, set[AIWorkerUpdateStatus]] = {
+    AnalysisJobStatus.PENDING: {
+        AIWorkerUpdateStatus.STARTED,
+        AIWorkerUpdateStatus.FAILED,
+        AIWorkerUpdateStatus.CANCELLED,
+    },
+    AnalysisJobStatus.QUEUED: {
+        AIWorkerUpdateStatus.STARTED,
+        AIWorkerUpdateStatus.FAILED,
+        AIWorkerUpdateStatus.CANCELLED,
+    },
+    AnalysisJobStatus.RUNNING: {
+        AIWorkerUpdateStatus.PROGRESS,
+        AIWorkerUpdateStatus.FAILED,
+        AIWorkerUpdateStatus.CANCELLED,
+        AIWorkerUpdateStatus.COMPLETED,
+    },
+    AnalysisJobStatus.CANCELLED: {
+        AIWorkerUpdateStatus.CANCELLED,
+    },
+    AnalysisJobStatus.FAILED: set(),
+    AnalysisJobStatus.COMPLETED: set(),
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -264,6 +296,167 @@ class AIJobs:
         job = await self._uow.jobs.get_by_id(job_id)
         if job is None:
             return None
+
+        if update.sequence <= job.last_update_sequence:
+            return job
+
+        allowed = _ALLOWED_JOB_TRANSITIONS.get(job.status, set())
+        if update.status not in allowed:
+            raise InvalidJobStatusTransition(
+                f"Cannot transition job {job.id} status '{job.status}' on update '{update.status}'."
+            )
+
+        effective_now = now or datetime.now(UTC)
+        if effective_now.tzinfo is None:
+            effective_now = effective_now.replace(tzinfo=UTC)
+
+        occurred_at = update.occurred_at
+        if occurred_at.tzinfo is None:
+            occurred_at = occurred_at.replace(tzinfo=UTC)
+
+        attempt: AnalysisAttempt | None = None
+        initial_attempt_version = 0
+        attempts_repo = getattr(self._uow, "attempts", None)
+        if attempts_repo is not None and hasattr(attempts_repo, "get_by_id"):
+            get_att = attempts_repo.get_by_id
+            if callable(get_att):
+                res = get_att(job.attempt_id)
+                if inspect.isawaitable(res):
+                    attempt = await res
+                elif isinstance(res, AnalysisAttempt):
+                    attempt = res
+                if attempt is not None:
+                    initial_attempt_version = attempt.version
+
+        payload = update.payload
+        if job.payload is None:
+            job.payload = {}
+
+        try:
+            if update.status == AIWorkerUpdateStatus.STARTED:
+                job.status = AnalysisJobStatus.RUNNING
+                if job.started_at is None:
+                    job.started_at = occurred_at
+                pipeline_ver = (
+                    getattr(payload, "pipeline_version", None)
+                    if hasattr(payload, "pipeline_version")
+                    else (payload.get("pipeline_version") if isinstance(payload, dict) else None)
+                )
+                if pipeline_ver is not None:
+                    job.payload["pipeline_version"] = str(pipeline_ver)
+                if attempt is not None:
+                    attempt.transition_to(AnalysisAttemptStatus.RUNNING, at=occurred_at)
+
+            elif update.status == AIWorkerUpdateStatus.PROGRESS:
+                stage = getattr(payload, "stage", None) or (
+                    payload.get("stage") if isinstance(payload, dict) else None
+                )
+                progress_val = (
+                    getattr(payload, "progress", None)
+                    if hasattr(payload, "progress")
+                    else (payload.get("progress") if isinstance(payload, dict) else None)
+                )
+                message = getattr(payload, "message", None) or (
+                    payload.get("message") if isinstance(payload, dict) else None
+                )
+                job.payload["progress"] = {
+                    "stage": str(stage) if stage is not None else None,
+                    "progress": float(progress_val) if progress_val is not None else None,
+                    "message": str(message) if message is not None else None,
+                }
+                if attempt is not None:
+                    attempt.transition_to(AnalysisAttemptStatus.RUNNING, at=occurred_at)
+
+            elif update.status == AIWorkerUpdateStatus.FAILED:
+                job.status = AnalysisJobStatus.FAILED
+                job.completed_at = occurred_at
+                stage = getattr(payload, "stage", None) or (
+                    payload.get("stage") if isinstance(payload, dict) else None
+                )
+                code = getattr(payload, "code", None) or (
+                    payload.get("code") if isinstance(payload, dict) else None
+                )
+                retryable = (
+                    getattr(payload, "retryable", None)
+                    if hasattr(payload, "retryable")
+                    else (payload.get("retryable") if isinstance(payload, dict) else None)
+                )
+                raw_msg = getattr(payload, "message", None) or (
+                    payload.get("message") if isinstance(payload, dict) else None
+                )
+                safe_msg = (
+                    str(raw_msg)
+                    if raw_msg is not None
+                    else (str(code) if code is not None else "Worker reported failure")
+                )
+                job.last_error = safe_msg
+
+                worker_attempts = (
+                    getattr(payload, "attempts", None)
+                    if hasattr(payload, "attempts")
+                    else (payload.get("attempts") if isinstance(payload, dict) else None)
+                )
+                if worker_attempts is not None:
+                    job.attempts = max(job.attempts, int(worker_attempts))
+
+                job.payload["failure"] = {
+                    "stage": str(stage) if stage is not None else None,
+                    "code": str(code) if code is not None else None,
+                    "retryable": bool(retryable) if retryable is not None else None,
+                    "attempts": job.attempts,
+                    "message": safe_msg,
+                }
+                if attempt is not None:
+                    attempt.transition_to(AnalysisAttemptStatus.FAILED, at=occurred_at)
+                    attempt.failure_code = str(code) if code is not None else None
+                    attempt.failure_message = safe_msg
+                    attempt.failed_at = occurred_at
+                    attempt.completed_at = occurred_at
+
+            elif update.status == AIWorkerUpdateStatus.CANCELLED:
+                job.status = AnalysisJobStatus.CANCELLED
+                job.cancel_requested = True
+                job.completed_at = occurred_at
+                if attempt is not None:
+                    attempt.transition_to(AnalysisAttemptStatus.CANCELLED, at=occurred_at)
+                    attempt.cancelled_at = occurred_at
+                    attempt.completed_at = occurred_at
+
+            elif update.status == AIWorkerUpdateStatus.COMPLETED:
+                job.status = AnalysisJobStatus.COMPLETED
+                job.completed_at = occurred_at
+                if attempt is not None:
+                    attempt.transition_to(AnalysisAttemptStatus.COMPLETED, at=occurred_at)
+                    attempt.completed_at = occurred_at
+        except InvalidAttemptState as exc:
+            raise InvalidJobStatusTransition(str(exc)) from exc
+
+        job.last_update_sequence = update.sequence
+        job.updated_at = effective_now
+
+        try:
+            update_job = self._uow.jobs.update(job)
+            if inspect.isawaitable(update_job):
+                await update_job
+            if attempt is not None and attempts_repo is not None:
+                update_fn = getattr(attempts_repo, "update", None)
+                if callable(update_fn):
+                    update_att = update_fn(attempt, expected_version=initial_attempt_version)
+                    if inspect.isawaitable(update_att):
+                        await update_att
+
+            commit_res = self._uow.commit()
+            if inspect.isawaitable(commit_res):
+                await commit_res
+        except StaleEntityVersion:
+            rollback_res = self._uow.rollback()
+            if inspect.isawaitable(rollback_res):
+                await rollback_res
+            reloaded_job = await self._uow.jobs.get_by_id(job_id)
+            if reloaded_job is not None and reloaded_job.last_update_sequence >= update.sequence:
+                return reloaded_job
+            raise
+
         return job
 
     async def request_cancellation(

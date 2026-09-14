@@ -6,6 +6,7 @@ from app.api.dependencies.services import get_ai_jobs
 from app.api.dependencies.worker_auth import AuthenticatedWorker, require_worker_auth
 from app.api.schemas.ai_jobs import AIJobStatusResponse, AIWorkerUpdate
 from app.application.ai_jobs import AIJobs
+from app.domain.session_workflow.exceptions import InvalidJobStatusTransition
 
 router = APIRouter(prefix="/internal/v1", tags=["Internal AI Jobs"])
 
@@ -55,7 +56,13 @@ async def record_internal_ai_job_update(
     worker: AuthenticatedWorker = Depends(require_worker_auth),
     ai_jobs: AIJobs = Depends(get_ai_jobs),
 ) -> AIJobStatusResponse:
-    job = await ai_jobs.record_update(job_id, update)
+    try:
+        job = await ai_jobs.record_update(job_id, update)
+    except InvalidJobStatusTransition as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=str(exc),
+        ) from exc
     if job is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,

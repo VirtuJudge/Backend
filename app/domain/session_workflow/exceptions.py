@@ -114,3 +114,12 @@ class InvalidTeamMember(Exception):
     """Exception raised when a user is not a member of the project team."""
 
     pass
+
+
+class InvalidJobStatusTransition(Exception):
+    """Exception raised when an invalid transition between job statuses is attempted."""
+
+    pass
+
+
+InvalidJobStateTransition = InvalidJobStatusTransition
