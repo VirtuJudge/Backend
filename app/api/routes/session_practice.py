@@ -3,6 +3,7 @@ from typing import Any
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
+from fastapi.responses import StreamingResponse
 
 from app.api.dependencies.auth import get_current_user
 from app.api.dependencies.session_workflow import get_session_workflow
@@ -222,6 +223,67 @@ async def get_practice_session(
 
     response.headers["ETag"] = f'"{session.version}"'
     return await _to_session_response(session, workflow)
+
+
+@router.get(
+    "/practice-sessions/{session_id}/events",
+    response_class=StreamingResponse,
+    responses={
+        200: {"content": {"text/event-stream": {}}},
+        400: _problem_response_doc("Invalid Last-Event-ID"),
+        403: _problem_response_doc("Forbidden"),
+        404: _problem_response_doc("Session not found"),
+    },
+)
+async def stream_practice_session_events(
+    session_id: UUID,
+    raw_request: Request,
+    last_event_id: str | None = Header(default=None, alias="Last-Event-ID"),
+    current_user: User = Depends(get_current_user),
+    workflow: SessionWorkflow = Depends(get_session_workflow),
+) -> Any:
+    if last_event_id is not None:
+        try:
+            parsed_last_event_id = int(last_event_id)
+        except ValueError:
+            parsed_last_event_id = -1
+        if parsed_last_event_id < 0:
+            return problem_response(
+                status.HTTP_400_BAD_REQUEST,
+                "invalid_last_event_id",
+                "Invalid Last-Event-ID",
+                "Last-Event-ID must be a non-negative integer.",
+                raw_request.url.path,
+            )
+
+    try:
+        await workflow.get_session(session_id=session_id, actor_id=current_user.id)
+    except UnauthorizedSessionAction as error:
+        return problem_response(
+            status.HTTP_403_FORBIDDEN,
+            "forbidden",
+            "Forbidden",
+            str(error),
+            raw_request.url.path,
+        )
+    except SessionNotFoundError as error:
+        return problem_response(
+            status.HTTP_404_NOT_FOUND,
+            "not_found",
+            "Session not found",
+            str(error),
+            raw_request.url.path,
+        )
+
+    return Response(
+        content="",
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get(

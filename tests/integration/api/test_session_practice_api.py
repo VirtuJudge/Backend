@@ -25,6 +25,7 @@ from app.domain.session_workflow.exceptions import (
     SessionNotFoundError,
     SessionNotReadyError,
     StaleEntityVersion,
+    UnauthorizedSessionAction,
     UnverifiedAsset,
 )
 from app.domain.user import User
@@ -177,6 +178,57 @@ async def test_get_practice_session_returns_404_when_not_found(
     data = response.json()
     assert data["code"] == "not_found"
     assert data["status"] == 404
+
+
+@pytest.mark.anyio
+async def test_session_event_stream_authorizes_before_streaming(
+    client: AsyncClient, workflow_mock: MagicMock, current_user: User
+) -> None:
+    session = _create_session(status=SessionStatus.ANALYZING)
+    workflow_mock.get_session.return_value = session
+
+    async with client:
+        response = await client.get(
+            f"/api/v1/practice-sessions/{session.id}/events",
+            headers={"Last-Event-ID": "0"},
+        )
+
+    assert response.status_code == 200
+    assert response.headers["content-type"].startswith("text/event-stream")
+    assert response.headers["cache-control"] == "no-cache"
+    assert response.headers["x-accel-buffering"] == "no"
+    workflow_mock.get_session.assert_awaited_once_with(
+        session_id=session.id, actor_id=current_user.id
+    )
+
+
+@pytest.mark.anyio
+async def test_session_event_stream_rejects_invalid_last_event_id(
+    client: AsyncClient, workflow_mock: MagicMock
+) -> None:
+    session_id = uuid4()
+
+    async with client:
+        response = await client.get(
+            f"/api/v1/practice-sessions/{session_id}/events",
+            headers={"Last-Event-ID": "invalid"},
+        )
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "invalid_last_event_id"
+    workflow_mock.get_session.assert_not_awaited()
+
+
+@pytest.mark.anyio
+async def test_session_event_stream_rejects_outsider(
+    client: AsyncClient, workflow_mock: MagicMock
+) -> None:
+    workflow_mock.get_session.side_effect = UnauthorizedSessionAction("Not a team member")
+
+    async with client:
+        response = await client.get(f"/api/v1/practice-sessions/{uuid4()}/events")
+
+    assert response.status_code == 403
 
 
 @pytest.mark.anyio
