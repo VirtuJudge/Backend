@@ -50,11 +50,12 @@ class QARound:
         self.version += 1
         self.updated_at = at
 
-    def add_follow_up(self, question_id: UUID, at: datetime) -> None:
+    def add_follow_up(self, question_id: UUID, at: datetime, *, activate: bool = True) -> None:
         if self.follow_up_count >= 2:
             raise FollowUpLimitReached("A Q&A Round cannot contain more than two follow-ups.")
         self.follow_up_count += 1
-        self.current_question_id = question_id
+        if activate:
+            self.current_question_id = question_id
         self.state = QARoundState.IN_PROGRESS
         self.version += 1
         self.updated_at = at

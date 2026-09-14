@@ -1,5 +1,6 @@
 from datetime import UTC, datetime
 from typing import Any, Literal, cast
+from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
@@ -26,10 +27,16 @@ from app.domain.session_workflow.entities.analysis_job import (
     AIJobAncestryContext,
     AnalysisJob,
 )
+from app.domain.session_workflow.entities.qa_round import Answer, QARound, Question
 from app.domain.session_workflow.entities.session_practice import PracticeSession
 from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
 from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
-from app.domain.session_workflow.enums.qa import QARoundState, QuestionKind, QuestionState
+from app.domain.session_workflow.enums.qa import (
+    AnswerStatus,
+    QARoundState,
+    QuestionKind,
+    QuestionState,
+)
 from app.domain.session_workflow.enums.session_status import SessionStatus
 from app.domain.session_workflow.exceptions import (
     CompletedResultValidationError,
@@ -1247,6 +1254,152 @@ async def test_completed_valid_analyze_answer() -> None:
     assert result.completed_result["answer_id"] == "ans_001"
     assert result.completed_result["follow_up"]["rubric_dimension"] == "customer_retention"
     assert uow.commit_count == 1
+
+
+@pytest.mark.asyncio
+async def test_current_answer_result_adds_grounded_follow_up() -> None:
+    job, attempt, uow, service = _build_attempt_and_job(
+        job_status=AnalysisJobStatus.RUNNING,
+        attempt_status=AnalysisAttemptStatus.COMPLETED,
+        last_update_sequence=1,
+        job_type="analyze_answer",
+    )
+    round_ = QARound(
+        id=uuid4(),
+        practice_session_id=job.practice_session_id,
+        analysis_attempt_id=attempt.id,
+        state=QARoundState.IN_PROGRESS,
+        current_question_id=None,
+        follow_up_count=0,
+        version=4,
+        created_at=job.created_at,
+        updated_at=job.updated_at,
+    )
+    question = Question(
+        id=uuid4(),
+        qa_round_id=round_.id,
+        practice_session_id=job.practice_session_id,
+        kind=QuestionKind.PRIMARY,
+        position=3,
+        text="What evidence supports adoption?",
+        reason="The claim is unsupported.",
+        rubric_dimension="business_reasoning",
+        evidence_ids=["ev-1"],
+        parent_answer_id=None,
+        state=QuestionState.ANSWERED,
+        created_at=job.created_at,
+    )
+    answer = Answer(
+        id=uuid4(),
+        qa_round_id=round_.id,
+        question_id=question.id,
+        answered_by=uuid4(),
+        status=AnswerStatus.SUBMITTED,
+        audio_asset_version_id=uuid4(),
+        duration_ms=10_000,
+        transcript_artifact_id=None,
+        assessment_artifact_id=None,
+        submitted_at=job.updated_at,
+        created_at=job.created_at,
+        updated_at=job.updated_at,
+    )
+    job.answer_id = answer.id
+
+    class FakeQA:
+        created_questions: list[Question] = []
+
+        async def get_answer(self, _answer_id: UUID) -> Answer:
+            return answer
+
+        async def get_question(self, _question_id: UUID) -> Question:
+            return question
+
+        async def get_round_for_update(self, _round_id: UUID) -> QARound:
+            return round_
+
+        async def list_answers(self, _round_id: UUID) -> list[Answer]:
+            return [answer]
+
+        async def list_questions(self, _round_id: UUID) -> list[Question]:
+            return [question]
+
+        async def create_questions(self, questions: list[Question]) -> None:
+            self.created_questions.extend(questions)
+
+        async def update_answer(self, _answer: Answer) -> None:
+            return None
+
+        async def update_round(self, _round: QARound, _version: int) -> None:
+            return None
+
+    uow.qa = FakeQA()
+    payload = AnswerAnalysisCompletedPayload(
+        answer_id=str(answer.id),
+        transcript_artifact_id="transcript-1",
+        assessment_artifact_id="assessment-1",
+        follow_up=FollowUpQuestion(
+            text="How was that evidence measured?",
+            reason="The measurement method remains unclear.",
+            rubric_dimension="business_reasoning",
+            evidence_ids=["ev-answer-1"],
+        ),
+    )
+
+    await service.record_update(
+        job.id,
+        _make_update(AIWorkerUpdateStatus.COMPLETED, sequence=2, payload=payload),
+    )
+
+    assert answer.transcript_artifact_id == "transcript-1"
+    assert len(uow.qa.created_questions) == 1
+    assert uow.qa.created_questions[0].parent_answer_id == answer.id
+    assert uow.qa.created_questions[0].state is QuestionState.ACTIVE
+    assert round_.follow_up_count == 1
+
+
+@pytest.mark.asyncio
+async def test_stale_answer_result_does_not_add_follow_up() -> None:
+    job, attempt, uow, service = _build_attempt_and_job(
+        job_status=AnalysisJobStatus.RUNNING,
+        attempt_status=AnalysisAttemptStatus.COMPLETED,
+        last_update_sequence=1,
+        job_type="analyze_answer",
+    )
+    answer_id = uuid4()
+    job.answer_id = answer_id
+    older = MagicMock(id=answer_id, submitted_at=job.created_at)
+    newer = MagicMock(id=uuid4(), submitted_at=job.updated_at.replace(minute=1))
+    round_ = MagicMock(
+        id=uuid4(), analysis_attempt_id=attempt.id, current_question_id=uuid4(), version=2
+    )
+    question = MagicMock(position=1)
+    uow.qa = MagicMock()
+    uow.qa.get_answer = AsyncMock(return_value=older)
+    uow.qa.get_question = AsyncMock(return_value=question)
+    uow.qa.get_round_for_update = AsyncMock(return_value=round_)
+    uow.qa.list_answers = AsyncMock(return_value=[older, newer])
+    uow.qa.update_answer = AsyncMock()
+    uow.qa.create_questions = AsyncMock()
+    uow.qa.update_round = AsyncMock()
+    payload = AnswerAnalysisCompletedPayload(
+        answer_id=str(answer_id),
+        transcript_artifact_id="transcript-old",
+        assessment_artifact_id="assessment-old",
+        follow_up=FollowUpQuestion(
+            text="Stale follow-up?",
+            reason="Should not alter the round.",
+            rubric_dimension="business_reasoning",
+            evidence_ids=["ev-old"],
+        ),
+    )
+
+    await service.record_update(
+        job.id,
+        _make_update(AIWorkerUpdateStatus.COMPLETED, sequence=2, payload=payload),
+    )
+
+    uow.qa.create_questions.assert_not_awaited()
+    uow.qa.update_round.assert_not_awaited()
 
 
 @pytest.mark.asyncio

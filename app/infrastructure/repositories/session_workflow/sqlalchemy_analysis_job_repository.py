@@ -55,8 +55,15 @@ class SqlAlchemyAnalysisJobRepository(AnalysisJobRepository):
         attempt_id: UUID,
     ) -> AnalysisJob | None:
         stmt = select(AnalysisJobModel).where(AnalysisJobModel.attempt_id == attempt_id)
+        stmt = stmt.where(AnalysisJobModel.job_type == "analyze_session")
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
+        return None if model is None else to_domain(model)
+
+    async def get_by_answer_id(self, answer_id: UUID) -> AnalysisJob | None:
+        model = await self._session.scalar(
+            select(AnalysisJobModel).where(AnalysisJobModel.answer_id == answer_id)
+        )
         return None if model is None else to_domain(model)
 
     async def create(

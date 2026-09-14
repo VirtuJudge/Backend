@@ -65,3 +65,8 @@ class ProjectRepository(ABC):
         self,
         version_ids: list[UUID],
     ) -> dict[UUID, dict[str, Any]]: ...
+
+    async def get_verified_asset_version_snapshot(
+        self, project_id: UUID, version_id: UUID, kind: str
+    ) -> dict[str, Any] | None:
+        return None

@@ -41,6 +41,12 @@ class FakeAnalysisJobRepository(AnalysisJobRepository):
                 return job
         return None
 
+    async def get_by_answer_id(self, answer_id: UUID) -> AnalysisJob | None:
+        for job in self.jobs.values():
+            if job.answer_id == answer_id:
+                return job
+        return None
+
     async def create(self, job: AnalysisJob) -> AnalysisJob:
         self.jobs[job.id] = job
         return job

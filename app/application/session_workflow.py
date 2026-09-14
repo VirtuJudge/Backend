@@ -16,9 +16,12 @@ from app.application.ports.session_practice.diarization_result_reader import (
     NullDiarizationResultReader,
 )
 from app.application.ports.session_practice.unit_of_work_repository import UnitOfWork
+from app.application.services.asset_store import AssetStore
 from app.application.session_notification_contracts import NotificationEventName
+from app.domain.asset import UploadIntent
 from app.domain.project import ProjectNotFoundError
 from app.domain.session_workflow.entities.analysis_attempt import AnalysisAttempt
+from app.domain.session_workflow.entities.qa_round import Answer, QARound, Question
 from app.domain.session_workflow.entities.session_command_idempotency import (
     SessionCommandIdempotency,
 )
@@ -26,9 +29,12 @@ from app.domain.session_workflow.entities.session_manifest import SessionManifes
 from app.domain.session_workflow.entities.session_practice import PracticeSession
 from app.domain.session_workflow.entities.speaker_mapping import SpeakerMapping
 from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
+from app.domain.session_workflow.enums.qa import AnswerStatus, QARoundState, QuestionState
 from app.domain.session_workflow.enums.session_status import SessionStatus
 from app.domain.session_workflow.exceptions import (
     AnalysisNotReady,
+    AnswerAlreadyFinalized,
+    AnswerNotFound,
     ConsentPolicyOutdated,
     ConsentRequiredError,
     IdempotencyConflict,
@@ -37,6 +43,9 @@ from app.domain.session_workflow.exceptions import (
     InvalidSpeakerLabel,
     InvalidTeamMember,
     ManifestAlreadyFrozen,
+    QuestionNotActive,
+    QuestionNotFound,
+    QuestionsNotReady,
     RetryNotAllowed,
     SessionNotFoundError,
     SessionNotReadyError,
@@ -96,6 +105,33 @@ class SessionWorkflow:
             logger.warning(
                 "Session notification publication failed for %s: %s",
                 session.id,
+                type(exc).__name__,
+            )
+
+    async def _publish_qa_event(
+        self,
+        *,
+        event_name: NotificationEventName,
+        session_id: UUID,
+        occurred_at: datetime,
+        payload: dict[str, Any],
+    ) -> None:
+        if self._notifications is None:
+            return
+        try:
+            await self._notifications.publish(
+                PendingSessionNotification(
+                    event_name=event_name,
+                    practice_session_id=str(session_id),
+                    occurred_at=occurred_at,
+                    trace_id=self._trace_id,
+                    payload=payload,
+                )
+            )
+        except Exception as exc:
+            logger.warning(
+                "Q&A notification publication failed for %s: %s",
+                session_id,
                 type(exc).__name__,
             )
 
@@ -211,6 +247,276 @@ class SessionWorkflow:
     async def get_manifest(self, session_id: UUID) -> SessionManifest | None:
         async with self._uow as uow:
             return await uow.manifests.get_by_session_id(session_id)
+
+    async def get_qa_round(
+        self, session_id: UUID, actor_id: UUID
+    ) -> tuple[QARound, list[Question], list[Answer]]:
+        async with self._uow as uow:
+            session = await uow.sessions.get_by_id(session_id)
+            if session is None:
+                raise SessionNotFoundError("Session with ID not found.")
+            await self._authorize_member(uow, session, actor_id)
+            round_ = await uow.qa.get_round_by_session(session_id)
+            if round_ is None:
+                raise QuestionsNotReady("Questions are not ready for this Practice Session.")
+            return (
+                round_,
+                await uow.qa.list_questions(round_.id),
+                await uow.qa.list_answers(round_.id),
+            )
+
+    async def create_answer_upload_intent(
+        self,
+        *,
+        question_id: UUID,
+        actor_id: UUID,
+        file_name: str,
+        declared_media_type: str,
+        declared_size_bytes: int,
+        idempotency_key: str,
+        asset_store: AssetStore,
+    ) -> tuple[Answer, UploadIntent]:
+        async with self._uow as uow:
+            question = await uow.qa.get_question(question_id)
+            if question is None:
+                raise QuestionNotFound("Question not found.")
+            session = await uow.sessions.get_by_id(question.practice_session_id)
+            if session is None:
+                raise QuestionNotFound("Question not found.")
+            await self._authorize_member(uow, session, actor_id)
+            round_ = await uow.qa.get_round_for_update(question.qa_round_id)
+            if (
+                round_ is None
+                or round_.current_question_id != question.id
+                or question.state is not QuestionState.ACTIVE
+            ):
+                raise QuestionNotActive("Only the active question accepts answer audio.")
+
+            existing = await uow.qa.get_answer_by_question(question.id)
+            if existing is not None and existing.is_final:
+                raise AnswerAlreadyFinalized("A submitted or skipped Answer is immutable.")
+
+            intent = await asset_store.create_upload_intent(
+                project_id=session.project_id,
+                user_id=actor_id,
+                kind="answer_audio",
+                file_name=file_name,
+                declared_media_type=declared_media_type,
+                declared_size_bytes=declared_size_bytes,
+                idempotency_key=f"qa:{question.id}:{idempotency_key}",
+            )
+            now = datetime.now(UTC)
+            if existing is None:
+                answer = Answer(
+                    id=uuid4(),
+                    qa_round_id=round_.id,
+                    question_id=question.id,
+                    answered_by=actor_id,
+                    status=AnswerStatus.DRAFT,
+                    audio_asset_version_id=intent.asset_version_id,
+                    duration_ms=None,
+                    transcript_artifact_id=None,
+                    assessment_artifact_id=None,
+                    submitted_at=None,
+                    created_at=now,
+                    updated_at=now,
+                )
+                await uow.qa.create_answer(answer)
+            else:
+                answer = existing
+                answer.answered_by = actor_id
+                answer.audio_asset_version_id = intent.asset_version_id
+                answer.updated_at = now
+                await uow.qa.update_answer(answer)
+            await uow.commit()
+            return answer, intent
+
+    async def submit_answer(
+        self,
+        *,
+        answer_id: UUID,
+        actor_id: UUID,
+        checksum: str,
+        size_bytes: int,
+        idempotency_key: str,
+    ) -> Answer:
+        request_hash = hashlib.sha256(f"{checksum}:{size_bytes}".encode()).hexdigest()
+        async with self._uow as uow:
+            answer = await uow.qa.get_answer(answer_id)
+            if answer is None:
+                raise AnswerNotFound("Answer not found.")
+            question = await uow.qa.get_question(answer.question_id)
+            if question is None:
+                raise AnswerNotFound("Answer not found.")
+            session = await uow.sessions.get_by_id(question.practice_session_id)
+            if session is None:
+                raise AnswerNotFound("Answer not found.")
+            await self._authorize_member(uow, session, actor_id)
+            if answer.is_final:
+                if (
+                    answer.idempotency_key == idempotency_key
+                    and answer.request_hash == request_hash
+                ):
+                    return answer
+                raise AnswerAlreadyFinalized("A submitted or skipped Answer is immutable.")
+            round_ = await uow.qa.get_round_for_update(answer.qa_round_id)
+            if round_ is None or round_.current_question_id != question.id:
+                raise QuestionNotActive("Only the active question accepts an Answer.")
+            if answer.audio_asset_version_id is None:
+                raise UnverifiedAsset("Answer audio has not been uploaded.")
+            snapshot = await uow.projects.get_verified_asset_version_snapshot(
+                session.project_id, answer.audio_asset_version_id, "answer_audio"
+            )
+            if (
+                snapshot is None
+                or snapshot.get("checksum") != checksum
+                or snapshot.get("size_bytes") != size_bytes
+                or snapshot.get("duration_ms") is None
+                or int(snapshot["duration_ms"]) > 120_000
+            ):
+                raise UnverifiedAsset("Answer audio is not a matching verified Asset.")
+
+            questions = await uow.qa.list_questions(round_.id)
+            next_question = next(
+                (item for item in questions if item.state is QuestionState.PENDING), None
+            )
+            now = datetime.now(UTC)
+            expected_version = round_.version
+            round_.finalize_answer(question, next_question, AnswerStatus.SUBMITTED, now)
+            if next_question is None:
+                round_.state = QARoundState.IN_PROGRESS
+            answer.status = AnswerStatus.SUBMITTED
+            answer.duration_ms = int(snapshot["duration_ms"])
+            answer.submitted_at = now
+            answer.updated_at = now
+            answer.idempotency_key = idempotency_key
+            answer.request_hash = request_hash
+            attempt = await uow.attempts.get_by_id(round_.analysis_attempt_id)
+            if attempt is None:
+                raise QuestionsNotReady("The Q&A Analysis Attempt is unavailable.")
+            job = await self._ai_jobs.create_answer_job(
+                answer=answer,
+                question=question,
+                round_=round_,
+                attempt=attempt,
+                audio_snapshot=snapshot,
+                now=now,
+            )
+            await uow.qa.update_answer(answer)
+            await uow.qa.update_question(question)
+            if next_question is not None:
+                await uow.qa.update_question(next_question)
+            await uow.qa.update_round(round_, expected_version)
+            await uow.commit()
+
+            await self._publish_qa_event(
+                event_name=NotificationEventName.QA_ANSWER_UPDATED,
+                session_id=session.id,
+                occurred_at=now,
+                payload={
+                    "qa_round_id": str(round_.id),
+                    "question_id": str(question.id),
+                    "answer_id": str(answer.id),
+                    "status": answer.status.value,
+                    "version": round_.version,
+                },
+            )
+            if next_question is not None:
+                await self._publish_qa_event(
+                    event_name=NotificationEventName.QA_QUESTION_AVAILABLE,
+                    session_id=session.id,
+                    occurred_at=now,
+                    payload={
+                        "qa_round_id": str(round_.id),
+                        "question_id": str(next_question.id),
+                        "position": next_question.position,
+                        "kind": next_question.kind.value,
+                        "state": next_question.state.value,
+                        "version": round_.version,
+                    },
+                )
+            with contextlib.suppress(Exception):
+                await self._ai_jobs.dispatch(job, now=now)
+            return answer
+
+    async def skip_answer(
+        self,
+        *,
+        question_id: UUID,
+        actor_id: UUID,
+        reason: str | None,
+        idempotency_key: str,
+    ) -> Answer:
+        request_hash = hashlib.sha256((reason or "").encode()).hexdigest()
+        async with self._uow as uow:
+            question = await uow.qa.get_question(question_id)
+            if question is None:
+                raise QuestionNotFound("Question not found.")
+            session = await uow.sessions.get_by_id(question.practice_session_id)
+            if session is None:
+                raise QuestionNotFound("Question not found.")
+            await self._authorize_member(uow, session, actor_id)
+            existing = await uow.qa.get_answer_by_question(question.id)
+            if existing is not None and existing.is_final:
+                if (
+                    existing.idempotency_key == idempotency_key
+                    and existing.request_hash == request_hash
+                ):
+                    return existing
+                raise AnswerAlreadyFinalized("A submitted or skipped Answer is immutable.")
+            round_ = await uow.qa.get_round_for_update(question.qa_round_id)
+            if round_ is None or round_.current_question_id != question.id:
+                raise QuestionNotActive("Only the active question can be skipped.")
+            questions = await uow.qa.list_questions(round_.id)
+            next_question = next(
+                (item for item in questions if item.state is QuestionState.PENDING), None
+            )
+            now = datetime.now(UTC)
+            expected_version = round_.version
+            round_.finalize_answer(question, next_question, AnswerStatus.SKIPPED, now)
+            answer = existing or Answer(
+                id=uuid4(),
+                qa_round_id=round_.id,
+                question_id=question.id,
+                answered_by=actor_id,
+                status=AnswerStatus.SKIPPED,
+                audio_asset_version_id=None,
+                duration_ms=None,
+                transcript_artifact_id=None,
+                assessment_artifact_id=None,
+                submitted_at=now,
+                created_at=now,
+                updated_at=now,
+            )
+            answer.answered_by = actor_id
+            answer.status = AnswerStatus.SKIPPED
+            answer.audio_asset_version_id = None
+            answer.submitted_at = now
+            answer.updated_at = now
+            answer.idempotency_key = idempotency_key
+            answer.request_hash = request_hash
+            if existing is None:
+                await uow.qa.create_answer(answer)
+            else:
+                await uow.qa.update_answer(answer)
+            await uow.qa.update_question(question)
+            if next_question is not None:
+                await uow.qa.update_question(next_question)
+            await uow.qa.update_round(round_, expected_version)
+            await uow.commit()
+            await self._publish_qa_event(
+                event_name=NotificationEventName.QA_ANSWER_UPDATED,
+                session_id=session.id,
+                occurred_at=now,
+                payload={
+                    "qa_round_id": str(round_.id),
+                    "question_id": str(question.id),
+                    "answer_id": str(answer.id),
+                    "status": answer.status.value,
+                    "version": round_.version,
+                },
+            )
+            return answer
 
     async def list_sessions(
         self,

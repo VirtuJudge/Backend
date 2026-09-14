@@ -34,6 +34,7 @@ class AnalysisJob:
     dispatch_retry_count: int = 0
     last_dispatch_error_category: str | None = None
     completed_result: dict[str, Any] | None = None
+    answer_id: UUID | None = None
 
 
 @dataclass(slots=True, frozen=True)

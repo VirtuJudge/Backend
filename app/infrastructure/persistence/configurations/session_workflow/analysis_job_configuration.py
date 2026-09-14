@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Index, Integer, String, Text
+from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Index, Integer, String, Text, text
 from sqlalchemy.orm import Mapped, mapped_column, synonym
 
 from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
@@ -19,7 +19,10 @@ class AnalysisJobModel(Base):
     attempt_id: Mapped[UUID] = mapped_column(
         ForeignKey("analysis_attempts.id"),
         nullable=False,
-        unique=True,
+    )
+
+    answer_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("answers.id", ondelete="CASCADE"), nullable=True, unique=True
     )
 
     practice_session_id: Mapped[UUID] = mapped_column(
@@ -144,6 +147,13 @@ class AnalysisJobModel(Base):
     dispatch_envelope = synonym("payload")
 
     __table_args__ = (
+        Index(
+            "uq_ai_jobs_session_attempt",
+            "attempt_id",
+            unique=True,
+            postgresql_where=text("job_type = 'analyze_session'"),
+            sqlite_where=text("job_type = 'analyze_session'"),
+        ),
         Index(
             "ix_ai_jobs_pending_dispatch",
             "status",

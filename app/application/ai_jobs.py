@@ -12,8 +12,11 @@ from app.application.ai_job_contracts import (
     AIJobType,
     AIWorkerUpdate,
     AIWorkerUpdateStatus,
+    AnalyzeAnswerPayload,
     AnalyzeSessionPayload,
+    AnswerAnalysisCompletedPayload,
     AssetInput,
+    AudioAssetInput,
     RubricRef,
     SessionAnalysisCompletedPayload,
 )
@@ -36,7 +39,7 @@ from app.domain.session_workflow.entities.analysis_job import (
     AIJobAncestryContext,
     AnalysisJob,
 )
-from app.domain.session_workflow.entities.qa_round import QARound, Question
+from app.domain.session_workflow.entities.qa_round import Answer, QARound, Question
 from app.domain.session_workflow.entities.session_manifest import SessionManifest
 from app.domain.session_workflow.entities.session_practice import PracticeSession
 from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
@@ -311,6 +314,65 @@ class AIJobs:
         await self._uow.jobs.create(job)
         return job
 
+    async def create_answer_job(
+        self,
+        *,
+        answer: Answer,
+        question: Question,
+        round_: QARound,
+        attempt: AnalysisAttempt,
+        audio_snapshot: dict[str, Any],
+        now: datetime,
+    ) -> AnalysisJob:
+        existing = await self._uow.jobs.get_by_answer_id(answer.id)
+        if existing is not None:
+            return existing
+        audio = _build_asset_input(audio_snapshot, answer.audio_asset_version_id or uuid4())
+        if audio.duration_ms is None:
+            raise ValueError("Verified answer audio must include duration_ms.")
+        job_id = uuid4()
+        correlation_id = uuid4()
+        envelope = AIJobQueueMessage(
+            schema_version=1,
+            job_id=str(job_id),
+            job_type=AIJobType.ANALYZE_ANSWER,
+            practice_session_id=str(round_.practice_session_id),
+            analysis_attempt=attempt.attempt_number,
+            created_at=now,
+            trace_id=f"trc_{correlation_id.hex}",
+            payload=AnalyzeAnswerPayload(
+                qa_round_id=str(round_.id),
+                question_id=str(question.id),
+                answer_id=str(answer.id),
+                answered_by=str(answer.answered_by),
+                audio=AudioAssetInput(**audio.model_dump()),
+                remaining_follow_ups=2 - round_.follow_up_count,
+            ),
+        )
+        job = AnalysisJob(
+            id=job_id,
+            practice_session_id=round_.practice_session_id,
+            attempt_id=attempt.id,
+            analysis_attempt=attempt.attempt_number,
+            job_type=AIJobType.ANALYZE_ANSWER.value,
+            status=AnalysisJobStatus.PENDING,
+            correlation_id=correlation_id,
+            last_update_sequence=0,
+            payload_version=1,
+            attempts=0,
+            cancel_requested=False,
+            retry_count=0,
+            last_error=None,
+            created_at=now,
+            updated_at=now,
+            started_at=None,
+            completed_at=None,
+            payload=envelope.model_dump(mode="json", exclude_none=True),
+            answer_id=answer.id,
+        )
+        await self._uow.jobs.create(job)
+        return job
+
     async def get_job(self, job_id: UUID) -> AnalysisJob | None:
         return await self._uow.jobs.get_by_id(job_id)
 
@@ -388,6 +450,89 @@ class AIJobs:
         await repository.create_round(round_)
         await repository.create_questions(questions)
         return round_, questions[0]
+
+    async def _apply_answer_result(
+        self,
+        *,
+        job: AnalysisJob,
+        payload: AnswerAnalysisCompletedPayload,
+        occurred_at: datetime,
+        trace_id: str,
+    ) -> PendingSessionNotification | None:
+        repository = getattr(self._uow, "qa", None)
+        if repository is None or job.answer_id is None:
+            return None
+        answer = await repository.get_answer(job.answer_id)
+        if answer is None:
+            return None
+        answer.transcript_artifact_id = payload.transcript_artifact_id
+        answer.assessment_artifact_id = payload.assessment_artifact_id
+        answer.updated_at = occurred_at
+        await repository.update_answer(answer)
+
+        round_ = await repository.get_round_for_update(answer.qa_round_id)
+        if round_ is None or round_.analysis_attempt_id != job.attempt_id:
+            return None
+        finalized = [item for item in await repository.list_answers(round_.id) if item.is_final]
+        latest = max(
+            finalized,
+            key=lambda item: item.submitted_at or item.updated_at,
+            default=None,
+        )
+        if latest is None or latest.id != answer.id:
+            return None
+
+        expected_version = round_.version
+        follow_up = payload.follow_up
+        if follow_up is None or round_.follow_up_count >= 2:
+            pending = [
+                item
+                for item in await repository.list_questions(round_.id)
+                if item.state is QuestionState.PENDING
+            ]
+            if round_.current_question_id is None and not pending:
+                round_.state = QARoundState.COMPLETED
+                round_.version += 1
+                round_.updated_at = occurred_at
+                await repository.update_round(round_, expected_version)
+            return None
+
+        questions = await repository.list_questions(round_.id)
+        position = max((question.position for question in questions), default=0) + 1
+        activate = round_.current_question_id is None
+        question = Question(
+            id=uuid4(),
+            qa_round_id=round_.id,
+            practice_session_id=round_.practice_session_id,
+            kind=QuestionKind.FOLLOW_UP,
+            position=position,
+            text=follow_up.text,
+            reason=follow_up.reason,
+            rubric_dimension=follow_up.rubric_dimension,
+            evidence_ids=list(follow_up.evidence_ids),
+            parent_answer_id=answer.id,
+            state=QuestionState.ACTIVE if activate else QuestionState.PENDING,
+            created_at=occurred_at,
+        )
+        round_.add_follow_up(question.id, occurred_at, activate=activate)
+        await repository.create_questions([question])
+        await repository.update_round(round_, expected_version)
+        if not activate:
+            return None
+        return PendingSessionNotification(
+            event_name=NotificationEventName.QA_QUESTION_AVAILABLE,
+            practice_session_id=str(round_.practice_session_id),
+            occurred_at=occurred_at,
+            trace_id=trace_id,
+            payload={
+                "qa_round_id": str(round_.id),
+                "question_id": str(question.id),
+                "position": question.position,
+                "kind": question.kind.value,
+                "state": question.state.value,
+                "version": round_.version,
+            },
+        )
 
     async def record_update(
         self,
@@ -479,6 +624,7 @@ class AIJobs:
             )
 
         attempt: AnalysisAttempt | None = None
+        tracks_attempt = job.job_type == AIJobType.ANALYZE_SESSION.value
         initial_attempt_version = 0
         attempts_repo = getattr(self._uow, "attempts", None)
         if attempts_repo is not None and hasattr(attempts_repo, "get_by_id"):
@@ -489,7 +635,7 @@ class AIJobs:
                     attempt = await res
                 elif isinstance(res, AnalysisAttempt):
                     attempt = res
-                if attempt is not None:
+                if attempt is not None and tracks_attempt:
                     initial_attempt_version = attempt.version
 
         payload = update.payload
@@ -512,7 +658,7 @@ class AIJobs:
                 )
                 if pipeline_ver is not None:
                     job.payload["pipeline_version"] = str(pipeline_ver)
-                if attempt is not None:
+                if attempt is not None and tracks_attempt:
                     attempt.transition_to(AnalysisAttemptStatus.RUNNING, at=occurred_at)
 
             elif update.status == AIWorkerUpdateStatus.PROGRESS:
@@ -532,7 +678,7 @@ class AIJobs:
                     "progress": float(progress_val) if progress_val is not None else None,
                     "message": str(message) if message is not None else None,
                 }
-                if attempt is not None:
+                if attempt is not None and tracks_attempt:
                     attempt.transition_to(AnalysisAttemptStatus.RUNNING, at=occurred_at)
                     progress_notification = PendingSessionNotification(
                         event_name=(NotificationEventName.PRACTICE_SESSION_ANALYSIS_PROGRESSED),
@@ -587,7 +733,7 @@ class AIJobs:
                     "attempts": job.attempts,
                     "message": safe_msg,
                 }
-                if attempt is not None:
+                if attempt is not None and tracks_attempt:
                     attempt.transition_to(AnalysisAttemptStatus.FAILED, at=occurred_at)
                     attempt.failure_code = str(code) if code is not None else None
                     attempt.failure_message = safe_msg
@@ -598,7 +744,7 @@ class AIJobs:
                 job.status = AnalysisJobStatus.CANCELLED
                 job.cancel_requested = True
                 job.completed_at = occurred_at
-                if attempt is not None:
+                if attempt is not None and tracks_attempt:
                     attempt.transition_to(AnalysisAttemptStatus.CANCELLED, at=occurred_at)
                     attempt.cancelled_at = occurred_at
                     attempt.completed_at = occurred_at
@@ -648,6 +794,13 @@ class AIJobs:
                                 "version": round_.version,
                             },
                         )
+                elif isinstance(validated_payload, AnswerAnalysisCompletedPayload):
+                    completion_notification = await self._apply_answer_result(
+                        job=job,
+                        payload=validated_payload,
+                        occurred_at=occurred_at,
+                        trace_id=update.trace_id,
+                    )
                 if attempt is not None:
                     attempt.transition_to(AnalysisAttemptStatus.COMPLETED, at=occurred_at)
                     attempt.completed_at = occurred_at
@@ -661,7 +814,7 @@ class AIJobs:
             update_job = self._uow.jobs.update(job)
             if inspect.isawaitable(update_job):
                 await update_job
-            if attempt is not None and attempts_repo is not None:
+            if attempt is not None and tracks_attempt and attempts_repo is not None:
                 update_fn = getattr(attempts_repo, "update", None)
                 if callable(update_fn):
                     update_att = update_fn(attempt, expected_version=initial_attempt_version)
