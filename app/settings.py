@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import Field, SecretStr
+from pydantic import AliasChoices, Field, SecretStr
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -16,7 +16,11 @@ class Settings(BaseSettings):
     )
     redis_url: str = "redis://localhost:6379/0"
     redis_cache_url: str = "redis://localhost:6379/1"
+    celery_broker_url: str | None = None
+    ai_worker_task_name: str = "app.worker.process_job"
+    ai_worker_queue_name: str = "ai_jobs"
     object_storage_endpoint: str = "http://localhost:9000"
+
     object_storage_public_endpoint: str | None = None
     object_storage_bucket: str = "virtujudge"
     object_storage_region: str = "us-east-1"
@@ -30,6 +34,52 @@ class Settings(BaseSettings):
     asset_cleanup_retention_seconds: int = Field(default=86400, ge=0)
     asset_cleanup_lease_seconds: int = Field(default=300, ge=1)
     asset_cleanup_tombstone_delay_seconds: int = Field(default=86400, ge=1)
+    ai_job_dispatcher_enabled: bool | None = Field(
+        default=None,
+        validation_alias=AliasChoices("ai_job_dispatcher_enabled", "ai_dispatcher_enabled"),
+    )
+    ai_job_dispatcher_interval_seconds: float = Field(
+        default=10.0,
+        ge=0.001,
+        validation_alias=AliasChoices(
+            "ai_job_dispatcher_interval_seconds",
+            "ai_dispatcher_interval_seconds",
+            "ai_dispatcher_scan_interval_seconds",
+        ),
+    )
+    ai_job_dispatcher_batch_size: int = Field(
+        default=50,
+        ge=1,
+        le=1000,
+        validation_alias=AliasChoices(
+            "ai_job_dispatcher_batch_size",
+            "ai_dispatcher_batch_size",
+        ),
+    )
+    ai_job_dispatcher_base_backoff_seconds: float = Field(
+        default=30.0,
+        ge=0.1,
+        validation_alias=AliasChoices(
+            "ai_job_dispatcher_base_backoff_seconds",
+            "ai_dispatcher_base_backoff_seconds",
+        ),
+    )
+    ai_job_dispatcher_max_backoff_seconds: float = Field(
+        default=3600.0,
+        ge=1.0,
+        validation_alias=AliasChoices(
+            "ai_job_dispatcher_max_backoff_seconds",
+            "ai_dispatcher_max_backoff_seconds",
+        ),
+    )
+    ai_job_dispatcher_backoff_factor: float = Field(
+        default=2.0,
+        ge=1.0,
+        validation_alias=AliasChoices(
+            "ai_job_dispatcher_backoff_factor",
+            "ai_dispatcher_backoff_factor",
+        ),
+    )
     oidc_issuer: str | None = None
     oidc_audience: str | None = None
     oidc_jwks_url: str | None = None
@@ -55,3 +105,31 @@ class Settings(BaseSettings):
             for origin in self.cors_allowed_origins.split(",")
             if origin.strip()
         ]
+
+    @property
+    def effective_celery_broker_url(self) -> str:
+        return self.celery_broker_url or self.redis_url
+
+    @property
+    def ai_dispatcher_enabled(self) -> bool | None:
+        return self.ai_job_dispatcher_enabled
+
+    @property
+    def ai_dispatcher_interval_seconds(self) -> float:
+        return self.ai_job_dispatcher_interval_seconds
+
+    @property
+    def ai_dispatcher_batch_size(self) -> int:
+        return self.ai_job_dispatcher_batch_size
+
+    @property
+    def ai_dispatcher_base_backoff_seconds(self) -> float:
+        return self.ai_job_dispatcher_base_backoff_seconds
+
+    @property
+    def ai_dispatcher_max_backoff_seconds(self) -> float:
+        return self.ai_job_dispatcher_max_backoff_seconds
+
+    @property
+    def ai_dispatcher_backoff_factor(self) -> float:
+        return self.ai_job_dispatcher_backoff_factor

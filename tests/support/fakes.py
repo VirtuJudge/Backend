@@ -19,6 +19,12 @@ from app.domain.idempotency import AssetUploadIdempotency
 from app.domain.project import Project
 from app.domain.user import User
 from tests.support.constants import ERASED_PROJECT_ID, MEMBER_ID, NOW, PROJECT_ID, TEAM_ID
+from tests.support.fake_ai_job_queue import (
+    FakeAIJobQueue,
+    FakeAIQueue,
+    RecordingAIJobQueue,
+    RecordingAIQueue,
+)
 
 
 class FakeAssetRepository(AssetRepository):
@@ -397,3 +403,16 @@ class FakeUserService:
         display_name: str | None = None,
     ) -> User:
         return self.user
+
+
+__all__ = [
+    "FakeAssetRepository",
+    "FakeObjectStorage",
+    "RecordingStorage",
+    "FakeTokenVerifier",
+    "FakeUserService",
+    "FakeAIJobQueue",
+    "RecordingAIJobQueue",
+    "FakeAIQueue",
+    "RecordingAIQueue",
+]

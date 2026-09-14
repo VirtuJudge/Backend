@@ -42,7 +42,7 @@ The script builds the actual sibling frontend and AI code, generates ignored `.e
 
 Host ports bind to loopback. PostgreSQL has separate `virtujudge_backend` and `virtujudge_ai` roles and private schemas. Redis database 0 carries diagnostic jobs under `virtujudge:local:*`; database 1 holds cache keys. PostgreSQL, Redis, and MinIO use persistent volumes.
 
-The frontend defaults to its existing mock API (`NEXT_PUBLIC_MOCK_API=true`) because product endpoints are still being implemented. Its browser API URL is `http://localhost:8000/api/v1`; containers reach the backend at `http://backend:8000`. The local worker invokes AI-ML's existing `FakePipeline`. Diagnostic results are temporary Redis data, not canonical AI Job or Practice Session state. The product dispatcher and authenticated callbacks belong to BE-05.
+The frontend defaults to its existing mock API (`NEXT_PUBLIC_MOCK_API=true`) because product endpoints are still being implemented. Its browser API URL is `http://localhost:8000/api/v1`; containers reach the backend at `http://backend:8000`. The local worker invokes AI-ML's existing `FakePipeline`. Diagnostic results are temporary Redis data, not canonical AI Job or Practice Session state. The product dispatcher and authenticated worker callbacks (`/internal/v1/ai-jobs/...`) manage durable job dispatch and monotonic progress/completion updates.
 
 ## Verify and restart
 

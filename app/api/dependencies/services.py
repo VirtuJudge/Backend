@@ -3,6 +3,7 @@ from typing import Any, cast
 
 from fastapi import Depends, Request
 
+from app.application.ai_jobs import AIJobs
 from app.application.mail import MailSender
 from app.application.ports import ProjectRepository
 from app.application.ports.session_practice.analysis_attempt_repository import (
@@ -122,3 +123,15 @@ def get_unit_of_work_repository(
     session: Any = Depends(get_session),
 ) -> Any:
     return cast(Any, request.app.state.get_unit_of_work_repository_factory(session))
+
+
+def get_ai_jobs(
+    request: Request,
+    session: Any = Depends(get_session),
+) -> AIJobs:
+    uow = request.app.state.get_unit_of_work_repository_factory(session)
+    queue = getattr(request.app.state, "ai_job_queue", None)
+    factory = getattr(request.app.state, "ai_jobs_factory", None)
+    if factory is not None:
+        return cast(AIJobs, factory(uow, queue))
+    return AIJobs(uow, queue=queue)

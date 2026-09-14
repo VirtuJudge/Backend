@@ -13,11 +13,20 @@ from .documents import (
     create_synthetic_pptx,
     make_pdf,
 )
+from .fake_analysis_attempt_repository import FakeAnalysisAttemptRepository
+from .fake_analysis_job_repository import (
+    FakeAnalysisJobRepository,
+    FakeUnitOfWork,
+)
 from .fakes import (
+    FakeAIJobQueue,
+    FakeAIQueue,
     FakeAssetRepository,
     FakeObjectStorage,
     FakeTokenVerifier,
     FakeUserService,
+    RecordingAIJobQueue,
+    RecordingAIQueue,
     RecordingStorage,
 )
 from .smoke import FakeConnection, FakeCursor, FakeSyncRedis
@@ -38,6 +47,13 @@ __all__ = [
     "RecordingStorage",
     "FakeTokenVerifier",
     "FakeUserService",
+    "FakeAIJobQueue",
+    "RecordingAIJobQueue",
+    "FakeAIQueue",
+    "RecordingAIQueue",
+    "FakeAnalysisAttemptRepository",
+    "FakeAnalysisJobRepository",
+    "FakeUnitOfWork",
     "create_test_client",
     "FakeCursor",
     "FakeConnection",

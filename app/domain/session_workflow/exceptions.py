@@ -114,3 +114,18 @@ class InvalidTeamMember(Exception):
     """Exception raised when a user is not a member of the project team."""
 
     pass
+
+
+class InvalidJobStatusTransition(Exception):
+    """Exception raised when an invalid transition between job statuses is attempted."""
+
+    pass
+
+
+InvalidJobStateTransition = InvalidJobStatusTransition
+
+
+class CompletedResultValidationError(InvalidJobStatusTransition):
+    """Exception raised when an AI job completed result fails contract or semantic validation."""
+
+    pass
