@@ -3,7 +3,7 @@ import json
 from datetime import UTC, datetime
 from typing import Any, Literal, cast
 from unittest.mock import AsyncMock, MagicMock
-from uuid import NAMESPACE_DNS, UUID, uuid4, uuid5
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 import pytest
 
@@ -1510,7 +1510,7 @@ async def test_completed_valid_generate_report() -> None:
             },
             "member_feedback": [
                 {
-                    "user_id": str(uuid5(NAMESPACE_DNS, user_id)),
+                    "user_id": str(uuid5(NAMESPACE_URL, user_id)),
                     "display_name": user_id,
                     "speaker_labels": [f"SPEAKER_{index:02d}"],
                     "summary": "Grounded individual feedback.",
