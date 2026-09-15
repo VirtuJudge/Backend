@@ -7,6 +7,7 @@ from alembic.config import Config
 from sqlalchemy import create_engine, inspect, make_url
 
 ROOT = Path(__file__).resolve().parents[4]
+BACKEND_HEAD_REVISION = "a4f6c8e1d2b3"
 
 
 def migration_configuration(sync_url: str) -> Config:
@@ -39,7 +40,7 @@ def test_backend_migrations_ignore_a_foreign_alembic_revision(tmp_path: Path) ->
         ).scalar_one()
 
     assert foreign_revision == "d0bab208d7c4"
-    assert backend_revision == "8c5d2e3f4a1b"
+    assert backend_revision == BACKEND_HEAD_REVISION
     assert "users" in inspect(engine).get_table_names()
     engine.dispose()
 
@@ -72,7 +73,7 @@ def test_backend_migrations_adopt_an_existing_legacy_schema(tmp_path: Path) -> N
         ).scalar_one()
 
     assert foreign_revision == "d0bab208d7c4"
-    assert backend_revision == "8c5d2e3f4a1b"
+    assert backend_revision == BACKEND_HEAD_REVISION
     assert "practice_sessions" in inspect(engine).get_table_names()
     engine.dispose()
 
@@ -97,7 +98,7 @@ def test_backend_migrations_adopt_existing_analysis_jobs_schema(tmp_path: Path) 
         backend_revision = connection.exec_driver_sql(
             "SELECT version_num FROM backend_alembic_version"
         ).scalar_one()
-    assert backend_revision == "8c5d2e3f4a1b"
+    assert backend_revision == BACKEND_HEAD_REVISION
     engine.dispose()
 
 
@@ -124,7 +125,7 @@ def test_backend_migrations_advance_stale_backend_alembic_version_when_practice_
         backend_revision = connection.exec_driver_sql(
             "SELECT version_num FROM backend_alembic_version"
         ).scalar_one()
-    assert backend_revision == "8c5d2e3f4a1b"
+    assert backend_revision == BACKEND_HEAD_REVISION
     engine.dispose()
 
 
