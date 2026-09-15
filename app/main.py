@@ -248,10 +248,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.state.mail_sender = create_mail_sender(resolved_settings)
     application.state.ai_job_queue = CeleryAIJobQueue.from_settings(resolved_settings)
     application.state.pdf_generator = PyPdfReportGenerator()
+    application.state.object_storage = S3ObjectStorage(resolved_settings)
     application.state.ai_jobs_factory = lambda uow, queue: AIJobs(
         uow,
         queue=queue,
         notifications=application.state.session_notifications,
+        storage=application.state.object_storage,
     )
 
     async def run_ai_job_dispatcher_iteration() -> RedispatchResult:

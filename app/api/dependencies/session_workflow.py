@@ -17,10 +17,12 @@ def get_session_workflow(
         request.app.state, "session_notifications", None
     )
     pdf_generator = getattr(request.app.state, "pdf_generator", None)
+    storage = getattr(request.app.state, "object_storage", None)
     return SessionWorkflow(
         uow=uow,
         queue=queue,
         notifications=notifications,
+        storage=storage,
         trace_id=getattr(request.state, "correlation_id", "unknown"),
         pdf_generator=pdf_generator,
     )
