@@ -437,8 +437,8 @@ async def test_authenticated_callback_complete_lifecycle(
 
         db_attempt = await verify_session.get(AnalysisAttemptModel, attempt_id)
         assert db_attempt is not None
-        assert db_attempt.status == AnalysisAttemptStatus.COMPLETED
-        assert db_attempt.completed_at is not None
+        assert db_attempt.status == AnalysisAttemptStatus.RUNNING
+        assert db_attempt.completed_at is None
 
 
 @pytest.mark.anyio

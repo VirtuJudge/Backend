@@ -43,6 +43,13 @@ class AnalysisJobRepository(Protocol):
         skip_locked: bool = False,
     ) -> list[AnalysisJob]: ...
 
+    async def recover_stale_inflight_jobs(
+        self,
+        stale_before: datetime,
+        now: datetime,
+        limit: int = 10,
+    ) -> int: ...
+
     async def load_eligible_pending_batch(
         self,
         now: datetime,

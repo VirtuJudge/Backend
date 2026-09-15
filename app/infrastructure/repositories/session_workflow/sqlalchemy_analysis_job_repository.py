@@ -156,6 +156,55 @@ class SqlAlchemyAnalysisJobRepository(AnalysisJobRepository):
         models = result.scalars().all()
         return [to_domain(m) for m in models]
 
+    async def recover_stale_inflight_jobs(
+        self,
+        stale_before: datetime,
+        now: datetime,
+        limit: int = 10,
+    ) -> int:
+        stale_ids = list(
+            (
+                await self._session.scalars(
+                    select(AnalysisJobModel.id)
+                    .where(
+                        AnalysisJobModel.status.in_(
+                            [AnalysisJobStatus.QUEUED, AnalysisJobStatus.RUNNING]
+                        ),
+                        AnalysisJobModel.cancel_requested.is_(False),
+                        AnalysisJobModel.updated_at <= stale_before,
+                    )
+                    .order_by(AnalysisJobModel.updated_at, AnalysisJobModel.id)
+                    .limit(limit)
+                )
+            ).all()
+        )
+        if not stale_ids:
+            return 0
+        result = cast(
+            CursorResult[Any],
+            await self._session.execute(
+                update(AnalysisJobModel)
+                .where(
+                    AnalysisJobModel.id.in_(stale_ids),
+                    AnalysisJobModel.status.in_(
+                        [AnalysisJobStatus.QUEUED, AnalysisJobStatus.RUNNING]
+                    ),
+                    AnalysisJobModel.cancel_requested.is_(False),
+                    AnalysisJobModel.updated_at <= stale_before,
+                )
+                .values(
+                    status=AnalysisJobStatus.PENDING,
+                    last_update_sequence=0,
+                    started_at=None,
+                    queued_at=None,
+                    next_dispatch_at=now,
+                    updated_at=now,
+                )
+            ),
+        )
+        await self._session.flush()
+        return result.rowcount
+
     load_eligible_pending_batch = get_eligible_pending_jobs
 
     async def change_pending_to_queued(

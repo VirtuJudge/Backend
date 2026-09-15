@@ -402,6 +402,37 @@ async def test_conditionally_change_pending_to_queued(
 
 
 @pytest.mark.anyio
+async def test_recover_stale_inflight_jobs_resets_callback_sequence(
+    async_db_session: AsyncSession,
+) -> None:
+    _, _, _, session_id, _, attempt_id = await _create_test_context_entities(async_db_session)
+    repo = SqlAlchemyAnalysisJobRepository(async_db_session)
+    now = datetime(2026, 9, 15, 12, 0, tzinfo=UTC)
+    job = _make_job(
+        session_id,
+        attempt_id,
+        status=AnalysisJobStatus.RUNNING,
+        now=now - timedelta(minutes=20),
+    )
+    job.last_update_sequence = 1
+    job.started_at = now - timedelta(minutes=20)
+    await repo.create(job)
+
+    recovered = await repo.recover_stale_inflight_jobs(
+        stale_before=now - timedelta(minutes=15),
+        now=now,
+    )
+
+    assert recovered == 1
+    stored = await repo.get_by_id(job.id)
+    assert stored is not None
+    assert stored.status is AnalysisJobStatus.PENDING
+    assert stored.last_update_sequence == 0
+    assert stored.started_at is None
+    assert _to_utc(stored.next_dispatch_at) == now
+
+
+@pytest.mark.anyio
 async def test_record_dispatch_failure(
     async_db_session: AsyncSession,
 ) -> None:

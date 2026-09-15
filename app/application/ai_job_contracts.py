@@ -95,6 +95,9 @@ class AnalyzeAnswerPayload(BaseModel):
     answer_id: str = Field(min_length=1)
     answered_by: str = Field(min_length=1)
     audio: AudioAssetInput
+    question_text: str = ""
+    rubric_dimension: str = ""
+    question_evidence_ids: list[Annotated[str, Field(min_length=1)]] = Field(default_factory=list)
     remaining_follow_ups: int = Field(ge=0)
 
 

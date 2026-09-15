@@ -97,6 +97,30 @@ class FakeAnalysisJobRepository(AnalysisJobRepository):
         eligible.sort(key=_sort_key)
         return eligible[:limit]
 
+    async def recover_stale_inflight_jobs(
+        self,
+        stale_before: datetime,
+        now: datetime,
+        limit: int = 10,
+    ) -> int:
+        recovered = 0
+        for job in sorted(self.jobs.values(), key=lambda item: item.updated_at):
+            if recovered >= limit:
+                break
+            if (
+                job.status in {AnalysisJobStatus.QUEUED, AnalysisJobStatus.RUNNING}
+                and not job.cancel_requested
+                and job.updated_at <= stale_before
+            ):
+                job.status = AnalysisJobStatus.PENDING
+                job.last_update_sequence = 0
+                job.started_at = None
+                job.queued_at = None
+                job.next_dispatch_at = now
+                job.updated_at = now
+                recovered += 1
+        return recovered
+
     async def load_eligible_pending_batch(
         self,
         now: datetime,
