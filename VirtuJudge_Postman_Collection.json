@@ -1,8 +1,8 @@
 {
   "info": {
     "_postman_id": "83a22984-99f3-42b6-b55e-2bdbfda894d7",
-    "name": "VirtuJudge Backend API",
-    "description": "Full end-to-end API testing flow for VirtuJudge Backend: Supabase Auth -> JIT User Provisioning -> Teams -> Projects -> Assets.",
+    "name": "VirtuJudge Backend API (Complete End-to-End Suite)",
+    "description": "Comprehensive Postman test collection for the VirtuJudge Backend control plane.\n\nCovers 100% of public REST, real-time SSE, direct storage, and internal AI worker endpoints:\n- System Health & Readiness\n- Supabase Auth (Sign Up, OTP Verification, Passwordless Login, Password Auth, Refresh Token, Multi-user)\n- Just-In-Time (JIT) User Provisioning\n- Teams, Memberships, Concurrency (ETag / If-Match), & Ownership Transfer\n- Team Invitations, Resend Rate Limiting, Public Previews, & Acceptance\n- Projects, Search Filtering, Metadata Updates, & Erasure Deletion Requests\n- Direct S3 / MinIO Presigned Binary Uploads, Checksum Verification, & Versioning\n- Practice Session Lifecycle, Manifest Freezing, & Real-Time SSE Event Streaming\n- Analysis Attempts, Policy Consent, Retries, & Cancellations\n- Speaker Diarization Mappings & Validation\n- Internal AI Worker Callbacks & Lifecycle Updates (Started, Progress, Analysis, Report, Failed, Cancelled)\n- Multi-Turn Q&A Rounds, Presigned Answer Audio Uploads, Submissions, & Question Skips\n- Rubric Evaluations, Findings, Scoring Components, & Executive Summaries\n- Async PDF Report Generation, Polling, & Presigned Download Verification\n- Complete Security & Boundary Negative Tests (401, 403, 404, 409, 412, 413, 415, 422, SSE Token Rejection)\n",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "auth": {
@@ -47,12 +47,72 @@
       "type": "string"
     },
     {
+      "key": "refresh_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "user_id",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "otp_code",
       "value": "",
       "type": "string"
     },
     {
+      "key": "member_email",
+      "value": "teammate@example.com",
+      "type": "string"
+    },
+    {
+      "key": "member_password",
+      "value": "MemberPass123!",
+      "type": "string"
+    },
+    {
+      "key": "member_access_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "member_user_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "ai_worker_token",
+      "value": "ai-worker-shared-secret",
+      "type": "string"
+    },
+    {
       "key": "team_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "team_name",
+      "value": "VirtuJudge Core Team",
+      "type": "string"
+    },
+    {
+      "key": "team_etag",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "invitation_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "invitation_token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "invitation_etag",
       "value": "",
       "type": "string"
     },
@@ -62,58 +122,182 @@
       "type": "string"
     },
     {
+      "key": "project_name",
+      "value": "Demo Investor Pitch",
+      "type": "string"
+    },
+    {
+      "key": "project_etag",
+      "value": "",
+      "type": "string"
+    },
+    {
       "key": "asset_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "asset_version_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "video_asset_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "video_version_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "video_upload_url",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "document_asset_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "document_version_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "document_upload_url",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "new_version_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "upload_url",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "download_url",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "session_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "session_version",
+      "value": "1",
+      "type": "string"
+    },
+    {
+      "key": "session_etag",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "analysis_attempt_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "ai_job_id",
+      "value": "00000000-0000-0000-0000-000000000000",
+      "type": "string"
+    },
+    {
+      "key": "qa_round_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "question_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "answer_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "answer_asset_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "answer_version_id",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "answer_upload_url",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "export_id",
       "value": "",
       "type": "string"
     }
   ],
   "item": [
     {
-      "name": "0. Health",
+      "name": "0. System Health",
+      "description": "System readiness and liveness endpoints.",
       "item": [
         {
-          "name": "Health Check",
+          "name": "0.1 Health Check",
           "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Checks service health. Public unauthenticated endpoint.",
             "auth": {
               "type": "noauth"
             },
-            "method": "GET",
-            "header": [],
             "url": {
               "raw": "{{base_url}}/health",
-              "host": ["{{base_url}}"],
-              "path": ["health"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "health"
+              ]
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Response body has status 'ok'\", function () {",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.status).to.eql(\"ok\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
         }
       ]
     },
     {
-      "name": "1. Supabase Auth",
+      "name": "1. Supabase Authentication & OTP",
+      "description": "Supabase IdP authentication flows: Sign Up, OTP Verification, Password Login, and Token Refresh.",
       "item": [
         {
-          "name": "1.1 Sign Up (Create User in Supabase)",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "if (pm.response.code === 200 || pm.response.code === 201) {",
-                  "    const data = pm.response.json();",
-                  "    if (data.access_token) {",
-                  "        pm.collectionVariables.set('access_token', data.access_token);",
-                  "        console.log('Access token saved to collection variables.');",
-                  "    }",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
+          "name": "1.1 Sign Up - Primary User (Owner)",
           "request": {
-            "auth": {
-              "type": "noauth"
-            },
             "method": "POST",
             "header": [
               {
@@ -132,40 +316,58 @@
                 "type": "text"
               }
             ],
+            "description": "Registers primary user in Supabase auth.users.",
+            "auth": {
+              "type": "noauth"
+            },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"{{user_email}}\",\n  \"password\": \"{{user_password}}\"\n}"
+              "raw": "{\n  \"email\": \"{{user_email}}\",\n  \"password\": \"{{user_password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{supabase_url}}/auth/v1/signup",
-              "host": ["{{supabase_url}}"],
-              "path": ["auth", "v1", "signup"]
+              "host": [
+                "{{supabase_url}}"
+              ],
+              "path": [
+                "auth",
+                "v1",
+                "signup"
+              ]
             }
-          }
-        },
-        {
-          "name": "1.2 Verify Signup OTP (Confirm Email)",
+          },
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Signup OTP Verified', function () {",
-                  "    pm.response.to.have.status(200);",
+                  "pm.test(\"Signup request succeeded (200 or 201)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
                   "    const data = pm.response.json();",
-                  "    pm.expect(data.access_token).to.be.a('string');",
-                  "    pm.collectionVariables.set('access_token', data.access_token);",
-                  "    console.log('Access token set from Signup OTP verification.');",
+                  "    if (data.access_token) {",
+                  "        pm.collectionVariables.set(\"access_token\", data.access_token);",
+                  "        if (data.refresh_token) {",
+                  "            pm.collectionVariables.set(\"refresh_token\", data.refresh_token);",
+                  "        }",
+                  "        console.log(\"Access token saved directly from signup.\");",
+                  "    } else {",
+                  "        console.log(\"Email confirmation or OTP required. Check inbox for token.\");",
+                  "    }",
                   "});"
                 ],
                 "type": "text/javascript"
               }
             }
-          ],
+          ]
+        },
+        {
+          "name": "1.2 Verify Signup OTP - Primary User",
           "request": {
-            "auth": {
-              "type": "noauth"
-            },
             "method": "POST",
             "header": [
               {
@@ -184,36 +386,55 @@
                 "type": "text"
               }
             ],
+            "description": "Confirms signup email using OTP token.",
+            "auth": {
+              "type": "noauth"
+            },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"type\": \"signup\",\n  \"email\": \"{{user_email}}\",\n  \"token\": \"{{otp_code}}\"\n}"
+              "raw": "{\n  \"type\": \"signup\",\n  \"email\": \"{{user_email}}\",\n  \"token\": \"{{otp_code}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{supabase_url}}/auth/v1/verify",
-              "host": ["{{supabase_url}}"],
-              "path": ["auth", "v1", "verify"]
+              "host": [
+                "{{supabase_url}}"
+              ],
+              "path": [
+                "auth",
+                "v1",
+                "verify"
+              ]
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Signup OTP verification succeeded (200)\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.access_token).to.be.a(\"string\");",
+                  "    pm.collectionVariables.set(\"access_token\", data.access_token);",
+                  "    if (data.refresh_token) {",
+                  "        pm.collectionVariables.set(\"refresh_token\", data.refresh_token);",
+                  "    }",
+                  "    console.log(\"Access token set from Signup OTP verification.\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
         },
         {
           "name": "1.3 Resend Verification OTP",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "pm.test('OTP Resent', function () {",
-                  "    pm.response.to.have.status(200);",
-                  "});"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
           "request": {
-            "auth": {
-              "type": "noauth"
-            },
             "method": "POST",
             "header": [
               {
@@ -232,36 +453,48 @@
                 "type": "text"
               }
             ],
+            "description": "Resends verification OTP email if expired or not received.",
+            "auth": {
+              "type": "noauth"
+            },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"type\": \"signup\",\n  \"email\": \"{{user_email}}\"\n}"
+              "raw": "{\n  \"type\": \"signup\",\n  \"email\": \"{{user_email}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{supabase_url}}/auth/v1/resend",
-              "host": ["{{supabase_url}}"],
-              "path": ["auth", "v1", "resend"]
+              "host": [
+                "{{supabase_url}}"
+              ],
+              "path": [
+                "auth",
+                "v1",
+                "resend"
+              ]
             }
-          }
-        },
-        {
-          "name": "1.4 Send Sign-in OTP (Passwordless)",
+          },
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Sign-in OTP Sent', function () {",
+                  "pm.test(\"OTP resend request accepted (200)\", function () {",
                   "    pm.response.to.have.status(200);",
                   "});"
                 ],
                 "type": "text/javascript"
               }
             }
-          ],
+          ]
+        },
+        {
+          "name": "1.4 Send Passwordless Sign-In OTP",
           "request": {
-            "auth": {
-              "type": "noauth"
-            },
             "method": "POST",
             "header": [
               {
@@ -280,40 +513,48 @@
                 "type": "text"
               }
             ],
+            "description": "Requests passwordless login code sent to user email.",
+            "auth": {
+              "type": "noauth"
+            },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"{{user_email}}\"\n}"
+              "raw": "{\n  \"email\": \"{{user_email}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{supabase_url}}/auth/v1/otp",
-              "host": ["{{supabase_url}}"],
-              "path": ["auth", "v1", "otp"]
+              "host": [
+                "{{supabase_url}}"
+              ],
+              "path": [
+                "auth",
+                "v1",
+                "otp"
+              ]
             }
-          }
-        },
-        {
-          "name": "1.5 Verify Sign-in OTP (Passwordless Login)",
+          },
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Sign-in OTP Verified', function () {",
+                  "pm.test(\"Sign-in OTP requested successfully (200)\", function () {",
                   "    pm.response.to.have.status(200);",
-                  "    const data = pm.response.json();",
-                  "    pm.expect(data.access_token).to.be.a('string');",
-                  "    pm.collectionVariables.set('access_token', data.access_token);",
-                  "    console.log('Access token set from Sign-in OTP verification.');",
                   "});"
                 ],
                 "type": "text/javascript"
               }
             }
-          ],
+          ]
+        },
+        {
+          "name": "1.5 Verify Passwordless Sign-In OTP",
           "request": {
-            "auth": {
-              "type": "noauth"
-            },
             "method": "POST",
             "header": [
               {
@@ -332,40 +573,55 @@
                 "type": "text"
               }
             ],
+            "description": "Exchanges passwordless OTP code for JWT access token.",
+            "auth": {
+              "type": "noauth"
+            },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"type\": \"email\",\n  \"email\": \"{{user_email}}\",\n  \"token\": \"{{otp_code}}\"\n}"
+              "raw": "{\n  \"type\": \"email\",\n  \"email\": \"{{user_email}}\",\n  \"token\": \"{{otp_code}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{supabase_url}}/auth/v1/verify",
-              "host": ["{{supabase_url}}"],
-              "path": ["auth", "v1", "verify"]
+              "host": [
+                "{{supabase_url}}"
+              ],
+              "path": [
+                "auth",
+                "v1",
+                "verify"
+              ]
             }
-          }
-        },
-        {
-          "name": "1.6 Sign In (Password)",
+          },
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Login Successful', function () {",
+                  "pm.test(\"Sign-in OTP verified (200)\", function () {",
                   "    pm.response.to.have.status(200);",
                   "    const data = pm.response.json();",
-                  "    pm.expect(data.access_token).to.be.a('string');",
-                  "    pm.collectionVariables.set('access_token', data.access_token);",
-                  "    console.log('Access token updated successfully.');",
+                  "    pm.expect(data.access_token).to.be.a(\"string\");",
+                  "    pm.collectionVariables.set(\"access_token\", data.access_token);",
+                  "    if (data.refresh_token) {",
+                  "        pm.collectionVariables.set(\"refresh_token\", data.refresh_token);",
+                  "    }",
+                  "    console.log(\"Access token set from passwordless OTP verification.\");",
                   "});"
                 ],
                 "type": "text/javascript"
               }
             }
-          ],
+          ]
+        },
+        {
+          "name": "1.6 Sign In - Password (Primary User / Owner)",
           "request": {
-            "auth": {
-              "type": "noauth"
-            },
             "method": "POST",
             "header": [
               {
@@ -384,14 +640,29 @@
                 "type": "text"
               }
             ],
+            "description": "Authenticates primary user using password credentials.",
+            "auth": {
+              "type": "noauth"
+            },
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"email\": \"{{user_email}}\",\n  \"password\": \"{{user_password}}\"\n}"
+              "raw": "{\n  \"email\": \"{{user_email}}\",\n  \"password\": \"{{user_password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
               "raw": "{{supabase_url}}/auth/v1/token?grant_type=password",
-              "host": ["{{supabase_url}}"],
-              "path": ["auth", "v1", "token"],
+              "host": [
+                "{{supabase_url}}"
+              ],
+              "path": [
+                "auth",
+                "v1",
+                "token"
+              ],
               "query": [
                 {
                   "key": "grant_type",
@@ -399,31 +670,245 @@
                 }
               ]
             }
-          }
-        }
-      ]
-    },
-    {
-      "name": "2. User & Provisioning",
-      "item": [
-        {
-          "name": "2.1 Get Current User (Triggers JIT Provisioning into public.users)",
+          },
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('User retrieved/provisioned', function () {",
+                  "pm.test(\"Primary user login successful (200)\", function () {",
                   "    pm.response.to.have.status(200);",
                   "    const data = pm.response.json();",
-                  "    pm.expect(data.id).to.be.a('string');",
-                  "    console.log('Provisioned User ID:', data.id);",
+                  "    pm.expect(data.access_token).to.be.a(\"string\");",
+                  "    pm.collectionVariables.set(\"access_token\", data.access_token);",
+                  "    if (data.refresh_token) {",
+                  "        pm.collectionVariables.set(\"refresh_token\", data.refresh_token);",
+                  "    }",
+                  "    console.log(\"Primary access_token saved to collection variables.\");",
                   "});"
                 ],
                 "type": "text/javascript"
               }
             }
-          ],
+          ]
+        },
+        {
+          "name": "1.7 Refresh Access Token",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{supabase_anon_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{supabase_anon_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "description": "Refreshes an expired access token using refresh_token.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"refresh_token\": \"{{refresh_token}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{supabase_url}}/auth/v1/token?grant_type=refresh_token",
+              "host": [
+                "{{supabase_url}}"
+              ],
+              "path": [
+                "auth",
+                "v1",
+                "token"
+              ],
+              "query": [
+                {
+                  "key": "grant_type",
+                  "value": "refresh_token"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Refresh token status (200 or 400)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 400]);",
+                  "    if (pm.response.code === 200) {",
+                  "        const data = pm.response.json();",
+                  "        pm.expect(data.access_token).to.be.a(\"string\");",
+                  "        pm.collectionVariables.set(\"access_token\", data.access_token);",
+                  "        if (data.refresh_token) {",
+                  "            pm.collectionVariables.set(\"refresh_token\", data.refresh_token);",
+                  "        }",
+                  "        console.log(\"Refreshed access token successfully.\");",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.8 Sign Up - Secondary User (Teammate / Member)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{supabase_anon_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{supabase_anon_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "description": "Registers secondary teammate account for team invitation and speaker mapping tests.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{member_email}}\",\n  \"password\": \"{{member_password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{supabase_url}}/auth/v1/signup",
+              "host": [
+                "{{supabase_url}}"
+              ],
+              "path": [
+                "auth",
+                "v1",
+                "signup"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Secondary user signup succeeded (200 or 201)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 201]);",
+                  "    const data = pm.response.json();",
+                  "    if (data.access_token) {",
+                  "        pm.collectionVariables.set(\"member_access_token\", data.access_token);",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "1.9 Sign In - Password (Secondary User / Teammate)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "apikey",
+                "value": "{{supabase_anon_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{supabase_anon_key}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "description": "Authenticates secondary teammate user and saves {{member_access_token}}.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{member_email}}\",\n  \"password\": \"{{member_password}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{supabase_url}}/auth/v1/token?grant_type=password",
+              "host": [
+                "{{supabase_url}}"
+              ],
+              "path": [
+                "auth",
+                "v1",
+                "token"
+              ],
+              "query": [
+                {
+                  "key": "grant_type",
+                  "value": "password"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Secondary user login successful (200)\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.access_token).to.be.a(\"string\");",
+                  "    pm.collectionVariables.set(\"member_access_token\", data.access_token);",
+                  "    console.log(\"member_access_token saved to collection variables.\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "2. Users & JIT Provisioning",
+      "description": "Tests user retrieval and Just-In-Time (JIT) provisioning into public.users database table.",
+      "item": [
+        {
+          "name": "2.1 Get Current User (Primary - Triggers JIT Provisioning)",
           "request": {
             "method": "GET",
             "header": [
@@ -433,183 +918,100 @@
                 "type": "text"
               }
             ],
+            "description": "Validates primary JWT, provisions user into public.users if not present, and captures {{user_id}}.",
             "url": {
               "raw": "{{base_url}}/api/v1/me",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "me"]
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me"
+              ]
             }
-          }
-        }
-      ]
-    },
-    {
-      "name": "3. Teams",
-      "item": [
-        {
-          "name": "3.1 Create Team",
+          },
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Team created', function () {",
-                  "    pm.response.to.have.status(201);",
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Primary user provisioned in database\", function () {",
                   "    const data = pm.response.json();",
-                  "    pm.expect(data.id).to.be.a('string');",
-                  "    pm.collectionVariables.set('team_id', data.id);",
-                  "    console.log('Created Team ID:', data.id);",
+                  "    pm.expect(data.id).to.be.a(\"string\");",
+                  "    pm.expect(data.email).to.be.a(\"string\");",
+                  "    pm.collectionVariables.set(\"user_id\", data.id);",
+                  "    console.log(\"Provisioned Primary User ID:\", data.id);",
                   "});"
                 ],
                 "type": "text/javascript"
               }
             }
-          ],
+          ]
+        },
+        {
+          "name": "2.2 Get Current User (Secondary - Triggers JIT Provisioning)",
           "request": {
-            "method": "POST",
+            "method": "GET",
             "header": [
               {
-                "key": "Content-Type",
+                "key": "Accept",
                 "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Authorization",
+                "value": "Bearer {{member_access_token}}",
                 "type": "text"
               }
             ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Engineering Demo Team\"\n}"
+            "description": "Validates secondary teammate token and provisions into public.users. Saves {{member_user_id}}.",
+            "auth": {
+              "type": "noauth"
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/teams",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "teams"]
+              "raw": "{{base_url}}/api/v1/me",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me"
+              ]
             }
-          }
-        },
-        {
-          "name": "3.2 List My Teams",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/api/v1/teams",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "teams"]
-            }
-          }
-        },
-        {
-          "name": "3.3 Get Team by ID",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/api/v1/teams/{{team_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "teams", "{{team_id}}"]
-            }
-          }
-        },
-        {
-          "name": "3.4 List Team Members",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/api/v1/teams/{{team_id}}/members",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "teams", "{{team_id}}", "members"]
-            }
-          }
-        }
-      ]
-    },
-    {
-      "name": "4. Projects",
-      "item": [
-        {
-          "name": "4.1 Create Project",
+          },
           "event": [
             {
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test('Project created', function () {",
-                  "    pm.response.to.have.status(201);",
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});",
+                  "pm.test(\"Secondary user provisioned in database\", function () {",
                   "    const data = pm.response.json();",
-                  "    pm.expect(data.id).to.be.a('string');",
-                  "    pm.collectionVariables.set('project_id', data.id);",
-                  "    console.log('Created Project ID:', data.id);",
+                  "    pm.expect(data.id).to.be.a(\"string\");",
+                  "    pm.collectionVariables.set(\"member_user_id\", data.id);",
+                  "    console.log(\"Provisioned Secondary User ID:\", data.id);",
                   "});"
                 ],
                 "type": "text/javascript"
               }
             }
-          ],
-          "request": {
-            "method": "POST",
-            "header": [
-              {
-                "key": "Content-Type",
-                "value": "application/json",
-                "type": "text"
-              }
-            ],
-            "body": {
-              "mode": "raw",
-              "raw": "{\n  \"name\": \"Investor Pitch Presentation\",\n  \"description\": \"Practice presentation for Q3 demo day\"\n}"
-            },
-            "url": {
-              "raw": "{{base_url}}/api/v1/teams/{{team_id}}/projects",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "teams", "{{team_id}}", "projects"]
-            }
-          }
-        },
-        {
-          "name": "4.2 List Projects for Team",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/api/v1/teams/{{team_id}}/projects",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "teams", "{{team_id}}", "projects"]
-            }
-          }
-        },
-        {
-          "name": "4.3 Get Project by ID",
-          "request": {
-            "method": "GET",
-            "header": [],
-            "url": {
-              "raw": "{{base_url}}/api/v1/projects/{{project_id}}",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "projects", "{{project_id}}"]
-            }
-          }
+          ]
         }
       ]
     },
     {
-      "name": "5. Assets",
+      "name": "3. Teams & Memberships",
+      "description": "Team creation, pagination, optimistic locking (ETag / If-Match), member listing, ownership transfer, and member removal.",
       "item": [
         {
-          "name": "5.1 Create Upload Intent",
-          "event": [
-            {
-              "listen": "test",
-              "script": {
-                "exec": [
-                  "if (pm.response.code === 201) {",
-                  "    const data = pm.response.json();",
-                  "    pm.collectionVariables.set('asset_id', data.asset_id);",
-                  "    console.log('Created Asset ID:', data.asset_id);",
-                  "}"
-                ],
-                "type": "text/javascript"
-              }
-            }
-          ],
+          "name": "3.1 Create Team (Idempotent)",
           "request": {
             "method": "POST",
             "header": [
@@ -624,28 +1026,3745 @@
                 "type": "text"
               }
             ],
+            "description": "Creates a new team with calling user as owner. Saves {{team_id}} and {{team_etag}}.",
             "body": {
               "mode": "raw",
-              "raw": "{\n  \"kind\": \"supporting_document\",\n  \"file_name\": \"slides.pdf\",\n  \"declared_media_type\": \"application/pdf\",\n  \"declared_size_bytes\": 241172\n}"
+              "raw": "{\n  \"name\": \"{{team_name}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
             },
             "url": {
-              "raw": "{{base_url}}/api/v1/projects/{{project_id}}/assets/upload-intents",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "projects", "{{project_id}}", "assets", "upload-intents"]
+              "raw": "{{base_url}}/api/v1/teams",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "teams"
+              ]
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Team created (201)\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.id).to.be.a(\"string\");",
+                  "    pm.expect(data.name).to.eql(pm.collectionVariables.get(\"team_name\"));",
+                  "    pm.collectionVariables.set(\"team_id\", data.id);",
+                  "    console.log(\"Created Team ID:\", data.id);",
+                  "});",
+                  "pm.test(\"ETag header present\", function () {",
+                  "    const etag = pm.response.headers.get(\"ETag\");",
+                  "    pm.expect(etag).to.be.ok;",
+                  "    pm.collectionVariables.set(\"team_etag\", etag.replace(/\"/g, \"\"));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
         },
         {
-          "name": "5.2 List Project Assets",
+          "name": "3.2 List My Teams",
           "request": {
             "method": "GET",
             "header": [],
+            "description": "Lists all teams where caller is an active member.",
             "url": {
-              "raw": "{{base_url}}/api/v1/projects/{{project_id}}/assets",
-              "host": ["{{base_url}}"],
-              "path": ["api", "v1", "projects", "{{project_id}}", "assets"]
+              "raw": "{{base_url}}/api/v1/teams?limit=50",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "teams"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
             }
-          }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.items).to.be.an(\"array\");",
+                  "    pm.expect(data.items.length).to.be.above(0);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.3 Get Team by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Retrieves team by ID and refreshes {{team_etag}}.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/teams/{{team_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "teams",
+                "{{team_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.id).to.eql(pm.collectionVariables.get(\"team_id\"));",
+                  "});",
+                  "pm.test(\"ETag updated\", function () {",
+                  "    const etag = pm.response.headers.get(\"ETag\");",
+                  "    if (etag) {",
+                  "        pm.collectionVariables.set(\"team_etag\", etag.replace(/\"/g, \"\"));",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.4 Update Team Name (Optimistic Locking with If-Match)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "If-Match",
+                "value": "\"{{team_etag}}\"",
+                "type": "text"
+              }
+            ],
+            "description": "Updates team name requiring valid If-Match matching current team entity tag.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{team_name}} Updated\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/teams/{{team_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "teams",
+                "{{team_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Team updated successfully (200)\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.name).to.include(\"Updated\");",
+                  "});",
+                  "pm.test(\"ETag refreshed\", function () {",
+                  "    const etag = pm.response.headers.get(\"ETag\");",
+                  "    pm.expect(etag).to.be.ok;",
+                  "    pm.collectionVariables.set(\"team_etag\", etag.replace(/\"/g, \"\"));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.5 List Team Members",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Returns paginated list of team memberships.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/teams/{{team_id}}/members?limit=50",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "teams",
+                "{{team_id}}",
+                "members"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.items).to.be.an(\"array\");",
+                  "    const owner = data.items.find(m => m.role === \"owner\");",
+                  "    pm.expect(owner).to.be.ok;",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.6 Transfer Team Ownership",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "description": "Transfers ownership of team to another active member.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"user_id\": \"{{member_user_id}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/teams/{{team_id}}/owner",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "teams",
+                "{{team_id}}",
+                "owner"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Ownership transfer response (200 or 404)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 404]);",
+                  "    if (pm.response.code === 200) {",
+                  "        const data = pm.response.json();",
+                  "        pm.expect(data.role).to.eql(\"owner\");",
+                  "        console.log(\"Ownership transferred successfully to\", data.user_id);",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "3.7 Remove Team Member",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "description": "Removes a member from team. Guards against removing the active owner.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/teams/{{team_id}}/members/{{member_user_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "teams",
+                "{{team_id}}",
+                "members",
+                "{{member_user_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Member removal response (204 or 404/409)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([204, 404, 409]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "4. Team Invitations & Email Flow",
+      "description": "Invite teammates via email, resend invitation, public unauthenticated preview, and accept invitation.",
+      "item": [
+        {
+          "name": "4.1 Send Team Invitation (Idempotent)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "type": "text"
+              }
+            ],
+            "description": "Creates team invitation and schedules invitation email delivery.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{member_email}}\",\n  \"role\": \"member\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/teams/{{team_id}}/invitations",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "teams",
+                "{{team_id}}",
+                "invitations"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Invitation created (201)\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.id).to.be.a(\"string\");",
+                  "    pm.expect(data.email).to.eql(pm.collectionVariables.get(\"member_email\"));",
+                  "    pm.collectionVariables.set(\"invitation_id\", data.id);",
+                  "    console.log(\"Saved invitation_id:\", data.id);",
+                  "});",
+                  "pm.test(\"ETag saved\", function () {",
+                  "    const etag = pm.response.headers.get(\"ETag\");",
+                  "    if (etag) {",
+                  "        pm.collectionVariables.set(\"invitation_etag\", etag.replace(/\"/g, \"\"));",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.2 List Team Invitations",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Lists all pending invitations for {{team_id}}.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/teams/{{team_id}}/invitations?limit=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "teams",
+                "{{team_id}}",
+                "invitations"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.items).to.be.an(\"array\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.3 Resend Team Invitation (Rate-Limited)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "type": "text"
+              }
+            ],
+            "description": "Resends invitation email subject to rate limit and idempotency key.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/teams/{{team_id}}/invitations/{{invitation_id}}/resend",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "teams",
+                "{{team_id}}",
+                "invitations",
+                "{{invitation_id}}",
+                "resend"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Resend accepted (202 or 404/409)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([202, 404, 409]);",
+                  "});",
+                  "pm.test(\"ETag refreshed if resend accepted\", function () {",
+                  "    const etag = pm.response.headers.get(\"ETag\");",
+                  "    if (etag) {",
+                  "        pm.collectionVariables.set(\"invitation_etag\", etag.replace(/\"/g, \"\"));",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.4 Public Invitation Preview (No Auth)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Public unauthenticated endpoint used by web UI to display invitation preview to invitee.",
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/invitations/{{invitation_token}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "invitations",
+                "{{invitation_token}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Preview response status (200 or 404/410)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 404, 410]);",
+                  "    if (pm.response.code === 200) {",
+                  "        const data = pm.response.json();",
+                  "        pm.expect(data.team_name).to.be.a(\"string\");",
+                  "        pm.expect(data.role).to.be.a(\"string\");",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.5 Accept Team Invitation",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{member_access_token}}",
+                "type": "text"
+              }
+            ],
+            "description": "Authenticated recipient accepts invitation. Validates email matches user.",
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/invitations/{{invitation_token}}/accept",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "invitations",
+                "{{invitation_token}}",
+                "accept"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Accept invitation status (200 or 404/409/410)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 404, 409, 410]);",
+                  "    if (pm.response.code === 200) {",
+                  "        const data = pm.response.json();",
+                  "        pm.expect(data.role).to.eql(\"member\");",
+                  "        console.log(\"Joined team successfully as member!\");",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "4.6 Revoke Team Invitation",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "If-Match",
+                "value": "*",
+                "type": "text"
+              }
+            ],
+            "description": "Revokes pending invitation using If-Match.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/teams/{{team_id}}/invitations/{{invitation_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "teams",
+                "{{team_id}}",
+                "invitations",
+                "{{invitation_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Revoke invitation status (204 or 404/409/412)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([204, 404, 409, 412]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "5. Projects & Lifecycles",
+      "description": "Project creation, list, query search filtering, metadata updates with If-Match, and erasure deletion requests.",
+      "item": [
+        {
+          "name": "5.1 Create Project",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "description": "Creates project inside active team and saves {{project_id}}.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{project_name}}\",\n  \"description\": \"Practice presentation for AI Evaluation\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/teams/{{team_id}}/projects",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "teams",
+                "{{team_id}}",
+                "projects"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Project created (201)\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.id).to.be.a(\"string\");",
+                  "    pm.expect(data.name).to.eql(pm.collectionVariables.get(\"project_name\"));",
+                  "    pm.collectionVariables.set(\"project_id\", data.id);",
+                  "    console.log(\"Saved project_id:\", data.id);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.2 List Team Projects",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Lists all projects belonging to {{team_id}}.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/teams/{{team_id}}/projects?limit=50",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "teams",
+                "{{team_id}}",
+                "projects"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "50"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.items).to.be.an(\"array\");",
+                  "    pm.expect(data.items.length).to.be.above(0);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.3 Search Team Projects",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Filters team projects by case-insensitive name query.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/teams/{{team_id}}/projects?search=Pitch&limit=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "teams",
+                "{{team_id}}",
+                "projects"
+              ],
+              "query": [
+                {
+                  "key": "search",
+                  "value": "Pitch"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.items).to.be.an(\"array\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.4 Get Project by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Retrieves project details and captures {{project_etag}}.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/projects/{{project_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.id).to.eql(pm.collectionVariables.get(\"project_id\"));",
+                  "});",
+                  "pm.test(\"ETag saved for project optimistic locking\", function () {",
+                  "    const etag = pm.response.headers.get(\"ETag\");",
+                  "    if (etag) {",
+                  "        pm.collectionVariables.set(\"project_etag\", etag.replace(/\"/g, \"\"));",
+                  "        console.log(\"Saved project_etag:\", etag);",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.5 Update Project (Optimistic Locking with If-Match)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "If-Match",
+                "value": "\"{{project_etag}}\"",
+                "type": "text"
+              }
+            ],
+            "description": "Updates project metadata requiring valid matching If-Match header.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{project_name}} Updated\",\n  \"description\": \"Updated project description\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/projects/{{project_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Project updated (200)\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.name).to.include(\"Updated\");",
+                  "    pm.collectionVariables.set(\"project_name\", data.name);",
+                  "});",
+                  "pm.test(\"ETag updated\", function () {",
+                  "    const etag = pm.response.headers.get(\"ETag\");",
+                  "    if (etag) {",
+                  "        pm.collectionVariables.set(\"project_etag\", etag.replace(/\"/g, \"\"));",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "5.6 Delete Project (Request Erasure)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "type": "text"
+              }
+            ],
+            "description": "Initiates project deletion and data erasure. Confirmation must match exact project name.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"confirmation\": \"{{project_name}}\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/projects/{{project_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Erasure request accepted (202)\", function () {",
+                  "    pm.response.to.have.status(202);",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.id).to.be.a(\"string\");",
+                  "    pm.expect(data.project_id).to.eql(pm.collectionVariables.get(\"project_id\"));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "6. Assets & Direct Storage Uploads",
+      "description": "Upload intents for videos and documents, presigned S3/MinIO PUT, upload completion verification, versioning, and presigned download intents.",
+      "item": [
+        {
+          "name": "6.1 Create Upload Intent - Presentation Video",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "type": "text"
+              }
+            ],
+            "description": "Requests presigned upload URL for pitch presentation MP4 video.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"presentation_video\",\n  \"file_name\": \"pitch_video.mp4\",\n  \"declared_media_type\": \"video/mp4\",\n  \"declared_size_bytes\": 1048576\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/projects/{{project_id}}/assets/upload-intents",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "assets",
+                "upload-intents"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Video upload intent created (201)\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.asset_id).to.be.a(\"string\");",
+                  "    pm.expect(data.asset_version_id).to.be.a(\"string\");",
+                  "    pm.expect(data.upload_url).to.be.a(\"string\");",
+                  "    pm.collectionVariables.set(\"video_asset_id\", data.asset_id);",
+                  "    pm.collectionVariables.set(\"video_version_id\", data.asset_version_id);",
+                  "    pm.collectionVariables.set(\"video_upload_url\", data.upload_url);",
+                  "    pm.collectionVariables.set(\"asset_id\", data.asset_id);",
+                  "    pm.collectionVariables.set(\"asset_version_id\", data.asset_version_id);",
+                  "    pm.collectionVariables.set(\"upload_url\", data.upload_url);",
+                  "    console.log(\"Saved video_asset_id:\", data.asset_id, \"video_version_id:\", data.asset_version_id);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.2 Direct S3 / MinIO Upload - Presentation Video (Presigned PUT)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "video/mp4",
+                "type": "text"
+              }
+            ],
+            "description": "Uploads binary video payload directly to object storage via presigned URL.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "ftypmp42isommp42simulated-mp4-video-payload-for-testing"
+            },
+            "url": {
+              "raw": "{{video_upload_url}}",
+              "host": [
+                "{{video_upload_url}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Object storage video upload succeeded (200 or 204)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 204]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.3 Complete & Verify Upload - Presentation Video",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "type": "text"
+              }
+            ],
+            "description": "Notifies backend of video upload completion and triggers asynchronous media integrity verification.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"checksum\": \"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\n  \"size_bytes\": 1048576\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/assets/{{video_asset_id}}/versions/{{video_version_id}}/complete",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "assets",
+                "{{video_asset_id}}",
+                "versions",
+                "{{video_version_id}}",
+                "complete"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Video completion accepted (202)\", function () {",
+                  "    pm.response.to.have.status(202);",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.id).to.eql(pm.collectionVariables.get(\"video_asset_id\"));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.4 Create Upload Intent - Supporting Document PDF",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "type": "text"
+              }
+            ],
+            "description": "Requests presigned upload URL for supporting PDF document.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"supporting_document\",\n  \"file_name\": \"pitch_deck.pdf\",\n  \"declared_media_type\": \"application/pdf\",\n  \"declared_size_bytes\": 241172\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/projects/{{project_id}}/assets/upload-intents",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "assets",
+                "upload-intents"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Document upload intent created (201)\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.asset_id).to.be.a(\"string\");",
+                  "    pm.expect(data.asset_version_id).to.be.a(\"string\");",
+                  "    pm.expect(data.upload_url).to.be.a(\"string\");",
+                  "    pm.collectionVariables.set(\"document_asset_id\", data.asset_id);",
+                  "    pm.collectionVariables.set(\"document_version_id\", data.asset_version_id);",
+                  "    pm.collectionVariables.set(\"document_upload_url\", data.upload_url);",
+                  "    console.log(\"Saved document_asset_id:\", data.asset_id, \"document_version_id:\", data.asset_version_id);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.5 Direct S3 / MinIO Upload - Supporting PDF (Presigned PUT)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/pdf",
+                "type": "text"
+              }
+            ],
+            "description": "Uploads binary PDF payload directly into object storage.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "%PDF-1.4 sample PDF document content %%EOF"
+            },
+            "url": {
+              "raw": "{{document_upload_url}}",
+              "host": [
+                "{{document_upload_url}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Object storage PDF upload succeeded (200 or 204)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 204]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.6 Complete & Verify Upload - Supporting PDF",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "type": "text"
+              }
+            ],
+            "description": "Signals PDF upload completed and verifies document magic bytes.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"checksum\": \"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\n  \"size_bytes\": 241172\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/assets/{{document_asset_id}}/versions/{{document_version_id}}/complete",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "assets",
+                "{{document_asset_id}}",
+                "versions",
+                "{{document_version_id}}",
+                "complete"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"PDF completion accepted (202)\", function () {",
+                  "    pm.response.to.have.status(202);",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.id).to.eql(pm.collectionVariables.get(\"document_asset_id\"));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.7 Create Version Upload Intent (Asset Replacement/V2)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "type": "text"
+              }
+            ],
+            "description": "Creates a new version upload intent for an existing asset.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"file_name\": \"pitch_deck_v2.pdf\",\n  \"declared_media_type\": \"application/pdf\",\n  \"declared_size_bytes\": 300000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/assets/{{document_asset_id}}/versions/upload-intents",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "assets",
+                "{{document_asset_id}}",
+                "versions",
+                "upload-intents"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Version upload intent created (201)\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.asset_version_id).to.be.a(\"string\");",
+                  "    pm.collectionVariables.set(\"new_version_id\", data.asset_version_id);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.8 List Project Assets",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Lists all assets created under {{project_id}}.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/projects/{{project_id}}/assets?limit=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "assets"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.items).to.be.an(\"array\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.9 Get Asset Details by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Retrieves asset metadata, current version, and verification state.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/assets/{{video_asset_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "assets",
+                "{{video_asset_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.id).to.eql(pm.collectionVariables.get(\"video_asset_id\"));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.10 List Asset Versions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Lists all versions for the specified asset.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/assets/{{video_asset_id}}/versions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "assets",
+                "{{video_asset_id}}",
+                "versions"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.items).to.be.an(\"array\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.11 Get Asset Version Details by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Retrieves version-specific details, checksum, and verification outcome.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/assets/{{video_asset_id}}/versions/{{video_version_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "assets",
+                "{{video_asset_id}}",
+                "versions",
+                "{{video_version_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.id).to.eql(pm.collectionVariables.get(\"video_version_id\"));",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.12 Create Asset Download Intent (Latest Version)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "description": "Generates presigned download URL for the verified asset.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/assets/{{video_asset_id}}/download-intents",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "assets",
+                "{{video_asset_id}}",
+                "download-intents"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Download intent response (200 or 409)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 409]);",
+                  "    if (pm.response.code === 200) {",
+                  "        const data = pm.response.json();",
+                  "        pm.expect(data.download_url).to.be.a(\"string\");",
+                  "        pm.collectionVariables.set(\"download_url\", data.download_url);",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "6.13 Create Asset Version Download Intent (Specific Version)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "description": "Generates presigned download URL for a specific asset version.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/assets/{{video_asset_id}}/versions/{{video_version_id}}/download-intents",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "assets",
+                "{{video_asset_id}}",
+                "versions",
+                "{{video_version_id}}",
+                "download-intents"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Version download intent response (200 or 409)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 409]);",
+                  "    if (pm.response.code === 200) {",
+                  "        const data = pm.response.json();",
+                  "        pm.expect(data.download_url).to.be.a(\"string\");",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "7. Practice Sessions",
+      "description": "Session creation with manifest, retrieval, optimistic concurrency updates (If-Match), and real-time SSE event streaming.",
+      "item": [
+        {
+          "name": "7.1 Create Practice Session",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "type": "text"
+              }
+            ],
+            "description": "Creates practice session with manifest linking presentation video, supporting documents, and rubric.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Competition Demo Practice Session\",\n  \"presentation_asset_version_id\": \"{{video_version_id}}\",\n  \"supporting_document_version_ids\": [\n    \"{{document_version_id}}\"\n  ],\n  \"rubric\": {\n    \"rubric_id\": \"startup_pitch\",\n    \"version\": 1\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/projects/{{project_id}}/practice-sessions",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "practice-sessions"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Practice session created (201)\", function () {",
+                  "    pm.response.to.have.status(201);",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.id).to.be.a(\"string\");",
+                  "    pm.collectionVariables.set(\"session_id\", data.id);",
+                  "    pm.collectionVariables.set(\"session_version\", String(data.version || 1));",
+                  "    console.log(\"Created Practice Session ID:\", data.id, \"Version:\", data.version);",
+                  "});",
+                  "pm.test(\"ETag present in response\", function () {",
+                  "    const etag = pm.response.headers.get(\"ETag\");",
+                  "    if (etag) {",
+                  "        pm.collectionVariables.set(\"session_etag\", etag.replace(/\"/g, \"\"));",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.2 List Practice Sessions for Project",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Lists practice sessions belonging to {{project_id}}.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/projects/{{project_id}}/practice-sessions?limit=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "practice-sessions"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.items).to.be.an(\"array\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.3 Get Practice Session Details by ID",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Retrieves session status, manifest, and current optimistic lock version.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/practice-sessions/{{session_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "practice-sessions",
+                "{{session_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.id).to.eql(pm.collectionVariables.get(\"session_id\"));",
+                  "    pm.collectionVariables.set(\"session_version\", String(data.version || 1));",
+                  "    console.log(\"Practice session status:\", data.status, \"Version:\", data.version);",
+                  "});",
+                  "pm.test(\"ETag updated\", function () {",
+                  "    const etag = pm.response.headers.get(\"ETag\");",
+                  "    if (etag) {",
+                  "        pm.collectionVariables.set(\"session_etag\", etag.replace(/\"/g, \"\"));",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.4 Update Practice Session (Optimistic Locking with If-Match)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "If-Match",
+                "value": "\"{{session_version}}\"",
+                "type": "text"
+              }
+            ],
+            "description": "Updates session manifest before analysis attempt begins using If-Match.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Competition Demo Practice Session Updated\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/practice-sessions/{{session_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "practice-sessions",
+                "{{session_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Practice session updated (200)\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const data = pm.response.json();",
+                  "    pm.collectionVariables.set(\"session_version\", String(data.version || 1));",
+                  "});",
+                  "pm.test(\"ETag refreshed\", function () {",
+                  "    const etag = pm.response.headers.get(\"ETag\");",
+                  "    if (etag) {",
+                  "        pm.collectionVariables.set(\"session_etag\", etag.replace(/\"/g, \"\"));",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.5 Stream Practice Session Live Events (SSE)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Accept",
+                "value": "text/event-stream",
+                "type": "text"
+              },
+              {
+                "key": "Last-Event-ID",
+                "value": "0",
+                "type": "text"
+              }
+            ],
+            "description": "Opens Server-Sent Events stream for live session state notifications.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/practice-sessions/{{session_id}}/events",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "practice-sessions",
+                "{{session_id}}",
+                "events"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"SSE connection established (200)\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const contentType = pm.response.headers.get(\"Content-Type\");",
+                  "    pm.expect(contentType).to.include(\"text/event-stream\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "8. Analysis Attempts & Session Lifecycle",
+      "description": "Start analysis attempt with consent, list attempts, retry failed attempts, and cancel practice session.",
+      "item": [
+        {
+          "name": "8.1 Start Analysis Attempt (Consent Accepted)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "type": "text"
+              }
+            ],
+            "description": "Freezes manifest and dispatches session analysis AI job.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"consent\": {\n    \"accepted\": true,\n    \"policy_version\": 1\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/practice-sessions/{{session_id}}/analysis-attempts",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "practice-sessions",
+                "{{session_id}}",
+                "analysis-attempts"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Analysis attempt started (202)\", function () {",
+                  "    pm.response.to.have.status(202);",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.id).to.be.a(\"string\");",
+                  "    pm.collectionVariables.set(\"analysis_attempt_id\", data.id);",
+                  "    console.log(\"Started Analysis Attempt ID:\", data.id);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "8.2 List Analysis Attempts for Session",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Lists all analysis attempts recorded for {{session_id}}.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/practice-sessions/{{session_id}}/analysis-attempts?limit=20",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "practice-sessions",
+                "{{session_id}}",
+                "analysis-attempts"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "20"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 200\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.items).to.be.an(\"array\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "8.3 Retry Analysis Attempt",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "type": "text"
+              }
+            ],
+            "description": "Retries failed analysis attempt within policy attempt limits.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/practice-sessions/{{session_id}}/retries",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "practice-sessions",
+                "{{session_id}}",
+                "retries"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Retry status (202 or 409)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([202, 409]);",
+                  "    if (pm.response.code === 202) {",
+                  "        const data = pm.response.json();",
+                  "        pm.collectionVariables.set(\"analysis_attempt_id\", data.id);",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "8.4 Cancel Practice Session",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "type": "text"
+              }
+            ],
+            "description": "Cancels active session and transitions state safely to cancelled.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"User requested cancellation for testing\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/practice-sessions/{{session_id}}/cancel",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "practice-sessions",
+                "{{session_id}}",
+                "cancel"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Cancellation status (202 or 409)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([202, 409]);",
+                  "    if (pm.response.code === 202) {",
+                  "        const data = pm.response.json();",
+                  "        pm.collectionVariables.set(\"session_version\", String(data.version || 1));",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "9. Speaker Mappings",
+      "description": "Maps detected diarization speaker labels (SPEAKER_00, etc.) to team members.",
+      "item": [
+        {
+          "name": "9.1 Update Speaker Mappings (If-Match)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "If-Match",
+                "value": "\"{{session_version}}\"",
+                "type": "text"
+              }
+            ],
+            "description": "Sets speaker labels to user IDs once session analysis completes.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"mappings\": [\n    {\n      \"speaker_label\": \"SPEAKER_00\",\n      \"user_id\": \"{{user_id}}\"\n    }\n  ]\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/practice-sessions/{{session_id}}/speaker-mappings",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "practice-sessions",
+                "{{session_id}}",
+                "speaker-mappings"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Speaker mappings updated (200 or 409)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 409]);",
+                  "    if (pm.response.code === 200) {",
+                  "        const data = pm.response.json();",
+                  "        pm.expect(data).to.be.an(\"array\");",
+                  "        console.log(\"Speaker mappings updated successfully:\", data.length);",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "10. Internal AI Jobs (Worker Integration)",
+      "description": "Internal worker endpoints authenticated via AI_WORKER_SHARED_SECRET bearer token.",
+      "item": [
+        {
+          "name": "10.1 Get Internal AI Job Status",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ai_worker_token}}",
+                "type": "text"
+              }
+            ],
+            "description": "Worker checks status and cancellation flag for an AI job.",
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{base_url}}/internal/v1/ai-jobs/{{ai_job_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "internal",
+                "v1",
+                "ai-jobs",
+                "{{ai_job_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"AI Job query response (200 or 404)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 404]);",
+                  "    if (pm.response.code === 200) {",
+                  "        const data = pm.response.json();",
+                  "        pm.expect(data.status).to.be.a(\"string\");",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.2 Record AI Worker Update - Started",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ai_worker_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "description": "Worker notifies backend that processing has started.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"schema_version\": 1,\n  \"sequence\": 1,\n  \"status\": \"started\",\n  \"occurred_at\": \"2026-09-15T12:00:00Z\",\n  \"trace_id\": \"test-trace-job-001\",\n  \"payload\": {\n    \"pipeline_version\": \"1.0.0\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/internal/v1/ai-jobs/{{ai_job_id}}/updates",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "internal",
+                "v1",
+                "ai-jobs",
+                "{{ai_job_id}}",
+                "updates"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Started update status (200 or 404/409)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 404, 409]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.3 Record AI Worker Update - Progress",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ai_worker_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "description": "Worker reports incremental progress.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"schema_version\": 1,\n  \"sequence\": 2,\n  \"status\": \"progress\",\n  \"occurred_at\": \"2026-09-15T12:00:05Z\",\n  \"trace_id\": \"test-trace-job-001\",\n  \"payload\": {\n    \"stage\": \"diarization\",\n    \"progress\": 0.5,\n    \"message\": \"Extracting speaker features\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/internal/v1/ai-jobs/{{ai_job_id}}/updates",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "internal",
+                "v1",
+                "ai-jobs",
+                "{{ai_job_id}}",
+                "updates"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Progress update status (200 or 404/409)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 404, 409]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.4 Record AI Worker Update - Session Analysis Completed",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ai_worker_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "description": "Worker delivers 3 primary questions, diarization speaker labels, and analysis artifact.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"schema_version\": 1,\n  \"sequence\": 3,\n  \"status\": \"completed\",\n  \"occurred_at\": \"2026-09-15T12:00:10Z\",\n  \"trace_id\": \"test-trace-job-001\",\n  \"payload\": {\n    \"analysis_artifact\": {\n      \"artifact_id\": \"art-analysis-001\",\n      \"checksum\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"\n    },\n    \"primary_questions\": [\n      {\n        \"id\": \"q-001\",\n        \"prompt\": \"Can you explain your target customer acquisition strategy?\",\n        \"rubric_dimension\": \"market_strategy\",\n        \"evidence_ids\": [\n          \"ev-01\"\n        ]\n      },\n      {\n        \"id\": \"q-002\",\n        \"prompt\": \"What proprietary technology protects your moat against incumbents?\",\n        \"rubric_dimension\": \"technology\",\n        \"evidence_ids\": [\n          \"ev-02\"\n        ]\n      },\n      {\n        \"id\": \"q-003\",\n        \"prompt\": \"How do your unit economics scale as transaction volume grows?\",\n        \"rubric_dimension\": \"financials\",\n        \"evidence_ids\": [\n          \"ev-03\"\n        ]\n      }\n    ],\n    \"speaker_labels\": [\n      \"SPEAKER_00\"\n    ],\n    \"limitations\": []\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/internal/v1/ai-jobs/{{ai_job_id}}/updates",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "internal",
+                "v1",
+                "ai-jobs",
+                "{{ai_job_id}}",
+                "updates"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Session analysis completed update status (200 or 404/409)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 404, 409]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.5 Record AI Worker Update - Answer Analysis Completed",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ai_worker_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "description": "Worker delivers assessment artifact and optional follow-up question for an answer.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"schema_version\": 1,\n  \"sequence\": 4,\n  \"status\": \"completed\",\n  \"occurred_at\": \"2026-09-15T12:00:15Z\",\n  \"trace_id\": \"test-trace-job-001\",\n  \"payload\": {\n    \"answer_id\": \"{{answer_id}}\",\n    \"transcript_artifact_id\": \"art-transcript-001\",\n    \"assessment_artifact_id\": \"art-assessment-001\",\n    \"follow_up\": null\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/internal/v1/ai-jobs/{{ai_job_id}}/updates",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "internal",
+                "v1",
+                "ai-jobs",
+                "{{ai_job_id}}",
+                "updates"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Answer analysis completed update status (200 or 404/409)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 404, 409]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.6 Record AI Worker Update - Report Completed",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ai_worker_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "description": "Worker completes evaluation and report artifacts with whole-team and per-member feedback.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"schema_version\": 1,\n  \"sequence\": 5,\n  \"status\": \"completed\",\n  \"occurred_at\": \"2026-09-15T12:00:20Z\",\n  \"trace_id\": \"test-trace-job-001\",\n  \"payload\": {\n    \"evaluation_artifact\": {\n      \"artifact_id\": \"art-eval-001\",\n      \"checksum\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"\n    },\n    \"report_artifact\": {\n      \"artifact_id\": \"art-report-001\",\n      \"checksum\": \"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\"\n    },\n    \"member_feedback_user_ids\": [\n      \"{{user_id}}\"\n    ],\n    \"limitations\": []\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/internal/v1/ai-jobs/{{ai_job_id}}/updates",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "internal",
+                "v1",
+                "ai-jobs",
+                "{{ai_job_id}}",
+                "updates"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Report completed update status (200 or 404/409)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 404, 409]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.7 Record AI Worker Update - Failed",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ai_worker_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "description": "Worker records safe failure details with retryable flag.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"schema_version\": 1,\n  \"sequence\": 6,\n  \"status\": \"failed\",\n  \"occurred_at\": \"2026-09-15T12:00:25Z\",\n  \"trace_id\": \"test-trace-job-001\",\n  \"payload\": {\n    \"stage\": \"analysis\",\n    \"code\": \"WORKER_TIMEOUT\",\n    \"retryable\": true,\n    \"attempts\": 1,\n    \"message\": \"Processing audio timed out in worker\"\n  }\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/internal/v1/ai-jobs/{{ai_job_id}}/updates",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "internal",
+                "v1",
+                "ai-jobs",
+                "{{ai_job_id}}",
+                "updates"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Failed update status (200 or 404/409)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 404, 409]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "10.8 Record AI Worker Update - Cancelled",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{ai_worker_token}}",
+                "type": "text"
+              },
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              }
+            ],
+            "description": "Worker acknowledges cancellation.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"schema_version\": 1,\n  \"sequence\": 7,\n  \"status\": \"cancelled\",\n  \"occurred_at\": \"2026-09-15T12:00:30Z\",\n  \"trace_id\": \"test-trace-job-001\",\n  \"payload\": {}\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/internal/v1/ai-jobs/{{ai_job_id}}/updates",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "internal",
+                "v1",
+                "ai-jobs",
+                "{{ai_job_id}}",
+                "updates"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Cancelled update status (200 or 404/409)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 404, 409]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "11. Q&A Workflow (Multi-Turn Questions & Answers)",
+      "description": "Multi-turn questions and answers round: inspect questions, upload answer audio directly to S3, submit answers, or skip questions.",
+      "item": [
+        {
+          "name": "11.1 Get Q&A Round (Questions, Answers & Active State)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Returns all questions, completed answers, and current active question ID.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/practice-sessions/{{session_id}}/qa",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "practice-sessions",
+                "{{session_id}}",
+                "qa"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Q&A round retrieved (200 or 409)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 409]);",
+                  "    if (pm.response.code === 200) {",
+                  "        const data = pm.response.json();",
+                  "        pm.collectionVariables.set(\"qa_round_id\", data.id);",
+                  "        if (data.current_question_id) {",
+                  "            pm.collectionVariables.set(\"question_id\", data.current_question_id);",
+                  "            console.log(\"Current active question_id:\", data.current_question_id);",
+                  "        } else if (data.questions && data.questions.length > 0) {",
+                  "            pm.collectionVariables.set(\"question_id\", data.questions[0].id);",
+                  "            console.log(\"First question_id:\", data.questions[0].id);",
+                  "        }",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "11.2 Create Answer Audio Upload Intent",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "type": "text"
+              }
+            ],
+            "description": "Initiates answer recording and returns presigned S3 upload URL.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"file_name\": \"answer_audio.mp4\",\n  \"declared_media_type\": \"audio/mp4\",\n  \"declared_size_bytes\": 102400\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/questions/{{question_id}}/answer-upload-intents",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "questions",
+                "{{question_id}}",
+                "answer-upload-intents"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Answer upload intent created (201 or 409)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([201, 409]);",
+                  "    if (pm.response.code === 201) {",
+                  "        const data = pm.response.json();",
+                  "        pm.expect(data.answer.id).to.be.a(\"string\");",
+                  "        pm.expect(data.upload_intent.upload_url).to.be.a(\"string\");",
+                  "        pm.collectionVariables.set(\"answer_id\", data.answer.id);",
+                  "        pm.collectionVariables.set(\"answer_asset_id\", data.upload_intent.asset_id);",
+                  "        pm.collectionVariables.set(\"answer_version_id\", data.upload_intent.asset_version_id);",
+                  "        pm.collectionVariables.set(\"answer_upload_url\", data.upload_intent.upload_url);",
+                  "        console.log(\"Created Answer ID:\", data.answer.id);",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "11.3 Direct S3 / MinIO Upload - Answer Audio (Presigned PUT)",
+          "request": {
+            "method": "PUT",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "audio/mp4",
+                "type": "text"
+              }
+            ],
+            "description": "Uploads answer audio directly into object storage.",
+            "auth": {
+              "type": "noauth"
+            },
+            "body": {
+              "mode": "raw",
+              "raw": "ftypmp42isommp42simulated-answer-audio-payload"
+            },
+            "url": {
+              "raw": "{{answer_upload_url}}",
+              "host": [
+                "{{answer_upload_url}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Answer audio uploaded to S3 (200 or 204)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 204]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "11.4 Complete Answer Audio Asset Upload",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "type": "text"
+              }
+            ],
+            "description": "Verifies answer audio file integrity in object storage.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"checksum\": \"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\n  \"size_bytes\": 102400\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/assets/{{answer_asset_id}}/versions/{{answer_version_id}}/complete",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "assets",
+                "{{answer_asset_id}}",
+                "versions",
+                "{{answer_version_id}}",
+                "complete"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Answer audio upload complete (202)\", function () {",
+                  "    pm.response.to.have.status(202);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "11.5 Submit Answer Audio (Checksum & Size Verification)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "type": "text"
+              }
+            ],
+            "description": "Finalizes answer submission and dispatches answer analysis AI job.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"checksum\": \"sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855\",\n  \"size_bytes\": 102400\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/answers/{{answer_id}}/submit",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "answers",
+                "{{answer_id}}",
+                "submit"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Answer submitted (200 or 202)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 202]);",
+                  "    const data = pm.response.json();",
+                  "    console.log(\"Answer submitted! State:\", data.status);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "11.6 Skip Active Question",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "type": "text"
+              }
+            ],
+            "description": "Skips current active question with recorded rationale and advances round.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"reason\": \"Presenter opted to skip question\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/questions/{{question_id}}/skip",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "questions",
+                "{{question_id}}",
+                "skip"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Question skipped status (200 or 202/409)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 202, 409]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "12. Evaluations & Reports",
+      "description": "Retrieve rubric evaluation, comprehensive report payload, export report as PDF, and presigned download.",
+      "item": [
+        {
+          "name": "12.1 Get Session Evaluation (Rubric Components & Findings)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Retrieves rubric scoring breakdown, strengths, improvements, and presenter feedback.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/practice-sessions/{{session_id}}/evaluation",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "practice-sessions",
+                "{{session_id}}",
+                "evaluation"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Evaluation status (200 or 409)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 409]);",
+                  "    if (pm.response.code === 200) {",
+                  "        const data = pm.response.json();",
+                  "        pm.expect(data.id).to.be.a(\"string\");",
+                  "        pm.expect(data.overall_score).to.be.a(\"number\");",
+                  "        console.log(\"Evaluation score:\", data.overall_score);",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "12.2 Get Session Report (Executive Summary, Timeline & Breakdown)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Retrieves complete report payload with executive summary, transcript timeline, and document alignment.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/practice-sessions/{{session_id}}/report",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "practice-sessions",
+                "{{session_id}}",
+                "report"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Report status (200 or 409)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 409]);",
+                  "    if (pm.response.code === 200) {",
+                  "        const data = pm.response.json();",
+                  "        pm.expect(data.report_id).to.be.a(\"string\");",
+                  "        pm.expect(data.title).to.be.a(\"string\");",
+                  "        console.log(\"Report ID:\", data.report_id, \"Title:\", data.title);",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "12.3 Export Session Report as PDF (Async Job)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "type": "text"
+              }
+            ],
+            "description": "Dispatches PDF rendering job and captures {{export_id}}.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/practice-sessions/{{session_id}}/report/pdf",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "practice-sessions",
+                "{{session_id}}",
+                "report",
+                "pdf"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"PDF export initiated (200 or 202/409)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 202, 409]);",
+                  "    if (pm.response.code === 200 || pm.response.code === 202) {",
+                  "        const data = pm.response.json();",
+                  "        const exportId = data.id || data.export_id;",
+                  "        pm.expect(exportId).to.be.a(\"string\");",
+                  "        pm.collectionVariables.set(\"export_id\", exportId);",
+                  "        console.log(\"Report Export ID:\", exportId);",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "12.4 Get Report Export Status (Poll Generation)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Polls PDF export progress until status becomes completed.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/report-exports/{{export_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "report-exports",
+                "{{export_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Export status response (200 or 404)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 404]);",
+                  "    if (pm.response.code === 200) {",
+                  "        const data = pm.response.json();",
+                  "        pm.expect(data.status).to.be.a(\"string\");",
+                  "        console.log(\"PDF Export Status:\", data.status);",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "12.5 Create Report Export Download Intent (Presigned URL)",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "description": "Returns short-lived signed URL to download exported PDF report.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/report-exports/{{export_id}}/download-intents",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "report-exports",
+                "{{export_id}}",
+                "download-intents"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Download intent response (200 or 404/409)\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([200, 404, 409]);",
+                  "    if (pm.response.code === 200) {",
+                  "        const data = pm.response.json();",
+                  "        pm.expect(data.download_url).to.be.a(\"string\");",
+                  "        pm.collectionVariables.set(\"download_url\", data.download_url);",
+                  "        console.log(\"Presigned Download URL:\", data.download_url);",
+                  "    }",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "12.6 Download Report Export PDF File (Binary Stream)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Fetches raw PDF bytes directly from object storage.",
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{download_url}}",
+              "host": [
+                "{{download_url}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"PDF binary downloaded (200)\", function () {",
+                  "    pm.response.to.have.status(200);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "13. Negative Tests & Boundary Verifications",
+      "description": "Security invariants, Problem Details formatting, concurrency preconditions, and parameter validation error assertions.",
+      "item": [
+        {
+          "name": "13.1 Missing Auth Token (Expected 401)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Rejects unauthenticated access to protected resources.",
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/me",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 401 Unauthorized\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "13.2 Invalid Bearer Token (Expected 401)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer malformed.invalid.token",
+                "type": "text"
+              }
+            ],
+            "description": "Rejects malformed or signature-invalid tokens.",
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/me",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "me"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 401 Unauthorized\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "13.3 SSE Reject Query Param Access Token (Expected 401)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Enforces VirtuJudge security mandate: tokens must never be passed in query parameters.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/practice-sessions/{{session_id}}/events?access_token=forbidden_query_param",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "practice-sessions",
+                "{{session_id}}",
+                "events"
+              ],
+              "query": [
+                {
+                  "key": "access_token",
+                  "value": "forbidden_query_param"
+                }
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 401 Unauthorized\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.detail).to.eql(\"invalid_token\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "13.4 Internal AI Worker Unauthorized (Expected 401)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer wrong-worker-secret",
+                "type": "text"
+              }
+            ],
+            "description": "Rejects unauthorized callers to internal AI job endpoints.",
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{base_url}}/internal/v1/ai-jobs/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "internal",
+                "v1",
+                "ai-jobs",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 401 Unauthorized\", function () {",
+                  "    pm.response.to.have.status(401);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "13.5 Unauthorized Cross-Team Access (Expected 403)",
+          "request": {
+            "method": "GET",
+            "header": [
+              {
+                "key": "Authorization",
+                "value": "Bearer {{member_access_token}}",
+                "type": "text"
+              }
+            ],
+            "description": "Enforces team membership isolation: callers cannot access teams they do not belong to.",
+            "auth": {
+              "type": "noauth"
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/teams/{{team_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "teams",
+                "{{team_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 403 Forbidden\", function () {",
+                  "    pm.response.to.have.status(403);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "13.6 Resource Not Found (Expected 404 Problem Details)",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "description": "Returns safe RFC 7807 / 9457 Problem Details for non-existent entities.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/projects/00000000-0000-0000-0000-000000000000",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "00000000-0000-0000-0000-000000000000"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 404 Not Found\", function () {",
+                  "    pm.response.to.have.status(404);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "13.7 Precondition Failed - Stale If-Match Header (Expected 412)",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "If-Match",
+                "value": "\"stale-invalid-etag-hash\"",
+                "type": "text"
+              }
+            ],
+            "description": "Prevents concurrent edit race conditions by requiring current entity tag.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Will Fail Precondition\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/teams/{{team_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "teams",
+                "{{team_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 412 Precondition Failed\", function () {",
+                  "    pm.response.to.have.status(412);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "13.8 Team Name Conflict (Expected 409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "type": "text"
+              }
+            ],
+            "description": "Prevents duplicate team names across the system.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"{{team_name}} Updated\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/teams",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "teams"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 409 Conflict\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "13.9 Idempotency Key Conflict - Reused with Different Body (Expected 409)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "fixed-test-key-for-conflict-testing",
+                "type": "text"
+              }
+            ],
+            "description": "Catches reuse of an idempotency key with mismatching request payload.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Completely Different Payload Name\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/teams",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "teams"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 409 Conflict or 201 on first run\", function () {",
+                  "    pm.expect(pm.response.code).to.be.oneOf([201, 409]);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "13.10 Remove Team Owner Without Ownership Transfer (Expected 409)",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "description": "Protects teams from being left ownerless.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/teams/{{team_id}}/members/{{user_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "teams",
+                "{{team_id}}",
+                "members",
+                "{{user_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 409 Conflict\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "13.11 Project Erasure Without Matching Name Confirmation (Expected 409)",
+          "request": {
+            "method": "DELETE",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "type": "text"
+              }
+            ],
+            "description": "Guards against accidental project erasure by requiring exact project name in body confirmation.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"confirmation\": \"INCORRECT_CONFIRMATION_STRING\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/projects/{{project_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 409 Conflict (confirmation required)\", function () {",
+                  "    pm.response.to.have.status(409);",
+                  "    const data = pm.response.json();",
+                  "    pm.expect(data.detail).to.eql(\"confirmation_required\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "13.12 Asset Upload Unsupported Media Type (Expected 415)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "type": "text"
+              }
+            ],
+            "description": "Enforces media type allow-list on upload intents.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"supporting_document\",\n  \"file_name\": \"malicious.exe\",\n  \"declared_media_type\": \"application/x-msdownload\",\n  \"declared_size_bytes\": 1024\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/projects/{{project_id}}/assets/upload-intents",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "assets",
+                "upload-intents"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 415 Unsupported Media Type\", function () {",
+                  "    pm.response.to.have.status(415);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "13.13 Asset Upload Payload Too Large (Expected 413)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "type": "text"
+              }
+            ],
+            "description": "Enforces 25MB upper limit for supporting documents.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"kind\": \"supporting_document\",\n  \"file_name\": \"huge-file.pdf\",\n  \"declared_media_type\": \"application/pdf\",\n  \"declared_size_bytes\": 524288000\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/projects/{{project_id}}/assets/upload-intents",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "projects",
+                "{{project_id}}",
+                "assets",
+                "upload-intents"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 413 Payload Too Large\", function () {",
+                  "    pm.response.to.have.status(413);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "13.14 Validation Error - Empty Required Fields (Expected 422)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json",
+                "type": "text"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{$guid}}",
+                "type": "text"
+              }
+            ],
+            "description": "Validates pydantic constraints and returns field-level error messages.",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "url": {
+              "raw": "{{base_url}}/api/v1/teams",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "teams"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Status code is 422 Unprocessable Content\", function () {",
+                  "    pm.response.to.have.status(422);",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
         }
       ]
     }

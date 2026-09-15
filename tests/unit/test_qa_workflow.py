@@ -208,6 +208,9 @@ async def test_submitting_verified_audio_creates_one_answer_analysis_job() -> No
     created_job = uow.jobs.create.await_args.args[0]
     assert created_job.job_type == "analyze_answer"
     assert created_job.answer_id == answer.id
+    assert created_job.payload["payload"]["question_text"] == questions[0].text
+    assert created_job.payload["payload"]["rubric_dimension"] == questions[0].rubric_dimension
+    assert created_job.payload["payload"]["question_evidence_ids"] == questions[0].evidence_ids
     assert created_job.payload["payload"]["remaining_follow_ups"] == 2
 
 

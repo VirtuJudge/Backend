@@ -330,8 +330,8 @@ async def test_allowed_running_to_completed() -> None:
     assert result.last_update_sequence == 3
     assert result.completed_result is not None
     assert len(result.completed_result["primary_questions"]) == 3
-    assert attempt.status == AnalysisAttemptStatus.COMPLETED
-    assert attempt.completed_at == occurred_at
+    assert attempt.status == AnalysisAttemptStatus.RUNNING
+    assert attempt.completed_at is None
     assert uow.commit_count == 1
 
 
@@ -758,8 +758,8 @@ async def test_completed_valid_analyze_session() -> None:
         == "artifacts/session_analysis.json"
     )
     assert len(result.completed_result["primary_questions"]) == 3
-    assert attempt.status == AnalysisAttemptStatus.COMPLETED
-    assert attempt.completed_at == occurred_at
+    assert attempt.status == AnalysisAttemptStatus.RUNNING
+    assert attempt.completed_at is None
     assert uow.commit_count == 1
 
 
@@ -1253,6 +1253,7 @@ async def test_completed_valid_analyze_answer() -> None:
     assert result.completed_result is not None
     assert result.completed_result["answer_id"] == "ans_001"
     assert result.completed_result["follow_up"]["rubric_dimension"] == "customer_retention"
+    assert attempt.status is AnalysisAttemptStatus.RUNNING
     assert uow.commit_count == 1
 
 
@@ -1405,7 +1406,7 @@ async def test_stale_answer_result_does_not_add_follow_up() -> None:
 
 
 @pytest.mark.asyncio
-async def test_answer_result_rejects_follow_up_with_unrelated_evidence() -> None:
+async def test_answer_result_omits_follow_up_without_grounding_evidence() -> None:
     job, attempt, uow, service = _build_attempt_and_job(
         job_status=AnalysisJobStatus.RUNNING,
         attempt_status=AnalysisAttemptStatus.COMPLETED,
@@ -1427,8 +1428,11 @@ async def test_answer_result_rejects_follow_up_with_unrelated_evidence() -> None
     uow.qa.get_answer = AsyncMock(return_value=answer)
     uow.qa.get_round_for_update = AsyncMock(return_value=round_)
     uow.qa.list_answers = AsyncMock(return_value=[answer])
+    uow.qa.list_questions = AsyncMock(return_value=[])
     uow.qa.get_question = AsyncMock(return_value=question)
     uow.qa.update_answer = AsyncMock()
+    uow.qa.create_questions = AsyncMock()
+    round_.complete_if_idle.return_value = False
     payload = AnswerAnalysisCompletedPayload(
         answer_id=str(answer_id),
         transcript_artifact_id="transcript-1",
@@ -1437,18 +1441,18 @@ async def test_answer_result_rejects_follow_up_with_unrelated_evidence() -> None
             text="Unsupported follow-up?",
             reason="It cites unrelated evidence.",
             rubric_dimension="business_reasoning",
-            evidence_ids=["ev-unrelated"],
+            evidence_ids=[],
         ),
     )
 
-    with pytest.raises(CompletedResultValidationError, match="parent Question"):
-        await service.record_update(
-            job.id,
-            _make_update(AIWorkerUpdateStatus.COMPLETED, sequence=2, payload=payload),
-        )
+    await service.record_update(
+        job.id,
+        _make_update(AIWorkerUpdateStatus.COMPLETED, sequence=2, payload=payload),
+    )
 
-    uow.qa.update_answer.assert_not_awaited()
-    assert job.status is AnalysisJobStatus.RUNNING
+    uow.qa.update_answer.assert_awaited_once()
+    uow.qa.create_questions.assert_not_awaited()
+    assert job.status is AnalysisJobStatus.COMPLETED
 
 
 @pytest.mark.asyncio

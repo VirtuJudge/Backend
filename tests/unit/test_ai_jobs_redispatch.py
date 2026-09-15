@@ -155,6 +155,28 @@ async def test_redispatch_pending_oldest_eligible_first() -> None:
 
 
 @pytest.mark.asyncio
+async def test_redispatch_pending_recovers_stale_running_job() -> None:
+    now = datetime(2026, 9, 15, 12, 0, tzinfo=UTC)
+    job = _make_job(
+        status=AnalysisJobStatus.RUNNING,
+        created_at=now - timedelta(hours=1),
+    )
+    job.updated_at = now - timedelta(minutes=20)
+    job.started_at = job.updated_at
+    job.last_update_sequence = 1
+    repo = FakeAnalysisJobRepository([job])
+    queue = FakeAIJobQueue()
+    ai_jobs = AIJobs(FakeUnitOfWork(repo), queue=queue)
+
+    result = await ai_jobs.redispatch_pending(now=now, stale_inflight_seconds=900)
+
+    assert result.queued == 1
+    assert queue.count == 1
+    assert job.status is AnalysisJobStatus.QUEUED
+    assert job.last_update_sequence == 0
+
+
+@pytest.mark.asyncio
 async def test_redispatch_pending_preserves_stable_queue_envelope() -> None:
     base_time = datetime(2026, 9, 14, 10, 0, tzinfo=UTC)
     job = _make_job(created_at=base_time)

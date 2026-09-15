@@ -67,7 +67,6 @@ from app.domain.session_workflow.enums.report import (
 )
 from app.domain.session_workflow.enums.session_status import SessionStatus
 from app.domain.session_workflow.exceptions import (
-    CompletedResultValidationError,
     InvalidAttemptState,
     InvalidJobStatusTransition,
     StaleEntityVersion,
@@ -368,6 +367,9 @@ class AIJobs:
                 answer_id=str(answer.id),
                 answered_by=str(answer.answered_by),
                 audio=AudioAssetInput(**audio.model_dump()),
+                question_text=question.text,
+                rubric_dimension=question.rubric_dimension,
+                question_evidence_ids=list(question.evidence_ids),
                 remaining_follow_ups=2 - round_.follow_up_count,
             ),
         )
@@ -583,12 +585,11 @@ class AIJobs:
         if parent_question is None:
             return None
         follow_up = payload.follow_up
-        if follow_up is not None and not set(follow_up.evidence_ids).issubset(
-            set(parent_question.evidence_ids)
+        if follow_up is not None and (
+            not follow_up.evidence_ids
+            or not set(follow_up.evidence_ids).issubset(set(parent_question.evidence_ids))
         ):
-            raise CompletedResultValidationError(
-                "follow_up.evidence_ids must reference Evidence grounding the parent Question."
-            )
+            follow_up = None
 
         answer.transcript_artifact_id = payload.transcript_artifact_id
         answer.assessment_artifact_id = payload.assessment_artifact_id
@@ -1172,7 +1173,7 @@ class AIJobs:
                 job.status = AnalysisJobStatus.COMPLETED
                 job.completed_at = occurred_at
                 job.completed_result = validated_payload.model_dump(mode="json")
-                if attempt is not None:
+                if attempt is not None and isinstance(validated_payload, ReportCompletedPayload):
                     attempt.transition_to(AnalysisAttemptStatus.COMPLETED, at=occurred_at)
                     attempt.completed_at = occurred_at
         except InvalidAttemptState as exc:
@@ -1358,6 +1359,7 @@ class AIJobs:
         base_backoff_seconds: float = 30.0,
         max_backoff_seconds: float = 3600.0,
         backoff_factor: float = 2.0,
+        stale_inflight_seconds: float = 900.0,
     ) -> RedispatchResult:
         effective_limit = batch_size if batch_size is not None else limit
         bounded_limit = max(1, min(effective_limit, 1000))
@@ -1368,6 +1370,20 @@ class AIJobs:
 
         if self._queue is None:
             return RedispatchResult(0, 0, 0)
+
+        recover_stale = getattr(self._uow.jobs, "recover_stale_inflight_jobs", None)
+        if callable(recover_stale):
+            recovered = recover_stale(
+                now_time - timedelta(seconds=stale_inflight_seconds),
+                now_time,
+                bounded_limit,
+            )
+            if inspect.isawaitable(recovered):
+                recovered = await recovered
+            if recovered:
+                commit_recovery = self._uow.commit()
+                if inspect.isawaitable(commit_recovery):
+                    await commit_recovery
 
         get_batch = getattr(self._uow.jobs, "get_eligible_pending_jobs", None) or getattr(
             self._uow.jobs, "load_eligible_pending_batch", None

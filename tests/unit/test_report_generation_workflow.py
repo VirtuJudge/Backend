@@ -249,6 +249,28 @@ async def test_record_update_report_completed_persists_canonical_report_and_eval
 
 
 @pytest.mark.asyncio
+async def test_report_job_can_start_after_session_analysis_completed() -> None:
+    service, uow, session, attempt, job, round_ = _setup_report_pipeline()
+    attempt.status = AnalysisAttemptStatus.RUNNING
+    report_job = await service.create_report_job(
+        session=session,
+        round_=round_,
+        attempt=attempt,
+        now=NOW,
+    )
+    report_job.status = AnalysisJobStatus.QUEUED
+
+    result = await service.record_update(
+        report_job.id,
+        _make_update(AIWorkerUpdateStatus.STARTED, sequence=1),
+    )
+
+    assert result is not None
+    assert result.status is AnalysisJobStatus.RUNNING
+    assert attempt.status is AnalysisAttemptStatus.RUNNING
+
+
+@pytest.mark.asyncio
 async def test_record_update_rejects_mismatched_trace_id() -> None:
     service, uow, session, attempt, job, round_ = _setup_report_pipeline()
 

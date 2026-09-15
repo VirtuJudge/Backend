@@ -218,10 +218,6 @@ def validate_completed_update(
                 f"answer_id '{payload.answer_id}' does not match job answer '{job.answer_id}'."
             )
         if payload.follow_up is not None:
-            if not payload.follow_up.evidence_ids:
-                raise CompletedResultValidationError(
-                    "follow_up.evidence_ids must contain grounding Evidence."
-                )
             if not payload.follow_up.text or not payload.follow_up.text.strip():
                 raise CompletedResultValidationError("follow_up text must not be empty.")
             if not payload.follow_up.reason or not payload.follow_up.reason.strip():
