@@ -1,3 +1,4 @@
+from collections.abc import AsyncIterator
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -50,7 +51,7 @@ SHARED_WORKER_SECRET = "test-worker-auth-secret-key-12345"
 @pytest.fixture
 async def test_env(
     tmp_path: Path,
-) -> tuple[async_sessionmaker[AsyncSession], AsyncClient, Settings]:
+) -> AsyncIterator[tuple[async_sessionmaker[AsyncSession], AsyncClient, Settings]]:
     db_path = tmp_path / "auth_callback_lifecycle.db"
     db_url = f"sqlite+aiosqlite:///{db_path}"
     engine = create_async_engine(db_url, echo=False)
@@ -75,9 +76,13 @@ async def test_env(
 
     app = create_app(settings)
     transport = ASGITransport(app=app)
-    client = AsyncClient(transport=transport, base_url="http://test")
+    async with (
+        app.router.lifespan_context(app),
+        AsyncClient(transport=transport, base_url="http://test") as client,
+    ):
+        yield session_maker, client, settings
 
-    return session_maker, client, settings
+    await engine.dispose()
 
 
 async def _seed_session_and_job(
