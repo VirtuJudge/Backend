@@ -91,6 +91,36 @@ class SqlAlchemyAnalysisJobRepository(AnalysisJobRepository):
         )
         return None if model is None else to_domain(model)
 
+    async def cancel_nonterminal_by_session_id(
+        self,
+        session_id: UUID,
+        now: datetime,
+    ) -> int:
+        result = cast(
+            CursorResult[Any],
+            await self._session.execute(
+                update(AnalysisJobModel)
+                .where(
+                    AnalysisJobModel.practice_session_id == session_id,
+                    AnalysisJobModel.status.not_in(
+                        [
+                            AnalysisJobStatus.COMPLETED,
+                            AnalysisJobStatus.FAILED,
+                            AnalysisJobStatus.CANCELLED,
+                        ]
+                    ),
+                )
+                .values(
+                    status=AnalysisJobStatus.CANCELLED,
+                    cancel_requested=True,
+                    completed_at=func.coalesce(AnalysisJobModel.completed_at, now),
+                    updated_at=now,
+                )
+            ),
+        )
+        await self._session.flush()
+        return result.rowcount or 0
+
     async def create(
         self,
         job: AnalysisJob,

@@ -1380,26 +1380,13 @@ class AIJobs:
 
     async def request_cancellation(
         self,
-        attempt_id: UUID,
+        session_id: UUID,
         now: datetime,
         *,
         uow: UnitOfWork | None = None,
-    ) -> AnalysisJob | None:
+    ) -> int:
         target_uow = uow or self._uow
-        job = await target_uow.jobs.get_by_attempt_id(attempt_id)
-        if job is None:
-            return None
-        job.cancel_requested = True
-        job.updated_at = now
-        if job.status not in {
-            AnalysisJobStatus.COMPLETED,
-            AnalysisJobStatus.FAILED,
-            AnalysisJobStatus.CANCELLED,
-        }:
-            job.status = AnalysisJobStatus.CANCELLED
-            job.completed_at = now
-        await target_uow.jobs.update(job)
-        return job
+        return await target_uow.jobs.cancel_nonterminal_by_session_id(session_id, now)
 
     async def dispatch(
         self,

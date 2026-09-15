@@ -1,4 +1,5 @@
 import asyncio
+from dataclasses import replace
 from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID, uuid4
@@ -325,6 +326,32 @@ async def test_cancelling_active_session_transactionally_sets_cancel_requested_o
     assert job.status == AnalysisJobStatus.CANCELLED
     assert job.completed_at is not None
     assert uow.commit_count == 1
+
+
+@pytest.mark.asyncio
+async def test_cancelling_session_also_cancels_queued_report_job() -> None:
+    uow, session, manifest, attempt, job, workflow, ai_jobs, actor_id = _setup_environment()
+    report_job = replace(
+        job,
+        id=uuid4(),
+        job_type="generate_report",
+        status=AnalysisJobStatus.QUEUED,
+        last_update_sequence=0,
+        cancel_requested=False,
+        started_at=None,
+        completed_at=None,
+    )
+    uow.jobs.jobs[report_job.id] = report_job
+
+    await workflow.cancel(
+        session_id=session.id,
+        actor_id=actor_id,
+        reason="User requested cancellation",
+    )
+
+    assert report_job.cancel_requested is True
+    assert report_job.status == AnalysisJobStatus.CANCELLED
+    assert report_job.completed_at is not None
 
 
 @pytest.mark.asyncio

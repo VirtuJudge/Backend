@@ -42,7 +42,7 @@ class FakeAnalysisJobRepository(AnalysisJobRepository):
 
     async def get_by_attempt_id(self, attempt_id: UUID) -> AnalysisJob | None:
         for job in self.jobs.values():
-            if job.attempt_id == attempt_id:
+            if job.attempt_id == attempt_id and job.job_type == "analyze_session":
                 return job
         return None
 
@@ -65,6 +65,22 @@ class FakeAnalysisJobRepository(AnalysisJobRepository):
             key=lambda job: (job.completed_at or job.created_at, job.id),
             default=None,
         )
+
+    async def cancel_nonterminal_by_session_id(self, session_id: UUID, now: datetime) -> int:
+        cancelled = 0
+        for job in self.jobs.values():
+            if job.practice_session_id != session_id or job.status in {
+                AnalysisJobStatus.COMPLETED,
+                AnalysisJobStatus.FAILED,
+                AnalysisJobStatus.CANCELLED,
+            }:
+                continue
+            job.status = AnalysisJobStatus.CANCELLED
+            job.cancel_requested = True
+            job.completed_at = job.completed_at or now
+            job.updated_at = now
+            cancelled += 1
+        return cancelled
 
     async def create(self, job: AnalysisJob) -> AnalysisJob:
         self.jobs[job.id] = job
