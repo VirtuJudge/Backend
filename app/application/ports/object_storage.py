@@ -32,6 +32,10 @@ class ObjectStoragePort(ABC):
         pass
 
     @abstractmethod
+    async def get_object(self, storage_key: str, max_bytes: int) -> bytes:
+        pass
+
+    @abstractmethod
     async def delete_object(self, storage_key: str) -> None:
         pass
 

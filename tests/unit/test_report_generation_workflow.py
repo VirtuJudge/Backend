@@ -212,11 +212,19 @@ def _setup_report_pipeline() -> tuple[
     notifications = AsyncMock()
     notifications.publish = AsyncMock()
 
+    storage = FakeObjectStorage()
+    artifact_prefix = f"ai/session/{session.id}/answers/{answer.id}"
+    storage.objects[f"{artifact_prefix}/transcript.json"] = json.dumps(
+        {"transcript": {"text": "We will win our first customers through partners."}}
+    ).encode()
+    storage.objects[f"{artifact_prefix}/assessment.json"] = json.dumps(
+        {"assessment": {"text": "Specific go-to-market plan.", "evidence_ids": ["ev_01"]}}
+    ).encode()
     service = AIJobs(
         uow,
         queue=FakeAIJobQueue(),
         notifications=notifications,
-        storage=FakeObjectStorage(),
+        storage=storage,
     )
     return service, uow, session, attempt, job, round_
 
@@ -350,12 +358,15 @@ async def test_report_job_uploads_qa_artifact_before_queueing_with_matching_chec
                 "question_id": str(uow.qa.list_questions.return_value[0].id),
                 "status": "submitted",
                 "submitted_at": NOW.isoformat(),
+                "transcript": "We will win our first customers through partners.",
                 "transcript_artifact_id": "transcript_01",
             }
         ],
         "assessments": [
             {
                 "assessment_artifact_id": "assessment_01",
+                "assessment_text": "Specific go-to-market plan.",
+                "evidence_ids": ["ev_01"],
                 "question_id": str(uow.qa.list_questions.return_value[0].id),
             }
         ],
