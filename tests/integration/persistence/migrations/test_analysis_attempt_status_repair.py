@@ -1,18 +1,15 @@
 import importlib.util
 from pathlib import Path
-from types import SimpleNamespace
+from types import ModuleType, SimpleNamespace
 from unittest.mock import MagicMock, patch
 
 ROOT = Path(__file__).resolve().parents[4]
 MIGRATION_PATH = (
-    ROOT
-    / "migrations"
-    / "versions"
-    / "a4f6c8e1d2b3_repair_analysis_attempt_status_enum.py"
+    ROOT / "migrations" / "versions" / "a4f6c8e1d2b3_repair_analysis_attempt_status_enum.py"
 )
 
 
-def _migration_module():
+def _migration_module() -> ModuleType:
     spec = importlib.util.spec_from_file_location("analysis_attempt_status_repair", MIGRATION_PATH)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
