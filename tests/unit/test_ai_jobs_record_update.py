@@ -1,7 +1,9 @@
+import hashlib
+import json
 from datetime import UTC, datetime
 from typing import Any, Literal, cast
 from unittest.mock import AsyncMock, MagicMock
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_DNS, UUID, uuid4, uuid5
 
 import pytest
 
@@ -46,6 +48,7 @@ from app.domain.session_workflow.exceptions import (
 from tests.support.fake_analysis_attempt_repository import FakeAnalysisAttemptRepository
 from tests.support.fake_analysis_job_repository import FakeAnalysisJobRepository, FakeUnitOfWork
 from tests.support.fake_session_notifications import FakeSessionNotifications
+from tests.support.fakes import FakeObjectStorage
 
 
 def _valid_completed_session_payload() -> SessionAnalysisCompletedPayload:
@@ -1463,11 +1466,72 @@ async def test_completed_valid_generate_report() -> None:
         last_update_sequence=1,
         job_type="generate_report",
     )
+    member_feedback_user_ids = ["user_001", "user_002"]
+    components = [
+        {
+            "dimension": "pitch_content",
+            "status": "scored",
+            "configured_weight": 0.8,
+            "normalized_score": 0.7,
+            "display_score": 70,
+            "label": "good",
+            "effective_weight": 0.8,
+            "evidence_ids": ["ev_pitch"],
+            "rationale": "Grounded pitch assessment.",
+            "limitation_code": None,
+        },
+        {
+            "dimension": "qa_quality",
+            "status": "scored",
+            "configured_weight": 0.2,
+            "normalized_score": 0.8,
+            "display_score": 80,
+            "label": "strong",
+            "effective_weight": 0.2,
+            "evidence_ids": ["ev_qa"],
+            "rationale": "Grounded Q&A assessment.",
+            "limitation_code": None,
+        },
+    ]
+    evaluation_bytes = json.dumps(
+        {
+            "id": "evaluation_001",
+            "schema_version": 1,
+            "rubric": {"rubric_id": "startup_pitch", "version": 1},
+            "overall_score": 0.72,
+            "components": components,
+            "findings": [],
+            "team_feedback": {
+                "summary": "Grounded team feedback.",
+                "strengths": [],
+                "improvements": [],
+                "score_components": components,
+                "limitations": [],
+            },
+            "member_feedback": [
+                {
+                    "user_id": str(uuid5(NAMESPACE_DNS, user_id)),
+                    "display_name": user_id,
+                    "speaker_labels": [f"SPEAKER_{index:02d}"],
+                    "summary": "Grounded individual feedback.",
+                    "strengths": [],
+                    "improvements": [],
+                    "delivery_components": [],
+                }
+                for index, user_id in enumerate(member_feedback_user_ids)
+            ],
+            "limitations": [],
+            "reproducibility": {},
+        }
+    ).encode()
+    storage = FakeObjectStorage()
+    storage.objects["artifacts/evaluation.json"] = evaluation_bytes
+    service = AIJobs(uow, storage=storage)
     payload = ReportCompletedPayload(
         evaluation_artifact=ArtifactRef(
             artifact_id="01JEXAMPLE0000000000000071",
             object_key="artifacts/evaluation.json",
-            checksum="sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            checksum=f"sha256:{hashlib.sha256(evaluation_bytes).hexdigest()}",
             schema_version=1,
         ),
         report_artifact=ArtifactRef(
@@ -1476,7 +1540,7 @@ async def test_completed_valid_generate_report() -> None:
             checksum="sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
             schema_version=1,
         ),
-        member_feedback_user_ids=["user_001", "user_002"],
+        member_feedback_user_ids=member_feedback_user_ids,
         limitations=[],
     )
     update = _make_update(

@@ -52,9 +52,7 @@ class FakeAnalysisJobRepository(AnalysisJobRepository):
                 return job
         return None
 
-    async def get_completed_report_by_session_id(
-        self, session_id: UUID
-    ) -> AnalysisJob | None:
+    async def get_completed_report_by_session_id(self, session_id: UUID) -> AnalysisJob | None:
         completed = [
             job
             for job in self.jobs.values()
