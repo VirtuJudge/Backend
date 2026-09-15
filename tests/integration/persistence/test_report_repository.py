@@ -1,9 +1,13 @@
+import hashlib
+import json
 from datetime import UTC, datetime
 from uuid import uuid4
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.application.ai_jobs import AIJobs
+from app.application.session_workflow import SessionWorkflow
 from app.domain.session_workflow.entities.report import (
     Evaluation,
     FeedbackSection,
@@ -14,7 +18,7 @@ from app.domain.session_workflow.entities.report import (
     ScoreComponent,
 )
 from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
-from app.domain.session_workflow.enums.qa import QARoundState
+from app.domain.session_workflow.enums.qa import QARoundState, QuestionKind, QuestionState
 from app.domain.session_workflow.enums.report import (
     FindingKind,
     ReportExportFormat,
@@ -27,6 +31,7 @@ from app.infrastructure.persistence.configurations import (
     AssetModel,
     AssetVersionModel,
     ProjectModel,
+    TeamMemberModel,
     TeamModel,
     UserModel,
 )
@@ -34,11 +39,14 @@ from app.infrastructure.persistence.configurations.session_workflow import (
     AnalysisAttemptModel,
     PracticeSessionModel,
     QARoundModel,
+    QuestionModel,
     SessionManifestModel,
 )
 from app.infrastructure.repositories.session_workflow.sqlalchemy_unit_of_work import (
     SqlAlchemyUnitOfWork,
 )
+from tests.support.fake_ai_job_queue import FakeAIJobQueue
+from tests.support.fakes import FakeObjectStorage
 
 
 async def _seed_session_ancestry(
@@ -69,6 +77,15 @@ async def _seed_session_ancestry(
             name="Test Project",
             description="Test Description",
             created_at=now,
+        )
+    )
+    session.add(
+        TeamMemberModel(
+            id=uuid4(),
+            team_id=team_id,
+            user_id=user_id,
+            role="owner",
+            joined_at=now,
         )
     )
     await session.flush()
@@ -147,6 +164,63 @@ async def _seed_session_ancestry(
     await session.flush()
 
     return prac_session, attempt, qa_round
+
+
+@pytest.mark.anyio
+async def test_completing_qa_round_uploads_artifact_before_report_job_is_queued(
+    async_db_session: AsyncSession,
+) -> None:
+    uow = SqlAlchemyUnitOfWork(async_db_session)
+    practice_session, attempt, qa_round = await _seed_session_ancestry(async_db_session)
+    now = datetime.now(UTC)
+    question_id = uuid4()
+
+    async_db_session.add(
+        QuestionModel(
+            id=question_id,
+            qa_round_id=qa_round.id,
+            practice_session_id=practice_session.id,
+            kind=QuestionKind.PRIMARY,
+            position=1,
+            text="How will the team acquire customers?",
+            reason="Tests the go-to-market plan.",
+            rubric_dimension="business_reasoning",
+            evidence_ids=["ev_01"],
+            state=QuestionState.ACTIVE,
+            created_at=now,
+        )
+    )
+    await async_db_session.flush()
+    practice_session.status = SessionStatus.QUESTIONS_IN_PROGRESS
+    qa_round.state = QARoundState.IN_PROGRESS
+    qa_round.current_question_id = question_id
+    await async_db_session.flush()
+
+    storage = FakeObjectStorage()
+    queue = FakeAIJobQueue()
+    service = AIJobs(uow, queue=queue, storage=storage)
+    workflow = SessionWorkflow(uow, ai_jobs=service, queue=queue)
+    await workflow.skip_answer(
+        question_id=question_id,
+        actor_id=practice_session.created_by,
+        reason="Need more research.",
+        idempotency_key="complete-qa-round",
+    )
+
+    expected_key = (
+        f"projects/{practice_session.project_id}/sessions/{practice_session.id}/attempts/"
+        f"{attempt.attempt_number}/qa.json"
+    )
+    uploaded = storage.objects[expected_key]
+    uploaded_qa = json.loads(uploaded)
+    assert uploaded_qa["qa_round_id"] == str(qa_round.id)
+    assert uploaded_qa["questions"][0]["id"] == str(question_id)
+    assert uploaded_qa["answers"][0]["status"] == "skipped"
+    queued = queue.last_message
+    assert queued is not None
+    queued_artifact = queued.model_dump()["payload"]["qa_artifact"]
+    assert queued_artifact["object_key"] == expected_key
+    assert queued_artifact["checksum"] == f"sha256:{hashlib.sha256(uploaded).hexdigest()}"
 
 
 @pytest.mark.anyio

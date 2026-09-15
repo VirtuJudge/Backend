@@ -22,6 +22,7 @@ from app.domain.session_workflow.exceptions import (
     UnauthorizedSessionAction,
 )
 from tests.support.fake_ai_job_queue import FakeAIJobQueue
+from tests.support.fakes import FakeObjectStorage
 
 NOW = datetime(2026, 9, 14, tzinfo=UTC)
 
@@ -88,6 +89,7 @@ def _setup() -> tuple[SessionWorkflow, MagicMock, QARound, list[Question], Pract
     uow.qa.get_answer_for_update = AsyncMock(return_value=None)
     uow.qa.get_answer_by_question = AsyncMock(return_value=None)
     uow.qa.list_questions = AsyncMock(return_value=questions)
+    uow.qa.list_answers = AsyncMock(return_value=[])
     uow.qa.create_answer = AsyncMock()
     uow.qa.update_answer = AsyncMock()
     uow.qa.update_question = AsyncMock()
@@ -103,7 +105,8 @@ def _setup() -> tuple[SessionWorkflow, MagicMock, QARound, list[Question], Pract
     uow.manifests.get_by_session_id = AsyncMock(return_value=None)
     uow.jobs.get_by_attempt_id = AsyncMock(return_value=None)
     queue = FakeAIJobQueue()
-    return SessionWorkflow(uow, queue=queue), uow, round_, questions, session
+    workflow = SessionWorkflow(uow, queue=queue, storage=FakeObjectStorage())
+    return workflow, uow, round_, questions, session
 
 
 @pytest.mark.asyncio
