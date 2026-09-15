@@ -936,12 +936,7 @@ class AIJobs:
                     mapped_user_ids.add(m.user_id)
 
         for uid_str in payload.member_feedback_user_ids:
-            try:
-                mapped_user_ids.add(UUID(str(uid_str)))
-            except (ValueError, TypeError):
-                import uuid as _uuid
-
-                mapped_user_ids.add(_uuid.uuid5(_uuid.NAMESPACE_DNS, str(uid_str)))
+            mapped_user_ids.add(_artifact_uuid(uid_str))
 
         if self._storage is None:
             raise CompletedResultValidationError("Evaluation artifact storage is not configured.")
