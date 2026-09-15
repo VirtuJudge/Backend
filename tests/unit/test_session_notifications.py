@@ -233,6 +233,8 @@ def test_map_to_public_stage_recognized_public_stages() -> None:
     assert map_to_public_stage("questions") == PublicStage.QUESTIONS
     assert map_to_public_stage("answers") == PublicStage.ANSWERS
     assert map_to_public_stage("report") == PublicStage.REPORT
+    assert map_to_public_stage("reporting") == PublicStage.REPORT
+    assert map_to_public_stage("synthesis") == PublicStage.REPORT
     assert map_to_public_stage(StageType.REPORT) == PublicStage.REPORT
     assert map_to_public_stage("processing") == PublicStage.PROCESSING
 

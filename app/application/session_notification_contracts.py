@@ -82,6 +82,8 @@ INTERNAL_TO_PUBLIC_STAGE_MAP: dict[str, PublicStage] = {
     "scoring": PublicStage.PROCESSING,
     "diarization": PublicStage.DIARIZATION,
     "report": PublicStage.REPORT,
+    "reporting": PublicStage.REPORT,
+    "synthesis": PublicStage.REPORT,
 }
 
 

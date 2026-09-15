@@ -97,6 +97,7 @@ class Report:
     score_components: list[ScoreComponent]
     team_feedback: FeedbackSection
     member_feedback: list[MemberFeedback]
+    markdown: str = ""
     transcript_timeline: list[dict[str, Any]] = field(default_factory=list)
     document_alignment: list[dict[str, Any]] = field(default_factory=list)
     qa_review: list[dict[str, Any]] = field(default_factory=list)

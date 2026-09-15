@@ -73,6 +73,7 @@ from app.domain.session_workflow.exceptions import (
     CompletedResultValidationError,
     InvalidAttemptState,
     InvalidJobStatusTransition,
+    ReportValidationError,
     StaleEntityVersion,
 )
 from app.domain.session_workflow.scoring import validate_evaluation_and_report
@@ -151,6 +152,7 @@ DEFAULT_REQUESTED_CAPABILITIES: list[str] = [
 ]
 
 MAX_EVALUATION_ARTIFACT_BYTES = 1024 * 1024
+MAX_REPORT_MARKDOWN_BYTES = 1024 * 1024
 
 
 def _artifact_uuid(value: Any) -> UUID:
@@ -648,6 +650,11 @@ class AIJobs:
         )
 
         mappings = await self._uow.speaker_mappings.get_by_attempt_id(attempt.id)
+        manifest = await self._uow.manifests.get_by_session_id(session.id)
+        rubric = RubricRef(
+            rubric_id=(manifest.rubric_id if manifest and manifest.rubric_id else "startup_pitch"),
+            version=(manifest.rubric_version if manifest and manifest.rubric_version else 1),
+        )
         contract_mappings: list[SpeakerMappingContract] = [
             SpeakerMappingContract(
                 speaker_label=m.speaker_label,
@@ -674,6 +681,7 @@ class AIJobs:
                 report_id=str(report_id),
                 analysis_artifact=analysis_art,
                 qa_artifact=qa_art,
+                rubric=rubric,
                 speaker_mappings=contract_mappings,
             ),
         )
@@ -975,9 +983,21 @@ class AIJobs:
                 reproducibility=dict(artifact.get("reproducibility", {})),
                 created_at=occurred_at,
             )
+
+            raw_markdown = await self._storage.get_object(
+                payload.report_artifact.object_key,
+                MAX_REPORT_MARKDOWN_BYTES,
+            )
+            expected_report_checksum = payload.report_artifact.checksum.lower()
+            actual_report_checksum = f"sha256:{hashlib.sha256(raw_markdown).hexdigest()}"
+            if actual_report_checksum != expected_report_checksum:
+                raise ValueError("report checksum mismatch")
+            markdown = raw_markdown.decode("utf-8")
+            if not markdown.strip():
+                raise ValueError("report markdown is empty")
         except Exception as exc:
             raise CompletedResultValidationError(
-                "Evaluation artifact could not be validated."
+                "Report artifacts could not be validated."
             ) from exc
 
         report_id = uuid4()
@@ -1010,6 +1030,7 @@ class AIJobs:
             score_components=components,
             team_feedback=team_feedback,
             member_feedback=member_feedbacks,
+            markdown=markdown,
             recommendations=recommendations,
             limitations=evaluation.limitations,
             reproducibility=evaluation.reproducibility,
@@ -1017,13 +1038,18 @@ class AIJobs:
             updated_at=occurred_at,
         )
 
-        validate_evaluation_and_report(
-            evaluation=evaluation,
-            report=report,
-            expected_rubric_id=rubric_id,
-            expected_rubric_version=rubric_version,
-            mapped_user_ids=mapped_user_ids,
-        )
+        try:
+            validate_evaluation_and_report(
+                evaluation=evaluation,
+                report=report,
+                expected_rubric_id=rubric_id,
+                expected_rubric_version=rubric_version,
+                mapped_user_ids=mapped_user_ids,
+            )
+        except ReportValidationError as exc:
+            raise CompletedResultValidationError(
+                "Report artifacts failed semantic validation."
+            ) from exc
 
         if reports_repo is not None:
             await reports_repo.save_evaluation(evaluation)
@@ -1299,6 +1325,12 @@ class AIJobs:
                         trace_id=update.trace_id,
                     )
                 elif isinstance(validated_payload, ReportCompletedPayload):
+                    evaluation, report = await self._save_completed_report_and_evaluation(
+                        job=job,
+                        payload=validated_payload,
+                        ancestry=ancestry,
+                        occurred_at=occurred_at,
+                    )
                     if ancestry is not None:
                         session_to_update = ancestry.session
                         initial_session_version = session_to_update.version
@@ -1308,12 +1340,6 @@ class AIJobs:
                             session_to_update.status = SessionStatus.COMPLETED
                             session_to_update.version += 1
                         session_to_update.updated_at = occurred_at
-                    evaluation, report = await self._save_completed_report_and_evaluation(
-                        job=job,
-                        payload=validated_payload,
-                        ancestry=ancestry,
-                        occurred_at=occurred_at,
-                    )
                     completion_notification = PendingSessionNotification(
                         event_name=NotificationEventName.REPORT_READY,
                         practice_session_id=str(job.practice_session_id),

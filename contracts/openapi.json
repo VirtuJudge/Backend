@@ -1838,6 +1838,11 @@
             "title": "Limitations",
             "type": "array"
           },
+          "markdown": {
+            "default": "",
+            "title": "Markdown",
+            "type": "string"
+          },
           "member_feedback": {
             "items": {
               "$ref": "#/components/schemas/MemberFeedbackResponse"

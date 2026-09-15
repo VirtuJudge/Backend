@@ -377,11 +377,11 @@ class PyPdfReportGenerator(PDFGeneratorPort):
 
         for cmds in pages_content:
             page = writer.add_blank_page(width=self.PAGE_WIDTH, height=self.PAGE_HEIGHT)
-            page[NameObject("/Resources")] = resources
+            page[NameObject("/Resources")] = writer._add_object(resources)
             stream = DecodedStreamObject()
             content_str = " \n".join(cmds)
             stream.set_data(content_str.encode("latin-1"))
-            page[NameObject("/Contents")] = stream
+            page[NameObject("/Contents")] = writer._add_object(stream)
 
         output_buffer = io.BytesIO()
         writer.write(output_buffer)

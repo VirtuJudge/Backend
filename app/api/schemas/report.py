@@ -95,6 +95,7 @@ class ReportPayloadResponse(BaseModel):
     score_components: list[ScoreComponentResponse] = Field(default_factory=list)
     team_feedback: FeedbackSectionResponse
     member_feedback: list[MemberFeedbackResponse] = Field(default_factory=list)
+    markdown: str = ""
     transcript_timeline: list[dict[str, Any]] = Field(default_factory=list)
     document_alignment: list[dict[str, Any]] = Field(default_factory=list)
     qa_review: list[dict[str, Any]] = Field(default_factory=list)

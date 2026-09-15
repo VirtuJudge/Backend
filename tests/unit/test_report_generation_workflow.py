@@ -322,6 +322,9 @@ async def test_record_update_report_completed_persists_canonical_report_and_eval
     )
     evaluation_bytes = _evaluation_artifact(str(presenter_id))
     storage.objects[evaluation_key] = evaluation_bytes
+    markdown_bytes = b"# Final Evaluation\n\nThe canonical report is ready.\n"
+    report_key = f"projects/{session.project_id}/sessions/{session.id}/attempts/1/report.md"
+    storage.objects[report_key] = markdown_bytes
 
     payload = ReportCompletedPayload(
         evaluation_artifact=ArtifactRef(
@@ -332,8 +335,8 @@ async def test_record_update_report_completed_persists_canonical_report_and_eval
         ),
         report_artifact=ArtifactRef(
             artifact_id="01JEXAMPLE0000000000000072",
-            object_key=f"projects/{session.project_id}/sessions/{session.id}/attempts/1/report.json",
-            checksum="sha256:" + "b" * 64,
+            object_key=report_key,
+            checksum=f"sha256:{hashlib.sha256(markdown_bytes).hexdigest()}",
             schema_version=1,
         ),
         member_feedback_user_ids=[str(presenter_id)],
@@ -367,6 +370,7 @@ async def test_record_update_report_completed_persists_canonical_report_and_eval
     assert stored_report.title == "Pitch Session — Final Evaluation Report"
     assert len(stored_report.score_components) == 6
     assert stored_report.team_feedback.summary.startswith("The pitch has a clear phased roadmap")
+    assert stored_report.markdown == markdown_bytes.decode()
 
     # Check 20% Q&A weight constraint
     qa_component = next(
@@ -402,6 +406,9 @@ async def test_rebuild_completed_report_replaces_existing_report_from_artifact()
     evaluation_bytes = _evaluation_artifact(str(presenter_id))
     evaluation_key = f"ai/session/{session.id}/evaluation.json"
     storage.objects[evaluation_key] = evaluation_bytes
+    markdown_bytes = b"# Rebuilt Evaluation\n\nThe report was recovered from storage.\n"
+    report_key = f"ai/session/{session.id}/report.md"
+    storage.objects[report_key] = markdown_bytes
     job.status = AnalysisJobStatus.COMPLETED
     job.completed_at = NOW
     job.completed_result = ReportCompletedPayload(
@@ -413,8 +420,8 @@ async def test_rebuild_completed_report_replaces_existing_report_from_artifact()
         ),
         report_artifact=ArtifactRef(
             artifact_id="01JEXAMPLE0000000000000072",
-            object_key=f"ai/session/{session.id}/report.json",
-            checksum="sha256:" + "b" * 64,
+            object_key=report_key,
+            checksum=f"sha256:{hashlib.sha256(markdown_bytes).hexdigest()}",
             schema_version=1,
         ),
         member_feedback_user_ids=[str(presenter_id)],
@@ -426,6 +433,7 @@ async def test_rebuild_completed_report_replaces_existing_report_from_artifact()
 
     assert rebuilt is report
     assert rebuilt.overall_score == 0.6251
+    assert rebuilt.markdown == markdown_bytes.decode()
     assert uow.commit_count == 1
 
 
@@ -474,6 +482,7 @@ async def test_report_job_uploads_qa_artifact_before_queueing_with_matching_chec
 
     assert payload["qa_artifact"]["object_key"] == expected_key
     assert payload["qa_artifact"]["checksum"] == f"sha256:{hashlib.sha256(uploaded).hexdigest()}"
+    assert payload["rubric"] == {"rubric_id": "startup_pitch", "version": 1}
     assert json.loads(uploaded) == {
         "analysis_attempt": attempt.attempt_number,
         "answers": [
