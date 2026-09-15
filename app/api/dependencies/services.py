@@ -131,7 +131,8 @@ def get_ai_jobs(
 ) -> AIJobs:
     uow = request.app.state.get_unit_of_work_repository_factory(session)
     queue = getattr(request.app.state, "ai_job_queue", None)
+    storage = getattr(request.app.state, "object_storage", None)
     factory = getattr(request.app.state, "ai_jobs_factory", None)
     if factory is not None:
         return cast(AIJobs, factory(uow, queue))
-    return AIJobs(uow, queue=queue)
+    return AIJobs(uow, queue=queue, storage=storage)

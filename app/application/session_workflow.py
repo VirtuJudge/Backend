@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 from app.application.ai_jobs import AIJobs
 from app.application.ports.ai_job_queue import AIJobQueuePort
+from app.application.ports.object_storage import ObjectStoragePort
 from app.application.ports.pdf_generator import PDFGeneratorPort
 from app.application.ports.session_notification import (
     PendingSessionNotification,
@@ -78,6 +79,7 @@ class SessionWorkflow:
         diarization_reader: DiarizationResultReader | None = None,
         queue: AIJobQueuePort | None = None,
         notifications: SessionNotificationPort | None = None,
+        storage: ObjectStoragePort | None = None,
         trace_id: str = "unknown",
         pdf_generator: PDFGeneratorPort | None = None,
     ) -> None:
@@ -87,7 +89,7 @@ class SessionWorkflow:
             if queue is not None and getattr(self._ai_jobs, "queue", None) is None:
                 self._ai_jobs.queue = queue
         else:
-            self._ai_jobs = AIJobs(uow, queue=queue)
+            self._ai_jobs = AIJobs(uow, queue=queue, storage=storage)
         self._diarization_reader = diarization_reader or NullDiarizationResultReader()
         self._notifications = notifications
         self._trace_id = trace_id

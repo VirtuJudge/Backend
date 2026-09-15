@@ -1,3 +1,5 @@
+import hashlib
+import json
 from datetime import UTC, datetime
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
@@ -11,21 +13,27 @@ from app.application.ai_job_contracts import (
     ReportCompletedPayload,
 )
 from app.application.ai_jobs import AIJobs
+from app.domain.asset import StorageUnavailable
 from app.domain.session_workflow.entities.analysis_attempt import AnalysisAttempt
 from app.domain.session_workflow.entities.analysis_job import (
     AIJobAncestryContext,
     AnalysisJob,
 )
-from app.domain.session_workflow.entities.qa_round import QARound
+from app.domain.session_workflow.entities.qa_round import Answer, QARound, Question
 from app.domain.session_workflow.entities.session_manifest import SessionManifest
 from app.domain.session_workflow.entities.session_practice import PracticeSession
 from app.domain.session_workflow.entities.speaker_mapping import SpeakerMapping
 from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
 from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
-from app.domain.session_workflow.enums.qa import QARoundState
+from app.domain.session_workflow.enums.qa import (
+    AnswerStatus,
+    QARoundState,
+    QuestionKind,
+    QuestionState,
+)
 from app.domain.session_workflow.enums.session_status import SessionStatus
 from app.domain.session_workflow.exceptions import CompletedResultValidationError
-from tests.support import FakeUnitOfWork
+from tests.support import FakeObjectStorage, FakeUnitOfWork
 from tests.support.fake_ai_job_queue import FakeAIJobQueue
 from tests.support.fake_analysis_attempt_repository import FakeAnalysisAttemptRepository
 from tests.support.fake_analysis_job_repository import FakeAnalysisJobRepository
@@ -114,6 +122,34 @@ def _setup_report_pipeline() -> tuple[
         created_at=NOW,
         updated_at=NOW,
     )
+    question = Question(
+        id=uuid4(),
+        qa_round_id=round_id,
+        practice_session_id=session_id,
+        kind=QuestionKind.PRIMARY,
+        position=1,
+        text="How will you acquire your first customers?",
+        reason="Tests the go-to-market plan.",
+        rubric_dimension="business_reasoning",
+        evidence_ids=["ev_01"],
+        parent_answer_id=None,
+        state=QuestionState.ANSWERED,
+        created_at=NOW,
+    )
+    answer = Answer(
+        id=uuid4(),
+        qa_round_id=round_id,
+        question_id=question.id,
+        answered_by=actor_id,
+        status=AnswerStatus.SUBMITTED,
+        audio_asset_version_id=uuid4(),
+        duration_ms=42_000,
+        transcript_artifact_id="transcript_01",
+        assessment_artifact_id="assessment_01",
+        submitted_at=NOW,
+        created_at=NOW,
+        updated_at=NOW,
+    )
 
     job = AnalysisJob(
         id=job_id,
@@ -168,13 +204,28 @@ def _setup_report_pipeline() -> tuple[
     uow.manifests = MagicMock()
     uow.manifests.get_by_session_id = AsyncMock(return_value=manifest)
     uow.qa.get_round_by_session = AsyncMock(return_value=round_)
+    uow.qa.list_questions = AsyncMock(return_value=[question])
+    uow.qa.list_answers = AsyncMock(return_value=[answer])
     uow.speaker_mappings = MagicMock()
     uow.speaker_mappings.get_by_attempt_id = AsyncMock(return_value=[speaker_mapping])
 
     notifications = AsyncMock()
     notifications.publish = AsyncMock()
 
-    service = AIJobs(uow, queue=FakeAIJobQueue(), notifications=notifications)
+    storage = FakeObjectStorage()
+    artifact_prefix = f"ai/session/{session.id}/answers/{answer.id}"
+    storage.objects[f"{artifact_prefix}/transcript.json"] = json.dumps(
+        {"transcript": {"text": "We will win our first customers through partners."}}
+    ).encode()
+    storage.objects[f"{artifact_prefix}/assessment.json"] = json.dumps(
+        {"assessment": {"text": "Specific go-to-market plan.", "evidence_ids": ["ev_01"]}}
+    ).encode()
+    service = AIJobs(
+        uow,
+        queue=FakeAIJobQueue(),
+        notifications=notifications,
+        storage=storage,
+    )
     return service, uow, session, attempt, job, round_
 
 
@@ -268,6 +319,113 @@ async def test_report_job_can_start_after_session_analysis_completed() -> None:
     assert result is not None
     assert result.status is AnalysisJobStatus.RUNNING
     assert attempt.status is AnalysisAttemptStatus.RUNNING
+
+
+@pytest.mark.asyncio
+async def test_report_job_uploads_qa_artifact_before_queueing_with_matching_checksum() -> None:
+    service, uow, session, attempt, _job, round_ = _setup_report_pipeline()
+    storage = service._storage
+    assert isinstance(storage, FakeObjectStorage)
+
+    report_job = await service.create_report_job(
+        session=session,
+        round_=round_,
+        attempt=attempt,
+        now=NOW,
+    )
+
+    expected_key = (
+        f"projects/{session.project_id}/sessions/{session.id}/attempts/"
+        f"{attempt.attempt_number}/qa.json"
+    )
+    uploaded = storage.objects[expected_key]
+    assert report_job.payload is not None
+    payload = report_job.payload["payload"]
+
+    assert payload["qa_artifact"]["object_key"] == expected_key
+    assert payload["qa_artifact"]["checksum"] == f"sha256:{hashlib.sha256(uploaded).hexdigest()}"
+    assert json.loads(uploaded) == {
+        "analysis_attempt": attempt.attempt_number,
+        "answers": [
+            {
+                "answered_by": str(uow.qa.list_answers.return_value[0].answered_by),
+                "assessment_artifact_id": "assessment_01",
+                "audio_asset_version_id": str(
+                    uow.qa.list_answers.return_value[0].audio_asset_version_id
+                ),
+                "duration_ms": 42_000,
+                "id": str(uow.qa.list_answers.return_value[0].id),
+                "question_id": str(uow.qa.list_questions.return_value[0].id),
+                "status": "submitted",
+                "submitted_at": NOW.isoformat(),
+                "transcript": "We will win our first customers through partners.",
+                "transcript_artifact_id": "transcript_01",
+            }
+        ],
+        "assessments": [
+            {
+                "assessment_artifact_id": "assessment_01",
+                "assessment_text": "Specific go-to-market plan.",
+                "evidence_ids": ["ev_01"],
+                "question_id": str(uow.qa.list_questions.return_value[0].id),
+            }
+        ],
+        "artifact_id": payload["qa_artifact"]["artifact_id"],
+        "metadata": {
+            "completed_at": NOW.isoformat(),
+            "question_count": 1,
+            "round_state": "completed",
+        },
+        "practice_session_id": str(session.id),
+        "qa_round_id": str(round_.id),
+        "questions": [
+            {
+                "answer_id": str(uow.qa.list_answers.return_value[0].id),
+                "evidence_ids": ["ev_01"],
+                "id": str(uow.qa.list_questions.return_value[0].id),
+                "kind": "primary",
+                "parent_answer_id": None,
+                "position": 1,
+                "reason": "Tests the go-to-market plan.",
+                "rubric_dimension": "business_reasoning",
+                "state": "answered",
+                "text": "How will you acquire your first customers?",
+            }
+        ],
+        "schema_version": 1,
+    }
+
+    assert await service.dispatch(report_job, now=NOW) is True
+    queue = service.queue
+    assert isinstance(queue, FakeAIJobQueue)
+    queued = queue.last_message
+    assert queued is not None
+    queued_artifact = queued.model_dump()["payload"]["qa_artifact"]
+    assert queued_artifact["object_key"] == expected_key
+    assert queued_artifact["checksum"] == f"sha256:{hashlib.sha256(uploaded).hexdigest()}"
+
+
+@pytest.mark.asyncio
+async def test_report_job_does_not_dispatch_when_qa_artifact_upload_fails() -> None:
+    service, uow, session, attempt, _job, round_ = _setup_report_pipeline()
+    storage = service._storage
+    assert isinstance(storage, FakeObjectStorage)
+    storage.transient_failure = True
+    assert isinstance(uow.jobs, FakeAnalysisJobRepository)
+    existing_job_ids = set(uow.jobs.jobs)
+
+    with pytest.raises(StorageUnavailable):
+        await service.create_report_job(
+            session=session,
+            round_=round_,
+            attempt=attempt,
+            now=NOW,
+        )
+
+    assert set(uow.jobs.jobs) == existing_job_ids
+    queue = service.queue
+    assert isinstance(queue, FakeAIJobQueue)
+    assert queue.count == 0
 
 
 @pytest.mark.asyncio

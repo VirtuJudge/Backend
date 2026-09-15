@@ -212,6 +212,39 @@ class S3ObjectStorage(ObjectStoragePort):
                 transfer.result()
             raise
 
+    async def get_object(self, storage_key: str, max_bytes: int) -> bytes:
+        def _get_sync() -> bytes:
+            try:
+                response: dict[str, Any] = self.internal_client.get_object(
+                    Bucket=self.bucket, Key=storage_key
+                )
+            except botocore.exceptions.ClientError as err:
+                code = err.response.get("Error", {}).get("Code")
+                if code in ("NoSuchKey", "404", "NotFound"):
+                    raise StorageObjectNotFound("Object not found in storage") from err
+                raise StorageUnavailable("Storage service unavailable") from err
+            except (botocore.exceptions.BotoCoreError, OSError) as err:
+                raise StorageUnavailable("Failed to connect to storage service") from err
+
+            if int(response.get("ContentLength", 0)) > max_bytes:
+                raise AssetSizeLimitExceeded("Object size exceeds maximum allowed bytes")
+
+            body = response.get("Body")
+            try:
+                data = body.read(max_bytes + 1) if body is not None else b""
+            except (botocore.exceptions.BotoCoreError, OSError) as err:
+                raise StorageUnavailable("Storage read error") from err
+            finally:
+                if body is not None and hasattr(body, "close"):
+                    with contextlib.suppress(Exception):
+                        body.close()
+
+            if len(data) > max_bytes:
+                raise AssetSizeLimitExceeded("Object size exceeds maximum allowed bytes")
+            return data
+
+        return await asyncio.to_thread(_get_sync)
+
     async def delete_object(self, storage_key: str) -> None:
         def _delete_sync() -> None:
             try:

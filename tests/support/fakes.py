@@ -349,6 +349,17 @@ class FakeObjectStorage(ObjectStoragePort):
         )
         return len(data), hasher.hexdigest(), m_type
 
+    async def get_object(self, storage_key: str, max_bytes: int) -> bytes:
+        if self.transient_failure:
+            raise StorageUnavailable("Storage transient network timeout")
+        if storage_key not in self.objects:
+            raise StorageObjectNotFound("Key does not exist in storage")
+
+        data = self.objects[storage_key]
+        if len(data) > max_bytes:
+            raise AssetSizeLimitExceeded("Object size exceeds maximum limit")
+        return data
+
     async def delete_object(self, storage_key: str) -> None:
         if self.transient_failure:
             raise StorageUnavailable("Storage transient network timeout")

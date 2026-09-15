@@ -1,12 +1,13 @@
 import contextlib
 import hashlib
 import inspect
+import json
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from typing import Any, cast
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
 
 from app.application.ai_job_contracts import (
     AIJobQueueMessage,
@@ -32,6 +33,7 @@ from app.application.ports.ai_queue import (
     AIJobQueuePort,
     AIQueueTemporaryFailure,
 )
+from app.application.ports.object_storage import ObjectStoragePort
 from app.application.ports.session_notification import (
     PendingSessionNotification,
     SessionNotificationPort,
@@ -41,6 +43,7 @@ from app.application.session_notification_contracts import (
     NotificationEventName,
     map_to_public_stage,
 )
+from app.domain.asset import AssetSizeLimitExceeded, StorageObjectNotFound, StorageUnavailable
 from app.domain.session_workflow.entities.analysis_attempt import AnalysisAttempt
 from app.domain.session_workflow.entities.analysis_job import (
     AIJobAncestryContext,
@@ -193,16 +196,133 @@ def _build_asset_input(
     )
 
 
+_QA_SOURCE_ARTIFACT_MAX_BYTES = 1024 * 1024
+
+
+async def _load_answer_evidence(
+    storage: ObjectStoragePort,
+    session_id: UUID,
+    answer: Answer,
+) -> tuple[str | None, dict[str, Any]]:
+    if answer.status.value == "skipped":
+        return None, {}
+
+    artifact_prefix = f"ai/session/{session_id}/answers/{answer.id}"
+    try:
+        transcript_raw = await storage.get_object(
+            f"{artifact_prefix}/transcript.json", _QA_SOURCE_ARTIFACT_MAX_BYTES
+        )
+        assessment_raw = await storage.get_object(
+            f"{artifact_prefix}/assessment.json", _QA_SOURCE_ARTIFACT_MAX_BYTES
+        )
+        transcript_payload = json.loads(transcript_raw)
+        assessment_payload = json.loads(assessment_raw)
+    except (
+        AssetSizeLimitExceeded,
+        StorageObjectNotFound,
+        StorageUnavailable,
+        UnicodeDecodeError,
+        json.JSONDecodeError,
+    ) as exc:
+        raise StorageUnavailable("Answer artifacts are unavailable for Q&A creation") from exc
+
+    transcript = transcript_payload.get("transcript", {}).get("text")
+    assessment = assessment_payload.get("assessment")
+    if not isinstance(transcript, str) or not isinstance(assessment, dict):
+        raise StorageUnavailable("Answer artifacts are invalid for Q&A creation")
+    return transcript, assessment
+
+
+async def _serialize_qa_artifact(
+    *,
+    artifact_id: str,
+    session: PracticeSession,
+    round_: QARound,
+    attempt: AnalysisAttempt,
+    questions: list[Question],
+    answers: list[Answer],
+    storage: ObjectStoragePort,
+) -> bytes:
+    answer_by_question = {answer.question_id: answer for answer in answers}
+    evidence_by_answer = {
+        answer.id: await _load_answer_evidence(storage, session.id, answer)
+        for answer in sorted(answers, key=lambda item: (str(item.question_id), str(item.id)))
+    }
+    payload = {
+        "artifact_id": artifact_id,
+        "analysis_attempt": attempt.attempt_number,
+        "answers": [
+            {
+                "assessment_artifact_id": answer.assessment_artifact_id,
+                "audio_asset_version_id": str(answer.audio_asset_version_id)
+                if answer.audio_asset_version_id
+                else None,
+                "duration_ms": answer.duration_ms,
+                "id": str(answer.id),
+                "question_id": str(answer.question_id),
+                "status": answer.status.value,
+                "submitted_at": answer.submitted_at.isoformat() if answer.submitted_at else None,
+                "transcript": evidence_by_answer[answer.id][0],
+                "transcript_artifact_id": answer.transcript_artifact_id,
+                "answered_by": str(answer.answered_by),
+            }
+            for answer in sorted(answers, key=lambda item: (str(item.question_id), str(item.id)))
+        ],
+        "assessments": [
+            {
+                "assessment_artifact_id": answer.assessment_artifact_id,
+                "assessment_text": evidence_by_answer[answer.id][1].get("text"),
+                "evidence_ids": sorted(evidence_by_answer[answer.id][1].get("evidence_ids", [])),
+                "question_id": str(answer.question_id),
+            }
+            for answer in sorted(answers, key=lambda item: (str(item.question_id), str(item.id)))
+            if evidence_by_answer[answer.id][1]
+        ],
+        "metadata": {
+            "completed_at": round_.updated_at.isoformat(),
+            "question_count": len(questions),
+            "round_state": round_.state.value,
+        },
+        "practice_session_id": str(session.id),
+        "qa_round_id": str(round_.id),
+        "questions": [
+            {
+                "answer_id": str(answer_by_question[question.id].id)
+                if question.id in answer_by_question
+                else None,
+                "evidence_ids": sorted(question.evidence_ids),
+                "id": str(question.id),
+                "kind": question.kind.value,
+                "parent_answer_id": str(question.parent_answer_id)
+                if question.parent_answer_id
+                else None,
+                "position": question.position,
+                "reason": question.reason,
+                "rubric_dimension": question.rubric_dimension,
+                "state": question.state.value,
+                "text": question.text,
+            }
+            for question in sorted(questions, key=lambda item: (item.position, str(item.id)))
+        ],
+        "schema_version": 1,
+    }
+    return json.dumps(payload, ensure_ascii=False, separators=(",", ":"), sort_keys=True).encode(
+        "utf-8"
+    )
+
+
 class AIJobs:
     def __init__(
         self,
         uow: UnitOfWork,
         queue: AIJobQueuePort | None = None,
         notifications: SessionNotificationPort | None = None,
+        storage: ObjectStoragePort | None = None,
     ) -> None:
         self._uow = uow
         self._queue = queue
         self._notifications = notifications
+        self._storage = storage
 
     async def _publish(self, notification: PendingSessionNotification | None) -> None:
         if notification is None or self._notifications is None:
@@ -419,10 +539,30 @@ class AIJobs:
                 schema_version=1,
             )
 
+        if self._storage is None:
+            raise StorageUnavailable("Object storage is unavailable for Q&A artifact creation")
+
+        questions = await self._uow.qa.list_questions(round_.id)
+        answers = await self._uow.qa.list_answers(round_.id)
+        qa_artifact_id = str(uuid5(NAMESPACE_URL, f"virtujudge:qa:{round_.id}"))
+        qa_object_key = (
+            f"projects/{session.project_id}/sessions/{session.id}/attempts/"
+            f"{attempt.attempt_number}/qa.json"
+        )
+        qa_bytes = await _serialize_qa_artifact(
+            artifact_id=qa_artifact_id,
+            session=session,
+            round_=round_,
+            attempt=attempt,
+            questions=questions,
+            answers=answers,
+            storage=self._storage,
+        )
+        await self._storage.put_object(qa_object_key, qa_bytes, "application/json")
         qa_art = ArtifactRef(
-            artifact_id=f"art_qa_{round_.id.hex[:12]}",
-            object_key=f"projects/{session.project_id}/sessions/{session.id}/attempts/{attempt.attempt_number}/qa.json",
-            checksum="sha256:" + "b" * 64,
+            artifact_id=qa_artifact_id,
+            object_key=qa_object_key,
+            checksum=f"sha256:{hashlib.sha256(qa_bytes).hexdigest()}",
             schema_version=1,
         )
 
@@ -1176,6 +1316,11 @@ class AIJobs:
                 if attempt is not None and isinstance(validated_payload, ReportCompletedPayload):
                     attempt.transition_to(AnalysisAttemptStatus.COMPLETED, at=occurred_at)
                     attempt.completed_at = occurred_at
+        except StorageUnavailable:
+            rollback_res = self._uow.rollback()
+            if inspect.isawaitable(rollback_res):
+                await rollback_res
+            raise
         except InvalidAttemptState as exc:
             raise InvalidJobStatusTransition(str(exc)) from exc
 
