@@ -253,7 +253,7 @@ class SqlAlchemyReportRepository(ReportRepository):
             payload=_evaluation_payload(evaluation),
             created_at=evaluation.created_at,
         )
-        self._session.add(model)
+        await self._session.merge(model)
         await self._session.flush()
 
     async def get_evaluation(self, evaluation_id: UUID) -> Evaluation | None:
@@ -285,7 +285,7 @@ class SqlAlchemyReportRepository(ReportRepository):
             created_at=report.generated_at,
             updated_at=report.updated_at,
         )
-        self._session.add(model)
+        await self._session.merge(model)
         await self._session.flush()
 
     async def get_report(self, report_id: UUID) -> Report | None:

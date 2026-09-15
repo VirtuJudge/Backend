@@ -708,6 +708,28 @@ class AIJobs:
     async def get_job_status(self, job_id: UUID) -> AnalysisJob | None:
         return await self._uow.jobs.get_by_id(job_id)
 
+    async def rebuild_completed_report(self, session_id: UUID) -> Report:
+        job = await self._uow.jobs.get_completed_report_by_session_id(session_id)
+        if job is None or job.completed_result is None:
+            raise LookupError("No completed report job was found for the practice session.")
+
+        try:
+            payload = ReportCompletedPayload.model_validate(job.completed_result)
+        except Exception as exc:
+            raise CompletedResultValidationError(
+                "The completed report payload could not be validated."
+            ) from exc
+
+        ancestry = await self._load_ancestry(job)
+        _, report = await self._save_completed_report_and_evaluation(
+            job=job,
+            payload=payload,
+            ancestry=ancestry,
+            occurred_at=job.completed_at or datetime.now(UTC),
+        )
+        await self._uow.commit()
+        return report
+
     async def _load_ancestry(self, job: AnalysisJob) -> AIJobAncestryContext | None:
         jobs_repo = getattr(self._uow, "jobs", None)
         if jobs_repo is not None:
@@ -970,6 +992,10 @@ class AIJobs:
             raw_rep_id = job.payload["payload"].get("report_id")
             if raw_rep_id:
                 report_id = _artifact_uuid(raw_rep_id)
+        if reports_repo is not None:
+            existing_report = await reports_repo.get_report_by_session(job.practice_session_id)
+            if existing_report is not None:
+                report_id = existing_report.id
 
         report_title = (
             f"{ancestry.session.name} — Final Evaluation Report"

@@ -24,6 +24,11 @@ class AnalysisJobRepository(Protocol):
 
     async def get_by_answer_id(self, answer_id: UUID) -> AnalysisJob | None: ...
 
+    async def get_completed_report_by_session_id(
+        self,
+        session_id: UUID,
+    ) -> AnalysisJob | None: ...
+
     async def create(
         self,
         job: AnalysisJob,

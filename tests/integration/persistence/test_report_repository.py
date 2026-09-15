@@ -1,5 +1,6 @@
 import hashlib
 import json
+from dataclasses import replace
 from datetime import UTC, datetime
 from uuid import uuid4
 
@@ -339,6 +340,25 @@ async def test_report_repository_crud(async_db_session: AsyncSession) -> None:
     loaded_report_by_session = await uow.reports.get_report_by_session(prac_session.id)
     assert loaded_report_by_session is not None
     assert loaded_report_by_session.id == report.id
+
+    replacement_evaluation = replace(evaluation, id=uuid4(), overall_score=0.63)
+    await uow.reports.save_evaluation(replacement_evaluation)
+    await uow.commit()
+    replacement_report = replace(
+        report,
+        evaluation_id=replacement_evaluation.id,
+        overall_score=replacement_evaluation.overall_score,
+        title="Rebuilt Demo Day Pitch",
+    )
+    await uow.reports.save_report(replacement_report)
+    await uow.commit()
+
+    rebuilt_report = await uow.reports.get_report_by_session(prac_session.id)
+    assert rebuilt_report is not None
+    assert rebuilt_report.id == report.id
+    assert rebuilt_report.evaluation_id == replacement_evaluation.id
+    assert rebuilt_report.overall_score == 0.63
+    assert rebuilt_report.title == "Rebuilt Demo Day Pitch"
 
     # Save report export
     export = ReportExport(

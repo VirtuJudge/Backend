@@ -52,6 +52,22 @@ class FakeAnalysisJobRepository(AnalysisJobRepository):
                 return job
         return None
 
+    async def get_completed_report_by_session_id(
+        self, session_id: UUID
+    ) -> AnalysisJob | None:
+        completed = [
+            job
+            for job in self.jobs.values()
+            if job.practice_session_id == session_id
+            and job.job_type == "generate_report"
+            and job.status == AnalysisJobStatus.COMPLETED
+        ]
+        return max(
+            completed,
+            key=lambda job: (job.completed_at or job.created_at, job.id),
+            default=None,
+        )
+
     async def create(self, job: AnalysisJob) -> AnalysisJob:
         self.jobs[job.id] = job
         return job

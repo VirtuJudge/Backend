@@ -75,6 +75,22 @@ class SqlAlchemyAnalysisJobRepository(AnalysisJobRepository):
         )
         return None if model is None else to_domain(model)
 
+    async def get_completed_report_by_session_id(
+        self,
+        session_id: UUID,
+    ) -> AnalysisJob | None:
+        model = await self._session.scalar(
+            select(AnalysisJobModel)
+            .where(
+                AnalysisJobModel.practice_session_id == session_id,
+                AnalysisJobModel.job_type == "generate_report",
+                AnalysisJobModel.status == AnalysisJobStatus.COMPLETED,
+            )
+            .order_by(AnalysisJobModel.completed_at.desc(), AnalysisJobModel.id.desc())
+            .limit(1)
+        )
+        return None if model is None else to_domain(model)
+
     async def create(
         self,
         job: AnalysisJob,

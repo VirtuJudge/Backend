@@ -394,6 +394,42 @@ async def test_record_update_report_completed_persists_canonical_report_and_eval
 
 
 @pytest.mark.asyncio
+async def test_rebuild_completed_report_replaces_existing_report_from_artifact() -> None:
+    service, uow, session, _attempt, job, _round = _setup_report_pipeline()
+    storage = service._storage
+    assert isinstance(storage, FakeObjectStorage)
+    presenter_id = uow.speaker_mappings.get_by_attempt_id.return_value[0].user_id
+    evaluation_bytes = _evaluation_artifact(str(presenter_id))
+    evaluation_key = f"ai/session/{session.id}/evaluation.json"
+    storage.objects[evaluation_key] = evaluation_bytes
+    job.status = AnalysisJobStatus.COMPLETED
+    job.completed_at = NOW
+    job.completed_result = ReportCompletedPayload(
+        evaluation_artifact=ArtifactRef(
+            artifact_id="01JEXAMPLE0000000000000071",
+            object_key=evaluation_key,
+            checksum=f"sha256:{hashlib.sha256(evaluation_bytes).hexdigest()}",
+            schema_version=1,
+        ),
+        report_artifact=ArtifactRef(
+            artifact_id="01JEXAMPLE0000000000000072",
+            object_key=f"ai/session/{session.id}/report.json",
+            checksum="sha256:" + "b" * 64,
+            schema_version=1,
+        ),
+        member_feedback_user_ids=[str(presenter_id)],
+        limitations=[],
+    ).model_dump(mode="json")
+
+    report = await service.rebuild_completed_report(session.id)
+    rebuilt = await uow.reports.get_report_by_session(session.id)
+
+    assert rebuilt is report
+    assert rebuilt.overall_score == 0.6251
+    assert uow.commit_count == 1
+
+
+@pytest.mark.asyncio
 async def test_report_job_can_start_after_session_analysis_completed() -> None:
     service, uow, session, attempt, job, round_ = _setup_report_pipeline()
     attempt.status = AnalysisAttemptStatus.RUNNING
