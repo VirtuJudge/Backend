@@ -94,6 +94,7 @@ def test_generate_report_valid_fixture_parses() -> None:
     assert msg.job_type == AIJobType.GENERATE_REPORT
     assert isinstance(msg.payload, GenerateReportPayload)
     assert msg.payload.report_id == "rep_001"
+    assert msg.payload.rubric.rubric_id == "startup_pitch"
     assert len(msg.payload.speaker_mappings) == 1
     assert msg.payload.speaker_mappings[0].speaker_label == "SPEAKER_00"
 

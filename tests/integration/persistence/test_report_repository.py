@@ -323,6 +323,7 @@ async def test_report_repository_crud(async_db_session: AsyncSession) -> None:
         score_components=evaluation.components,
         team_feedback=team_feedback,
         member_feedback=member_feedback,
+        markdown="# Demo Day Pitch\n\nThe team delivered a clear presentation.",
         generated_at=now,
         updated_at=now,
     )
@@ -335,6 +336,7 @@ async def test_report_repository_crud(async_db_session: AsyncSession) -> None:
     assert loaded_report.id == report.id
     assert loaded_report.title == "Demo Day Pitch"
     assert loaded_report.evaluation_id == evaluation.id
+    assert loaded_report.markdown == report.markdown
     assert loaded_report.team_feedback.summary == "Team worked well together."
 
     loaded_report_by_session = await uow.reports.get_report_by_session(prac_session.id)

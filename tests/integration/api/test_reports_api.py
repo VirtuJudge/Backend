@@ -94,6 +94,7 @@ def _create_sample_report(session_id: UUID, evaluation_id: UUID) -> Report:
         score_components=[comp],
         team_feedback=team_fb,
         member_feedback=[member_fb],
+        markdown="# Demo Day Report\n\n## Summary\n\nThe team communicated clearly.",
         generated_at=now,
         updated_at=now,
     )
@@ -179,6 +180,7 @@ async def test_get_session_report_success() -> None:
     assert data["report_id"] == str(report.id)
     assert data["overall_score"] == 0.85
     assert data["title"] == "Demo Day Report"
+    assert data["markdown"] == report.markdown
     assert len(data["score_components"]) == 1
     assert len(data["member_feedback"]) == 1
 

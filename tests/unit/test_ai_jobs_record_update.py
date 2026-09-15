@@ -1526,6 +1526,8 @@ async def test_completed_valid_generate_report() -> None:
     ).encode()
     storage = FakeObjectStorage()
     storage.objects["artifacts/evaluation.json"] = evaluation_bytes
+    markdown_bytes = b"# Final evaluation\n\nThe full generated report is available here.\n"
+    storage.objects["artifacts/report.md"] = markdown_bytes
     service = AIJobs(uow, storage=storage)
     payload = ReportCompletedPayload(
         evaluation_artifact=ArtifactRef(
@@ -1536,8 +1538,8 @@ async def test_completed_valid_generate_report() -> None:
         ),
         report_artifact=ArtifactRef(
             artifact_id="01JEXAMPLE0000000000000072",
-            object_key="artifacts/report.json",
-            checksum="sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+            object_key="artifacts/report.md",
+            checksum=f"sha256:{hashlib.sha256(markdown_bytes).hexdigest()}",
             schema_version=1,
         ),
         member_feedback_user_ids=member_feedback_user_ids,
@@ -1555,6 +1557,9 @@ async def test_completed_valid_generate_report() -> None:
     assert result.status == AnalysisJobStatus.COMPLETED
     assert result.completed_result is not None
     assert result.completed_result["member_feedback_user_ids"] == ["user_001", "user_002"]
+    saved_report = await uow.reports.get_report_by_session(job.practice_session_id)
+    assert saved_report is not None
+    assert saved_report.markdown == markdown_bytes.decode()
     assert uow.commit_count == 1
 
 
