@@ -39,7 +39,7 @@ def test_backend_migrations_ignore_a_foreign_alembic_revision(tmp_path: Path) ->
         ).scalar_one()
 
     assert foreign_revision == "d0bab208d7c4"
-    assert backend_revision == "7b4e1a6d2c8f"
+    assert backend_revision == "8c5d2e3f4a1b"
     assert "users" in inspect(engine).get_table_names()
     engine.dispose()
 
@@ -72,7 +72,7 @@ def test_backend_migrations_adopt_an_existing_legacy_schema(tmp_path: Path) -> N
         ).scalar_one()
 
     assert foreign_revision == "d0bab208d7c4"
-    assert backend_revision == "7b4e1a6d2c8f"
+    assert backend_revision == "8c5d2e3f4a1b"
     assert "practice_sessions" in inspect(engine).get_table_names()
     engine.dispose()
 
@@ -97,7 +97,7 @@ def test_backend_migrations_adopt_existing_analysis_jobs_schema(tmp_path: Path) 
         backend_revision = connection.exec_driver_sql(
             "SELECT version_num FROM backend_alembic_version"
         ).scalar_one()
-    assert backend_revision == "7b4e1a6d2c8f"
+    assert backend_revision == "8c5d2e3f4a1b"
     engine.dispose()
 
 
@@ -124,7 +124,7 @@ def test_backend_migrations_advance_stale_backend_alembic_version_when_practice_
         backend_revision = connection.exec_driver_sql(
             "SELECT version_num FROM backend_alembic_version"
         ).scalar_one()
-    assert backend_revision == "7b4e1a6d2c8f"
+    assert backend_revision == "8c5d2e3f4a1b"
     engine.dispose()
 
 

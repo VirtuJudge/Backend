@@ -1,6 +1,7 @@
 import logging
 import tempfile
 from datetime import UTC, datetime, timedelta
+from hashlib import sha256
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -561,6 +562,79 @@ class AssetStore:
             size_bytes=version.size_bytes or 0,
             file_name=version.file_name,
         )
+
+    async def create_version_download_intent_by_id(
+        self, asset_version_id: UUID, user_id: UUID
+    ) -> DownloadIntent:
+        version = await self.repository.get_version(asset_version_id)
+        if version is None:
+            raise AssetNotFound
+        return await self.create_version_download_intent(
+            asset_id=version.asset_id,
+            version_id=version.id,
+            user_id=user_id,
+        )
+
+    async def store_system_asset(
+        self,
+        *,
+        project_id: UUID,
+        user_id: UUID,
+        kind: str,
+        file_name: str,
+        media_type: str,
+        content: bytes,
+    ) -> tuple[Asset, AssetVersion]:
+        await self._authorize_project(project_id, user_id)
+        asset_id = uuid4()
+        version_id = uuid4()
+        checksum = f"sha256:{sha256(content).hexdigest()}"
+        storage_key = f"projects/{project_id}/assets/{asset_id}/{version_id}/{file_name}"
+        now = datetime.now(UTC)
+
+        await self.storage.put_object(storage_key, content, media_type)
+
+        asset = Asset(
+            id=asset_id,
+            project_id=project_id,
+            kind=kind,
+            state="verified",
+            file_name=file_name,
+            current_version_id=version_id,
+            media_type=media_type,
+            size_bytes=len(content),
+            checksum=checksum,
+            created_by=user_id,
+            created_at=now,
+        )
+        version = AssetVersion(
+            id=version_id,
+            asset_id=asset_id,
+            version_number=1,
+            state="verified",
+            storage_key=storage_key,
+            file_name=file_name,
+            declared_media_type=media_type,
+            declared_size_bytes=len(content),
+            media_type=media_type,
+            size_bytes=len(content),
+            checksum=checksum,
+            created_by=user_id,
+            created_at=now,
+            completed_at=now,
+            upload_expires_at=now + timedelta(days=365),
+        )
+        idempotency = AssetUploadIdempotency(
+            user_id=user_id,
+            project_id=project_id,
+            operation=f"store_{kind}",
+            key=str(version_id),
+            request_hash=checksum,
+            asset_id=asset_id,
+            version_id=version_id,
+        )
+        await self.repository.save_asset_with_initial_version(asset, version, idempotency)
+        return asset, version
 
     async def cleanup_abandoned_uploads(
         self,

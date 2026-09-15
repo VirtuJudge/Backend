@@ -16,6 +16,7 @@ from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStat
 from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
 from app.domain.session_workflow.enums.session_status import SessionStatus
 from tests.support.fake_analysis_attempt_repository import FakeAnalysisAttemptRepository
+from tests.support.fake_report_repository import FakeReportRepository
 
 _DEFAULT_ATTEMPTS = object()
 
@@ -241,7 +242,11 @@ class FakeAnalysisJobRepository(AnalysisJobRepository):
             project_id=project_id,
             created_by=uuid4(),
             name="Test Session",
-            status=SessionStatus.ANALYZING,
+            status=(
+                SessionStatus.REPORT_GENERATING
+                if job.job_type == "generate_report"
+                else SessionStatus.ANALYZING
+            ),
             version=1,
             created_at=job.created_at,
             updated_at=job.updated_at,
@@ -281,14 +286,17 @@ class FakeUnitOfWork:
     speaker_mappings: Any
     idempotency: Any
     qa: Any
+    reports: Any
 
     def __init__(
         self,
         jobs: AnalysisJobRepository | None = None,
         attempts: Any = _DEFAULT_ATTEMPTS,
+        reports: Any = None,
+        sessions: Any = None,
     ) -> None:
         self.jobs = jobs or FakeAnalysisJobRepository()
-        self.sessions = None
+        self.sessions = sessions
         self.manifests = None
         self.attempts = (
             FakeAnalysisAttemptRepository() if attempts is _DEFAULT_ATTEMPTS else attempts
@@ -300,6 +308,7 @@ class FakeUnitOfWork:
         self.qa.get_round_by_session = AsyncMock(return_value=None)
         self.qa.create_round = AsyncMock()
         self.qa.create_questions = AsyncMock()
+        self.reports = reports or FakeReportRepository()
         self.commit_count = 0
         self.rollback_count = 0
 

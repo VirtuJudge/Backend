@@ -36,6 +36,9 @@ ALLOWED_ASSET_TYPES: dict[str, dict[str, str]] = {
         ".m4a": "audio/mp4",
         ".wav": "audio/wav",
     },
+    "report_pdf": {
+        ".pdf": "application/pdf",
+    },
 }
 
 ASSET_KIND_LIMITS: dict[str, dict[str, Any]] = {
@@ -50,6 +53,10 @@ ASSET_KIND_LIMITS: dict[str, dict[str, Any]] = {
     "answer_audio": {
         "max_size_bytes": 25 * 1024 * 1024,
         "max_duration_ms": 120_000,
+    },
+    "report_pdf": {
+        "max_size_bytes": 50 * 1024 * 1024,
+        "max_duration_ms": None,
     },
 }
 

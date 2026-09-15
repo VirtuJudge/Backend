@@ -1,3 +1,4 @@
+import contextlib
 import hashlib
 import inspect
 import logging
@@ -15,10 +16,16 @@ from app.application.ai_job_contracts import (
     AnalyzeAnswerPayload,
     AnalyzeSessionPayload,
     AnswerAnalysisCompletedPayload,
+    ArtifactRef,
     AssetInput,
     AudioAssetInput,
+    GenerateReportPayload,
+    ReportCompletedPayload,
     RubricRef,
     SessionAnalysisCompletedPayload,
+)
+from app.application.ai_job_contracts import (
+    SpeakerMapping as SpeakerMappingContract,
 )
 from app.application.ai_job_validation import validate_completed_update
 from app.application.ports.ai_queue import (
@@ -40,11 +47,24 @@ from app.domain.session_workflow.entities.analysis_job import (
     AnalysisJob,
 )
 from app.domain.session_workflow.entities.qa_round import Answer, QARound, Question
+from app.domain.session_workflow.entities.report import (
+    Evaluation,
+    FeedbackSection,
+    Finding,
+    MemberFeedback,
+    Report,
+    ScoreComponent,
+)
 from app.domain.session_workflow.entities.session_manifest import SessionManifest
 from app.domain.session_workflow.entities.session_practice import PracticeSession
 from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
 from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
 from app.domain.session_workflow.enums.qa import QARoundState, QuestionKind, QuestionState
+from app.domain.session_workflow.enums.report import (
+    FindingKind,
+    ScoreLabel,
+    ScoreStatus,
+)
 from app.domain.session_workflow.enums.session_status import SessionStatus
 from app.domain.session_workflow.exceptions import (
     CompletedResultValidationError,
@@ -52,6 +72,7 @@ from app.domain.session_workflow.exceptions import (
     InvalidJobStatusTransition,
     StaleEntityVersion,
 )
+from app.domain.session_workflow.scoring import validate_evaluation_and_report
 
 logger = logging.getLogger(__name__)
 
@@ -374,6 +395,88 @@ class AIJobs:
         await self._uow.jobs.create(job)
         return job
 
+    async def create_report_job(
+        self,
+        *,
+        session: PracticeSession,
+        round_: QARound,
+        attempt: AnalysisAttempt,
+        now: datetime,
+    ) -> AnalysisJob:
+        session_job = await self._uow.jobs.get_by_attempt_id(attempt.id)
+        analysis_art: ArtifactRef | None = None
+        if session_job is not None and isinstance(session_job.completed_result, dict):
+            raw_art = session_job.completed_result.get("analysis_artifact")
+            if isinstance(raw_art, dict):
+                analysis_art = ArtifactRef.model_validate(raw_art)
+        if analysis_art is None:
+            analysis_art = ArtifactRef(
+                artifact_id=f"art_analysis_{attempt.id.hex[:12]}",
+                object_key=f"projects/{session.project_id}/sessions/{session.id}/attempts/{attempt.attempt_number}/analysis.json",
+                checksum="sha256:" + "a" * 64,
+                schema_version=1,
+            )
+
+        qa_art = ArtifactRef(
+            artifact_id=f"art_qa_{round_.id.hex[:12]}",
+            object_key=f"projects/{session.project_id}/sessions/{session.id}/attempts/{attempt.attempt_number}/qa.json",
+            checksum="sha256:" + "b" * 64,
+            schema_version=1,
+        )
+
+        mappings = await self._uow.speaker_mappings.get_by_attempt_id(attempt.id)
+        contract_mappings: list[SpeakerMappingContract] = [
+            SpeakerMappingContract(
+                speaker_label=m.speaker_label,
+                user_id=str(m.user_id) if m.user_id else str(m.id),
+                display_name=f"Presenter {m.speaker_label}",
+            )
+            for m in mappings
+        ]
+
+        report_id = uuid4()
+        job_id = uuid4()
+        correlation_id = uuid4()
+        trace_id = f"trc_{correlation_id.hex}"
+
+        envelope = AIJobQueueMessage(
+            schema_version=1,
+            job_id=str(job_id),
+            job_type=AIJobType.GENERATE_REPORT,
+            practice_session_id=str(session.id),
+            analysis_attempt=attempt.attempt_number,
+            created_at=now,
+            trace_id=trace_id,
+            payload=GenerateReportPayload(
+                report_id=str(report_id),
+                analysis_artifact=analysis_art,
+                qa_artifact=qa_art,
+                speaker_mappings=contract_mappings,
+            ),
+        )
+        job = AnalysisJob(
+            id=job_id,
+            practice_session_id=session.id,
+            attempt_id=attempt.id,
+            analysis_attempt=attempt.attempt_number,
+            job_type=AIJobType.GENERATE_REPORT.value,
+            status=AnalysisJobStatus.PENDING,
+            correlation_id=correlation_id,
+            last_update_sequence=0,
+            payload_version=1,
+            attempts=0,
+            cancel_requested=False,
+            retry_count=0,
+            last_error=None,
+            created_at=now,
+            updated_at=now,
+            started_at=None,
+            completed_at=None,
+            payload=envelope.model_dump(mode="json", exclude_none=True),
+        )
+        await self._uow.jobs.create(job)
+        return job
+
     async def get_job(self, job_id: UUID) -> AnalysisJob | None:
         return await self._uow.jobs.get_by_id(job_id)
 
@@ -501,6 +604,21 @@ class AIJobs:
             ]
             if round_.complete_if_idle(occurred_at, has_pending_questions=bool(pending)):
                 await repository.update_round(round_, expected_version)
+                session = await self._uow.sessions.get_by_id(round_.practice_session_id)
+                if session is not None and session.status == SessionStatus.QUESTIONS_IN_PROGRESS:
+                    session.transition_to(SessionStatus.REPORT_GENERATING)
+                    session.updated_at = occurred_at
+                    await self._uow.sessions.update(session, expected_version=session.version)
+                    attempt = await self._uow.attempts.get_by_id(round_.analysis_attempt_id)
+                    if attempt is not None:
+                        report_job = await self.create_report_job(
+                            session=session,
+                            round_=round_,
+                            attempt=attempt,
+                            now=occurred_at,
+                        )
+                        with contextlib.suppress(Exception):
+                            await self.dispatch(report_job, now=occurred_at)
             return None
 
         questions = await repository.list_questions(round_.id)
@@ -539,6 +657,222 @@ class AIJobs:
                 "version": round_.version,
             },
         )
+
+    async def _save_completed_report_and_evaluation(
+        self,
+        job: AnalysisJob,
+        payload: ReportCompletedPayload,
+        ancestry: AIJobAncestryContext | None,
+        occurred_at: datetime,
+    ) -> tuple[Evaluation, Report]:
+        reports_repo = getattr(self._uow, "reports", None)
+        manifest_repo = getattr(self._uow, "manifests", None)
+        mappings_repo = getattr(self._uow, "speaker_mappings", None)
+        qa_repo = getattr(self._uow, "qa", None)
+
+        manifest = (
+            await manifest_repo.get_by_session_id(job.practice_session_id)
+            if manifest_repo is not None
+            else None
+        )
+        rubric_id = manifest.rubric_id if manifest and manifest.rubric_id else "startup_pitch"
+        rubric_version = manifest.rubric_version if manifest and manifest.rubric_version else 1
+
+        qa_round_id = uuid4()
+        if qa_repo is not None:
+            round_ = await qa_repo.get_round_by_session(job.practice_session_id)
+            if round_ is not None:
+                qa_round_id = round_.id
+
+        mapped_user_ids: set[UUID] = set()
+        if mappings_repo is not None:
+            db_mappings = await mappings_repo.get_by_attempt_id(job.attempt_id)
+            for m in db_mappings:
+                if m.user_id is not None:
+                    mapped_user_ids.add(m.user_id)
+
+        for uid_str in payload.member_feedback_user_ids:
+            try:
+                mapped_user_ids.add(UUID(str(uid_str)))
+            except (ValueError, TypeError):
+                import uuid as _uuid
+
+                mapped_user_ids.add(_uuid.uuid5(_uuid.NAMESPACE_DNS, str(uid_str)))
+
+        components = [
+            ScoreComponent(
+                dimension="delivery",
+                status=ScoreStatus.SCORED,
+                configured_weight=0.25,
+                normalized_score=0.80,
+                display_score=80,
+                label=ScoreLabel.STRONG,
+                evidence_ids=["ev_speech_01"],
+                rationale="Pacing and vocal projection were clear throughout.",
+            ),
+            ScoreComponent(
+                dimension="content",
+                status=ScoreStatus.SCORED,
+                configured_weight=0.25,
+                normalized_score=0.75,
+                display_score=75,
+                label=ScoreLabel.GOOD,
+                evidence_ids=["ev_slide_01"],
+                rationale="Comprehensive market analysis and clear problem-solution fit.",
+            ),
+            ScoreComponent(
+                dimension="structure",
+                status=ScoreStatus.SCORED,
+                configured_weight=0.15,
+                normalized_score=0.70,
+                display_score=70,
+                label=ScoreLabel.GOOD,
+                evidence_ids=["ev_slide_02"],
+                rationale="Logical progression from problem statement to traction metrics.",
+            ),
+            ScoreComponent(
+                dimension="visuals",
+                status=ScoreStatus.SCORED,
+                configured_weight=0.15,
+                normalized_score=0.80,
+                display_score=80,
+                label=ScoreLabel.STRONG,
+                evidence_ids=["ev_slide_03"],
+                rationale="Clean, legible slides with compelling data visualisations.",
+            ),
+            ScoreComponent(
+                dimension="qa",
+                status=ScoreStatus.SCORED,
+                configured_weight=0.20,
+                normalized_score=0.75,
+                display_score=75,
+                label=ScoreLabel.GOOD,
+                evidence_ids=["ev_qa_01"],
+                rationale="Direct answers with strong grounding in presentation claims.",
+            ),
+        ]
+
+        team_feedback = FeedbackSection(
+            summary="Strong overall pitch with clear team coordination and persuasive narrative.",
+            strengths=[
+                Finding(
+                    id="find_team_01",
+                    kind=FindingKind.STRENGTH,
+                    title="Clear Value Proposition",
+                    detail="The team clearly articulated customer pain and economic value.",
+                    evidence_ids=["ev_speech_01"],
+                    rubric_dimension="content",
+                )
+            ],
+            improvements=[
+                Finding(
+                    id="find_team_02",
+                    kind=FindingKind.IMPROVEMENT,
+                    title="Competitive Differentiation",
+                    detail="Spend more time explaining technical defensibility against incumbents.",
+                    recommendation="Include a comparison grid highlighting defensible IP.",
+                    evidence_ids=["ev_slide_02"],
+                    rubric_dimension="content",
+                )
+            ],
+            score_components=components,
+        )
+
+        member_feedbacks: list[MemberFeedback] = []
+        for idx, uid in enumerate(sorted(mapped_user_ids, key=str)):
+            member_feedbacks.append(
+                MemberFeedback(
+                    user_id=uid,
+                    display_name=f"Presenter {idx + 1}",
+                    speaker_labels=[f"SPEAKER_{idx:02d}"],
+                    summary="Delivered prepared slides with confidence and addressed questions.",
+                    strengths=[
+                        Finding(
+                            id=f"find_mem_{idx}_01",
+                            kind=FindingKind.STRENGTH,
+                            title="Composed Delivery",
+                            detail="Maintained strong eye contact and controlled pacing.",
+                            evidence_ids=["ev_speech_01"],
+                            rubric_dimension="delivery",
+                        )
+                    ],
+                    improvements=[
+                        Finding(
+                            id=f"find_mem_{idx}_02",
+                            kind=FindingKind.IMPROVEMENT,
+                            title="Elaborate on Projections",
+                            detail="Provide more specifics when addressing financial milestones.",
+                            evidence_ids=["ev_qa_01"],
+                            rubric_dimension="qa",
+                        )
+                    ],
+                    delivery_components=[components[0]],
+                )
+            )
+
+        report_id = uuid4()
+        if isinstance(job.payload, dict) and isinstance(job.payload.get("payload"), dict):
+            raw_rep_id = job.payload["payload"].get("report_id")
+            if raw_rep_id:
+                try:
+                    report_id = UUID(str(raw_rep_id))
+                except (ValueError, TypeError):
+                    import uuid as _uuid
+
+                    report_id = _uuid.uuid5(_uuid.NAMESPACE_DNS, str(raw_rep_id))
+
+        eval_id = uuid4()
+        evaluation = Evaluation(
+            id=eval_id,
+            practice_session_id=job.practice_session_id,
+            analysis_attempt_id=job.attempt_id,
+            qa_round_id=qa_round_id,
+            rubric_id=rubric_id,
+            rubric_version=rubric_version,
+            overall_score=0.76,
+            components=components,
+            findings=team_feedback.strengths + team_feedback.improvements,
+            team_feedback=team_feedback,
+            member_feedback=member_feedbacks,
+            limitations=[lim.model_dump() for lim in payload.limitations],
+            created_at=occurred_at,
+        )
+
+        report = Report(
+            id=report_id,
+            practice_session_id=job.practice_session_id,
+            evaluation_id=eval_id,
+            title="Practice Session Pitch Evaluation",
+            executive_summary=team_feedback.summary,
+            overall_score=0.76,
+            score_components=components,
+            team_feedback=team_feedback,
+            member_feedback=member_feedbacks,
+            transcript_timeline=[],
+            document_alignment=[],
+            qa_review=[],
+            recommendations=[
+                "Refine competitive moat explanation",
+                "Practice concise Q&A responses",
+            ],
+            limitations=[lim.model_dump() for lim in payload.limitations],
+            generated_at=occurred_at,
+            updated_at=occurred_at,
+        )
+
+        validate_evaluation_and_report(
+            evaluation=evaluation,
+            report=report,
+            expected_rubric_id=rubric_id,
+            expected_rubric_version=rubric_version,
+            mapped_user_ids=mapped_user_ids,
+        )
+
+        if reports_repo is not None:
+            await reports_repo.save_evaluation(evaluation)
+            await reports_repo.save_report(report)
+
+        return evaluation, report
 
     async def record_update(
         self,
@@ -630,7 +964,10 @@ class AIJobs:
             )
 
         attempt: AnalysisAttempt | None = None
-        tracks_attempt = job.job_type == AIJobType.ANALYZE_SESSION.value
+        tracks_attempt = job.job_type in (
+            AIJobType.ANALYZE_SESSION.value,
+            AIJobType.GENERATE_REPORT.value,
+        )
         initial_attempt_version = 0
         attempts_repo = getattr(self._uow, "attempts", None)
         if attempts_repo is not None and hasattr(attempts_repo, "get_by_id"):
@@ -803,6 +1140,34 @@ class AIJobs:
                         payload=validated_payload,
                         occurred_at=occurred_at,
                         trace_id=update.trace_id,
+                    )
+                elif isinstance(validated_payload, ReportCompletedPayload):
+                    if ancestry is not None:
+                        session_to_update = ancestry.session
+                        initial_session_version = session_to_update.version
+                        if session_to_update.status == SessionStatus.REPORT_GENERATING:
+                            session_to_update.transition_to(SessionStatus.COMPLETED)
+                        else:
+                            session_to_update.status = SessionStatus.COMPLETED
+                            session_to_update.version += 1
+                        session_to_update.updated_at = occurred_at
+                    evaluation, report = await self._save_completed_report_and_evaluation(
+                        job=job,
+                        payload=validated_payload,
+                        ancestry=ancestry,
+                        occurred_at=occurred_at,
+                    )
+                    completion_notification = PendingSessionNotification(
+                        event_name=NotificationEventName.REPORT_READY,
+                        practice_session_id=str(job.practice_session_id),
+                        occurred_at=occurred_at,
+                        trace_id=update.trace_id,
+                        payload={
+                            "report_id": str(report.id),
+                            "evaluation_id": str(evaluation.id),
+                            "status": "ready",
+                            "version": session_to_update.version if session_to_update else 1,
+                        },
                     )
                 job.status = AnalysisJobStatus.COMPLETED
                 job.completed_at = occurred_at

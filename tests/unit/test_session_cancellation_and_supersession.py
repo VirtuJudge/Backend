@@ -116,6 +116,7 @@ class MemoryUnitOfWork:
     speaker_mappings: Any
     idempotency: Any
     qa: Any
+    reports: Any
 
     def __init__(
         self,
@@ -126,6 +127,7 @@ class MemoryUnitOfWork:
         projects: Any,
         idempotency: Any,
         qa: Any = None,
+        reports: Any = None,
     ) -> None:
         self.sessions = sessions
         self.attempts = attempts
@@ -135,6 +137,7 @@ class MemoryUnitOfWork:
         self.speaker_mappings = None
         self.idempotency = idempotency
         self.qa = qa
+        self.reports = reports
         self.commit_count = 0
         self.rollback_count = 0
 

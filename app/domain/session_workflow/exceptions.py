@@ -159,3 +159,55 @@ class AnswerAlreadyFinalized(Exception):
 
 class FollowUpLimitReached(Exception):
     pass
+
+
+class ReportValidationError(Exception):
+    pass
+
+
+class InvalidScoreWeightError(ReportValidationError):
+    pass
+
+
+class QAWeightError(ReportValidationError):
+    pass
+
+
+class InvalidScoreRangeError(ReportValidationError):
+    pass
+
+
+class InvalidScoreLabelError(ReportValidationError):
+    pass
+
+
+class InvalidEvidenceReferenceError(ReportValidationError):
+    pass
+
+
+class MissingPresenterFeedbackError(ReportValidationError):
+    pass
+
+
+class DuplicatePresenterFeedbackError(ReportValidationError):
+    pass
+
+
+class RubricMismatchError(ReportValidationError):
+    pass
+
+
+class ReportNotReadyError(Exception):
+    pass
+
+
+class EvaluationNotReadyError(Exception):
+    pass
+
+
+class ReportExportNotReadyError(Exception):
+    pass
+
+
+class ReportExportNotFoundError(Exception):
+    pass

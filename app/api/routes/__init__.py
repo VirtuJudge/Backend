@@ -6,6 +6,7 @@ from app.api.routes.health import router as health_router
 from app.api.routes.invitation import router as invitation_router
 from app.api.routes.project import router as project_router
 from app.api.routes.qa import router as qa_router
+from app.api.routes.reports import router as reports_router
 from app.api.routes.session_practice import router as session_practice_router
 from app.api.routes.team import router as team_router
 from app.api.routes.user import router as user_router
@@ -20,6 +21,7 @@ routers: list[APIRouter] = [
     invitation_router,
     ai_jobs_router,
     qa_router,
+    reports_router,
 ]
 
 __all__ = ["routers"]

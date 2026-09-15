@@ -98,7 +98,10 @@ def _setup() -> tuple[SessionWorkflow, MagicMock, QARound, list[Question], Pract
     uow.jobs.change_pending_to_queued = AsyncMock(
         side_effect=lambda job_id, now, payload=None: None
     )
-    uow.jobs.record_dispatch_failure = AsyncMock()
+    uow.sessions.update = AsyncMock()
+    uow.speaker_mappings.get_by_attempt_id = AsyncMock(return_value=[])
+    uow.manifests.get_by_session_id = AsyncMock(return_value=None)
+    uow.jobs.get_by_attempt_id = AsyncMock(return_value=None)
     queue = FakeAIJobQueue()
     return SessionWorkflow(uow, queue=queue), uow, round_, questions, session
 
@@ -295,3 +298,52 @@ async def test_get_qa_round_rejects_project_outsider() -> None:
 
     with pytest.raises(UnauthorizedSessionAction):
         await workflow.get_qa_round(session.id, uuid4())
+
+
+@pytest.mark.asyncio
+async def test_skipping_final_question_transitions_session_to_report_generating() -> None:
+    workflow, uow, round_, questions, session = _setup()
+    uow.attempts.get_by_id = AsyncMock(
+        return_value=AnalysisAttempt(
+            id=round_.analysis_attempt_id,
+            session_id=session.id,
+            manifest_id=uuid4(),
+            idempotency_key=None,
+            attempt_number=1,
+            status=AnalysisAttemptStatus.RUNNING,
+            failure_code=None,
+            failure_message=None,
+            created_at=NOW,
+            started_at=NOW,
+            completed_at=None,
+            failed_at=None,
+            cancelled_at=None,
+            version=1,
+        )
+    )
+    # Fast forward: skip Q1
+    await workflow.skip_answer(
+        question_id=questions[0].id,
+        actor_id=session.created_by,
+        reason="Skip 1",
+        idempotency_key="skip-1",
+    )
+    # Skip Q2
+    await workflow.skip_answer(
+        question_id=questions[1].id,
+        actor_id=session.created_by,
+        reason="Skip 2",
+        idempotency_key="skip-2",
+    )
+    # Skip final Q3
+    await workflow.skip_answer(
+        question_id=questions[2].id,
+        actor_id=session.created_by,
+        reason="Skip 3",
+        idempotency_key="skip-3",
+    )
+
+    assert round_.state is QARoundState.COMPLETED
+    assert session.status is SessionStatus.REPORT_GENERATING
+    uow.sessions.update.assert_awaited()
+    uow.jobs.create.assert_awaited()

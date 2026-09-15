@@ -354,6 +354,11 @@ class FakeObjectStorage(ObjectStoragePort):
             raise StorageUnavailable("Storage transient network timeout")
         self.objects.pop(storage_key, None)
 
+    async def put_object(self, storage_key: str, data: bytes, content_type: str) -> None:
+        if self.transient_failure:
+            raise StorageUnavailable("Storage transient network timeout")
+        self.objects[storage_key] = data
+
 
 class RecordingStorage(FakeObjectStorage):
     def __init__(self) -> None:
