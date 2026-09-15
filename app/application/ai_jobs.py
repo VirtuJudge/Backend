@@ -169,9 +169,7 @@ def _artifact_finding(value: Any) -> Finding:
         detail=str(data["detail"]),
         recommendation=(str(data["recommendation"]) if data.get("recommendation") else None),
         evidence_ids=[str(item) for item in data.get("evidence_ids", [])],
-        rubric_dimension=(
-            str(data["rubric_dimension"]) if data.get("rubric_dimension") else None
-        ),
+        rubric_dimension=(str(data["rubric_dimension"]) if data.get("rubric_dimension") else None),
         speaker_labels=[str(item) for item in data.get("speaker_labels", [])],
     )
 
