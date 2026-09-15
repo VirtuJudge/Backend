@@ -78,6 +78,8 @@ REVISION_ORDER = [
     "f31a1f55d085",
     "3f9a7c2d1e6b",
     "7b4e1a6d2c8f",
+    "8c5d2e3f4a1b",
+    "a4f6c8e1d2b3",
 ]
 
 
