@@ -321,6 +321,16 @@ class SqlAlchemyReportRepository(ReportRepository):
         model = res.scalar_one_or_none()
         return _export_from_model(model) if model else None
 
+    async def get_report_export_by_session(self, session_id: UUID) -> ReportExport | None:
+        stmt = (
+            select(ReportExportModel)
+            .where(ReportExportModel.practice_session_id == session_id)
+            .order_by(ReportExportModel.created_at.desc())
+        )
+        res = await self._session.execute(stmt)
+        model = res.scalars().first()
+        return _export_from_model(model) if model else None
+
     async def update_report_export(self, export: ReportExport) -> None:
         stmt = select(ReportExportModel).where(ReportExportModel.id == export.id)
         res = await self._session.execute(stmt)

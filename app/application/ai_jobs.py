@@ -608,7 +608,7 @@ class AIJobs:
                 if session is not None and session.status == SessionStatus.QUESTIONS_IN_PROGRESS:
                     session.transition_to(SessionStatus.REPORT_GENERATING)
                     session.updated_at = occurred_at
-                    await self._uow.sessions.update(session)
+                    await self._uow.sessions.update(session, expected_version=session.version)
                     attempt = await self._uow.attempts.get_by_id(round_.analysis_attempt_id)
                     if attempt is not None:
                         report_job = await self.create_report_job(

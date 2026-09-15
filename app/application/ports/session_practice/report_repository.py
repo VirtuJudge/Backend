@@ -38,5 +38,9 @@ class ReportRepository(ABC):
         pass
 
     @abstractmethod
+    async def get_report_export_by_session(self, session_id: UUID) -> ReportExport | None:
+        pass
+
+    @abstractmethod
     async def update_report_export(self, export: ReportExport) -> None:
         pass

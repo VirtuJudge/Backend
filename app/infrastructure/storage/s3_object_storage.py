@@ -228,3 +228,19 @@ class S3ObjectStorage(ObjectStoragePort):
                 raise StorageUnavailable("Failed to connect to storage service") from err
 
         await asyncio.to_thread(_delete_sync)
+
+    async def put_object(self, storage_key: str, data: bytes, content_type: str) -> None:
+        def _put_sync() -> None:
+            try:
+                self.internal_client.put_object(
+                    Bucket=self.bucket,
+                    Key=storage_key,
+                    Body=data,
+                    ContentType=content_type,
+                )
+            except botocore.exceptions.ClientError as err:
+                raise StorageUnavailable("Storage service unavailable") from err
+            except (botocore.exceptions.BotoCoreError, OSError) as err:
+                raise StorageUnavailable("Failed to connect to storage service") from err
+
+        await asyncio.to_thread(_put_sync)

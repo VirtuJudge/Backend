@@ -7,6 +7,7 @@ from uuid import UUID, uuid4
 
 from app.application.ai_jobs import AIJobs
 from app.application.ports.ai_job_queue import AIJobQueuePort
+from app.application.ports.pdf_generator import PDFGeneratorPort
 from app.application.ports.session_notification import (
     PendingSessionNotification,
     SessionNotificationPort,
@@ -18,10 +19,11 @@ from app.application.ports.session_practice.diarization_result_reader import (
 from app.application.ports.session_practice.unit_of_work_repository import UnitOfWork
 from app.application.services.asset_store import AssetStore
 from app.application.session_notification_contracts import NotificationEventName
-from app.domain.asset import UploadIntent
+from app.domain.asset import DownloadIntent, UploadIntent
 from app.domain.project import ProjectNotFoundError
 from app.domain.session_workflow.entities.analysis_attempt import AnalysisAttempt
 from app.domain.session_workflow.entities.qa_round import Answer, QARound, Question
+from app.domain.session_workflow.entities.report import Evaluation, Report, ReportExport
 from app.domain.session_workflow.entities.session_command_idempotency import (
     SessionCommandIdempotency,
 )
@@ -34,6 +36,7 @@ from app.domain.session_workflow.enums.qa import (
     QARoundState,
     QuestionState,
 )
+from app.domain.session_workflow.enums.report import ReportExportFormat, ReportExportStatus
 from app.domain.session_workflow.enums.session_status import SessionStatus
 from app.domain.session_workflow.exceptions import (
     AnalysisNotReady,
@@ -42,6 +45,7 @@ from app.domain.session_workflow.exceptions import (
     AnswerNotFound,
     ConsentPolicyOutdated,
     ConsentRequiredError,
+    EvaluationNotReadyError,
     IdempotencyConflict,
     InvalidManifestDocuments,
     InvalidSessionStatusTransition,
@@ -51,6 +55,9 @@ from app.domain.session_workflow.exceptions import (
     QuestionNotActive,
     QuestionNotFound,
     QuestionsNotReady,
+    ReportExportNotFoundError,
+    ReportExportNotReadyError,
+    ReportNotReadyError,
     RetryNotAllowed,
     SessionNotFoundError,
     SessionNotReadyError,
@@ -72,6 +79,7 @@ class SessionWorkflow:
         queue: AIJobQueuePort | None = None,
         notifications: SessionNotificationPort | None = None,
         trace_id: str = "unknown",
+        pdf_generator: PDFGeneratorPort | None = None,
     ) -> None:
         self._uow = uow
         if ai_jobs is not None:
@@ -83,6 +91,7 @@ class SessionWorkflow:
         self._diarization_reader = diarization_reader or NullDiarizationResultReader()
         self._notifications = notifications
         self._trace_id = trace_id
+        self._pdf_generator = pdf_generator
 
     async def _publish_session_update(
         self,
@@ -569,7 +578,7 @@ class SessionWorkflow:
             ):
                 session.transition_to(SessionStatus.REPORT_GENERATING)
                 session.updated_at = now
-                await uow.sessions.update(session)
+                await uow.sessions.update(session, expected_version=session.version)
                 attempt = await uow.attempts.get_by_id(round_.analysis_attempt_id)
                 if attempt is not None:
                     report_job = await self._ai_jobs.create_report_job(
@@ -1080,3 +1089,137 @@ class SessionWorkflow:
             await uow.sessions.update(session, expected_version=session.version)
             await uow.commit()
             return persisted_mappings
+
+    async def get_evaluation(self, session_id: UUID, actor_id: UUID) -> Evaluation:
+        async with self._uow as uow:
+            session = await uow.sessions.get_by_id(session_id)
+            if session is None:
+                raise SessionNotFoundError("Practice session not found.")
+            await self._authorize_member(uow, session, actor_id)
+            evaluation = await uow.reports.get_evaluation_by_session(session_id)
+            if evaluation is None:
+                raise EvaluationNotReadyError("Evaluation is not ready.")
+            return evaluation
+
+    async def get_report(self, session_id: UUID, actor_id: UUID) -> Report:
+        async with self._uow as uow:
+            session = await uow.sessions.get_by_id(session_id)
+            if session is None:
+                raise SessionNotFoundError("Practice session not found.")
+            await self._authorize_member(uow, session, actor_id)
+            report = await uow.reports.get_report_by_session(session_id)
+            if report is None:
+                raise ReportNotReadyError("Report is not ready.")
+            return report
+
+    async def export_report_pdf(
+        self,
+        session_id: UUID,
+        actor_id: UUID,
+        asset_store: AssetStore,
+        idempotency_key: str | None = None,
+    ) -> ReportExport:
+        async with self._uow as uow:
+            session = await uow.sessions.get_by_id(session_id)
+            if session is None:
+                raise SessionNotFoundError("Practice session not found.")
+            await self._authorize_member(uow, session, actor_id)
+
+            report = await uow.reports.get_report_by_session(session_id)
+            if report is None:
+                raise ReportNotReadyError("Report is not ready.")
+
+            evaluation = await uow.reports.get_evaluation(report.evaluation_id)
+            if evaluation is None:
+                raise EvaluationNotReadyError("Evaluation is not ready.")
+
+            req_hash = hashlib.sha256(f"pdf:{report.id}".encode()).hexdigest()
+            if idempotency_key:
+                existing_cmd = await uow.idempotency.get(
+                    session.id, actor_id, "export_report_pdf", idempotency_key
+                )
+                if existing_cmd is not None:
+                    if existing_cmd.request_hash != req_hash:
+                        raise IdempotencyConflict(
+                            "Idempotency key has already been used with different parameters."
+                        )
+                    existing_export = await uow.reports.get_report_export_by_session(session_id)
+                    if existing_export is not None:
+                        return existing_export
+
+            if self._pdf_generator is None:
+                raise RuntimeError("PDF generator port is not configured.")
+            pdf_bytes = self._pdf_generator.render_report_pdf(report)
+
+            _, version = await asset_store.store_system_asset(
+                project_id=session.project_id,
+                user_id=actor_id,
+                kind="report_pdf",
+                file_name=f"report_{session.id}.pdf",
+                media_type="application/pdf",
+                content=pdf_bytes,
+            )
+
+            now = datetime.now(UTC)
+            export = ReportExport(
+                id=uuid4(),
+                report_id=report.id,
+                practice_session_id=session.id,
+                format=ReportExportFormat.PDF,
+                status=ReportExportStatus.READY,
+                asset_version_id=version.id,
+                failure_reason=None,
+                created_at=now,
+                completed_at=now,
+            )
+            await uow.reports.save_report_export(export)
+
+            if idempotency_key:
+                await uow.idempotency.create(
+                    SessionCommandIdempotency(
+                        id=uuid4(),
+                        session_id=session.id,
+                        actor_id=actor_id,
+                        operation="export_report_pdf",
+                        idempotency_key=idempotency_key,
+                        request_hash=req_hash,
+                        created_at=now,
+                    )
+                )
+
+            await uow.commit()
+            return export
+
+    async def get_report_export(self, export_id: UUID, actor_id: UUID) -> ReportExport:
+        async with self._uow as uow:
+            export = await uow.reports.get_report_export(export_id)
+            if export is None:
+                raise ReportExportNotFoundError("Report export not found.")
+            session = await uow.sessions.get_by_id(export.practice_session_id)
+            if session is None:
+                raise SessionNotFoundError("Practice session not found.")
+            await self._authorize_member(uow, session, actor_id)
+            return export
+
+    async def create_export_download_intent(
+        self,
+        export_id: UUID,
+        actor_id: UUID,
+        asset_store: AssetStore,
+    ) -> DownloadIntent:
+        async with self._uow as uow:
+            export = await uow.reports.get_report_export(export_id)
+            if export is None:
+                raise ReportExportNotFoundError("Report export not found.")
+            session = await uow.sessions.get_by_id(export.practice_session_id)
+            if session is None:
+                raise SessionNotFoundError("Practice session not found.")
+            await self._authorize_member(uow, session, actor_id)
+
+            if export.status is not ReportExportStatus.READY or export.asset_version_id is None:
+                raise ReportExportNotReadyError("Report export is not ready for download.")
+
+            return await asset_store.create_version_download_intent_by_id(
+                export.asset_version_id,
+                actor_id,
+            )

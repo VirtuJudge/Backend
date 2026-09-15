@@ -239,7 +239,8 @@ async def test_record_update_report_completed_persists_canonical_report_and_eval
     assert len(stored_eval.member_feedback) == 1
 
     # Notification published
-    notifications = service._notifications  # type: ignore[attr-defined]
+    notifications: Any = service._notifications
+    assert notifications is not None
     notifications.publish.assert_awaited_once()
     published_notification = notifications.publish.call_args[0][0]
     assert published_notification.event_name == "report.ready.v1"

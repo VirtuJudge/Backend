@@ -40,5 +40,11 @@ class FakeReportRepository(ReportRepository):
     async def get_report_export(self, export_id: UUID) -> ReportExport | None:
         return self.exports.get(export_id)
 
+    async def get_report_export_by_session(self, session_id: UUID) -> ReportExport | None:
+        for export in sorted(self.exports.values(), key=lambda e: e.created_at, reverse=True):
+            if export.practice_session_id == session_id:
+                return export
+        return None
+
     async def update_report_export(self, export: ReportExport) -> None:
         self.exports[export.id] = export
