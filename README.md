@@ -1,21 +1,82 @@
 # VirtuJudge Backend
 
-FastAPI control plane following the four-layer [backend architecture](https://github.com/VirtuJudge/Docs/blob/main/Architecture/Backend-Architecture.md).
+The VirtuJudge backend is the product control plane for pitch-practice sessions. It owns the data and rules that turn a team's uploaded material into a practice session: authorization, immutable input manifests, AI-job dispatch, grounded Q&A, reports, exports, and erasure requests.
+
+It is a FastAPI application built around four layers. PostgreSQL is the source of truth for product state. Redis is used for Celery job delivery, rate limiting, and live session notifications; it is never the source of business truth. AI processing runs in the separate [AI-ML repository](https://github.com/VirtuJudge/AI-ML), which can write only its own derived data and must report results through the backend's internal contract.
+
+## What it owns
+
+- users, teams, memberships, invitations, and project access;
+- private, versioned assets and direct signed uploads to S3-compatible storage;
+- practice-session state, consent, frozen manifests, retries, cancellation, and speaker mappings;
+- durable AI jobs, callback sequence checks, result validation, and browser notifications;
+- the Q&A round, including exactly three primary questions and at most two follow-ups;
+- evaluations, feedback for the team and every mapped speaker, PDF exports, and data-erasure state.
+
+The backend is deliberately not an AI inference service. It authorizes requests, stores the workflow state, gives workers scoped input references, and accepts only contract-valid results.
 
 ## Architecture
 
-The backend follows a strict four-layer architecture with dependencies pointing inward:
+```mermaid
+flowchart LR
+    Browser[Frontend] -->|REST and SSE| API[FastAPI API]
+    API --> Workflow[Application use cases]
+    Workflow --> Domain[Domain rules]
+    Workflow --> DB[(PostgreSQL)]
+    Workflow --> Store[(S3-compatible storage)]
+    Workflow --> Queue[Celery / Redis]
+    Queue --> Worker[AI-ML worker]
+    Worker -->|authenticated updates| API
+    API --> Events[Redis session events]
+    Events --> Browser
+```
 
-- **`domain`** (`app/domain/`): Plain models, business entities, validation rules, and domain error definitions. Strictly framework-free with no dependencies on FastAPI, SQLAlchemy, or external SDKs.
-- **`application`** (`app/application/`): Use cases, orchestrators, and services (`asset_store`, `project_service`, `team_service`, `user_service`). Defines abstract interfaces and contracts under `app/application/ports/` (`asset_repository.py`, `object_storage.py`, `media_verifier.py`, `document_verifier.py`, `project_repository.py`, `team_repository.py`, `user_repository.py`).
-- **`api`** (`app/api/`): HTTP presentation layer containing FastAPI routers (`health.py`, `user.py`, `asset.py`, `project.py`, `team.py`), request schemas, authentication dependencies, and mapped Problem Details error responses (`errors.py`). Calls application use cases and converts domain errors to HTTP status codes.
-- **`infrastructure`** (`app/infrastructure/`): Concrete adapter implementations of application ports. Contains SQLAlchemy ORM models, mappings, and repositories (`app/infrastructure/repositories/`), S3 object storage client (`app/infrastructure/storage/`), media inspection with ffmpeg/ffprobe (`app/infrastructure/media/`), pypdf document verifier, database engine configuration, and settings.
+Dependencies point inward:
 
-Wiring and dependency injection take place at the composition root in `app/main.py`.
+| Layer | Location | Responsibility |
+| --- | --- | --- |
+| Domain | `app/domain/` | Framework-free entities, state transitions, scoring rules, and domain errors. |
+| Application | `app/application/` | Use cases and ports. `SessionWorkflow`, `AIJobs`, and `AssetStore` keep workflow, queue, and object-key rules out of routes. |
+| API | `app/api/` | FastAPI routers, request validation, authentication context, Problem Details responses, correlation IDs, and SSE. |
+| Infrastructure | `app/infrastructure/` | SQLAlchemy repositories, Redis/Celery, S3, OIDC, mail, media/document validation, and PDF adapters. |
 
-## Shared local stack
+`app/main.py` is the composition root. Domain and application code must not import FastAPI, SQLAlchemy, Redis, Celery, or provider SDKs.
 
-Install Docker with Compose 2.17 or newer and Python 3. Check out the scaffolded repositories side by side:
+## Core workflow
+
+1. A team member uploads a presentation and optional supporting documents directly to private object storage with short-lived signed URLs. The backend verifies size, checksum, and file structure before a version can be used.
+2. The member creates a Practice Session. Starting analysis records consent, freezes the exact asset-version manifest, creates an Analysis Attempt and an AI Job in one transaction, then enqueues the job after commit.
+3. The AI worker claims the job and sends ordered, authenticated updates to `/internal/v1/ai-jobs/{job_id}/updates`. The backend ignores duplicate or stale sequences, validates completed results, and publishes safe progress events to the session's SSE stream.
+4. The Q&A round exposes the three Primary Questions produced from the analysis. Submitted answers can produce no more than two grounded Follow-up Questions.
+5. Once Q&A is complete, the backend serializes the validated Q&A artifact, dispatches report generation, validates the returned evaluation/report, and makes a PDF export available through another signed URL.
+
+If queue delivery fails, the persisted job remains eligible for redispatch with backoff. A worker callback can therefore be retried without creating a second Analysis Attempt.
+
+## Repository layout
+
+```text
+app/
+├── api/                 HTTP routes, schemas, dependencies, errors, SSE
+├── application/         use cases, workflows, ports, and application services
+├── domain/              product entities, rules, statuses, and scoring
+├── infrastructure/      database, storage, auth, queues, mail, PDF, media
+├── main.py              application wiring and background schedulers
+└── settings.py          typed environment configuration
+contracts/               generated OpenAPI and versioned AI JSON schemas
+migrations/              Alembic migrations for backend-owned product tables
+tests/                   architecture, unit, integration, acceptance, system tests
+scripts/                 quality checks, contract checks, and local-stack commands
+local_stack/             Compose health and smoke checks
+```
+
+## Prerequisites
+
+- Python 3.11 or newer
+- [uv](https://docs.astral.sh/uv/)
+- Docker Engine with Compose v2.17 or newer for the shared local stack
+- FFmpeg for media-validation tests and the production image
+
+The shared stack also expects sibling checkouts:
 
 ```text
 VirtuJudge/
@@ -24,119 +85,145 @@ VirtuJudge/
 └── AI-ML/
 ```
 
-From Backend, start all six services:
+`Backend/scripts/local-stack.sh` checks that the frontend has `package.json` and `package-lock.json`, and that AI-ML has its Python project and worker entry point, before it starts anything.
 
-```bash
-bash scripts/local-stack.sh up
-```
+## Run locally
 
-The script builds the actual sibling frontend and AI code, generates ignored `.env.local` credentials once with mode `0600`, and waits for every service to become healthy. It does not clone, pin, or modify the sibling repositories. Frontend needs its package manifest and lockfile; AI-ML needs its Python project and worker scaffold. The first build downloads dependencies and can take several minutes.
+### Backend on the host
 
-| Service | Local address |
-|---|---|
-| Frontend | http://localhost:3000 |
-| Backend health / OpenAPI | http://localhost:8000/health / http://localhost:8000/docs |
-| PostgreSQL with pgvector | localhost:5432, database `virtujudge` |
-| Redis | localhost:6379 |
-| MinIO S3 / console | http://localhost:9000 / http://localhost:9001 |
-
-Host ports bind to loopback. PostgreSQL has separate `virtujudge_backend` and `virtujudge_ai` roles and private schemas. Redis database 0 carries diagnostic jobs under `virtujudge:local:*`; database 1 holds cache keys. PostgreSQL, Redis, and MinIO use persistent volumes.
-
-The frontend defaults to its existing mock API (`NEXT_PUBLIC_MOCK_API=true`) because product endpoints are still being implemented. Its browser API URL is `http://localhost:8000/api/v1`; containers reach the backend at `http://backend:8000`. The local worker invokes AI-ML's existing `FakePipeline`. Diagnostic results are temporary Redis data, not canonical AI Job or Practice Session state. The product dispatcher and authenticated worker callbacks (`/internal/v1/ai-jobs/...`) manage durable job dispatch and monotonic progress/completion updates.
-
-## Verify and restart
-
-```bash
-bash scripts/local-stack.sh smoke
-bash scripts/local-stack.sh status
-bash scripts/local-stack.sh down
-bash scripts/local-stack.sh up
-```
-
-The smoke check verifies PostgreSQL/pgvector, each role's own-table access and cross-role denial, Redis cache operations, an S3 object round trip, and a correlated fake analysis returning three Primary Questions. It uses synthetic data, removes its temporary records, and requires no Gmail or paid-provider credentials.
-
-`down` preserves volumes and `.env.local`; `up` reuses both. Keep `.env.local` while retaining the database volume because changing its passwords does not update existing database roles. To diagnose startup, inspect `docker compose --env-file .env.local logs SERVICE` and check the listed host ports for conflicts. Missing sibling scaffolds produce an actionable startup error.
-
-## Host development
-
-Install [uv](https://docs.astral.sh/uv/), then:
+Install the locked dependencies, create your ignored host configuration, apply migrations, and start FastAPI:
 
 ```bash
 uv sync --locked
 cp .env.example .env
+uv run alembic upgrade head
 uv run uvicorn app.main:app --reload
 ```
 
-For the prototype production deployment on Render with Cloudflare R2, follow
-[the Render and R2 deployment guide](docs/deployment-render-r2.md). The repository includes a
-Render Blueprint, startup-time migrations, API CORS configuration, and a credential-safe R2
-smoke check.
+The API is then available at:
 
-`.env` configures host processes; `.env.local` configures Compose. To connect host tools to Compose services, privately copy the generated backend password into `DATABASE_URL`, and the MinIO credentials into `OBJECT_STORAGE_ACCESS_KEY` and `OBJECT_STORAGE_SECRET_KEY` in `.env`. Stop the Compose backend or choose another host port before running a second API server. `/health` is application liveness; use the stack smoke command to verify dependencies.
+- API documentation: <http://localhost:8000/docs>
+- OpenAPI document: <http://localhost:8000/openapi.json>
+- Liveness endpoint: <http://localhost:8000/health>
 
-## Mail
+`.env` is for host processes. If PostgreSQL, Redis, and MinIO are running through Compose, copy their generated credentials privately from `.env.local` into `.env` before running host tools. Do not run a host API server on port 8000 while the Compose backend is using that port.
 
-Compose always uses `MAIL_BACKEND=fake`. The fake mail adapter retains messages in memory without delivery or content logging. Invitation business workflows are not part of this setup issue.
+### Shared local stack
 
-Production on Render Free uses the real Resend HTTPS adapter because Render blocks outbound SMTP
-ports on free web services. Verify a domain in Resend and configure these values only in Render's
-Environment page or another secret store:
+From `Backend/`:
 
-```dotenv
-MAIL_BACKEND=resend
-RESEND_API_KEY=re_...
-RESEND_FROM_ADDRESS=VirtuJudge <noreply@mail.example.com>
+```bash
+bash scripts/local-stack.sh up
+bash scripts/local-stack.sh smoke
+bash scripts/local-stack.sh status
+bash scripts/local-stack.sh down
 ```
 
-The sender must belong to the verified domain. Secrets are not stored in `render.yaml`; the
-Blueprint prompts for them during setup.
+The first `up` generates an ignored `.env.local` with random credentials and mode `0600`, builds the Backend, Frontend, and AI worker, waits for health checks, then runs a storage smoke check. It does not clone, alter, or pin the sibling repositories.
 
-Optional Gmail delivery runs only through an explicitly invoked host smoke command. Configure these values in ignored `.env` or your shell environment:
+| Service | Local address | Notes |
+| --- | --- | --- |
+| Frontend | <http://localhost:3000> | Starts with its existing mock API setting unless `NEXT_PUBLIC_MOCK_API` is changed. |
+| Backend | <http://localhost:8000> | Health at `/health`; interactive API docs at `/docs`. |
+| PostgreSQL + pgvector | `localhost:5432` | Database `virtujudge`; Backend and AI use separate roles. |
+| Redis | `localhost:6379` | DB 0 is the diagnostic/job broker namespace; DB 1 holds cache keys. |
+| MinIO API | <http://localhost:9000> | Private S3-compatible object store. |
+| MinIO console | <http://localhost:9001> | Local storage administration. |
+| AI worker | internal Compose service | Processes the local FakePipeline and reports through the internal API. |
 
-```dotenv
-GMAIL_SMTP_HOST=smtp.gmail.com
-GMAIL_SMTP_PORT=587
-GMAIL_SMTP_USERNAME=
-GMAIL_SMTP_PASSWORD=
-GMAIL_FROM_ADDRESS=
-GMAIL_SMOKE_ALLOWLIST=
-```
+`down` keeps the volumes and `.env.local`; `up` reuses them. If you intentionally replace `.env.local`, recreate the volumes too, because PostgreSQL roles retain their original passwords.
 
-Use a dedicated Gmail or Google Workspace sender and an app password where supported, with two-step verification enabled. The adapter uses STARTTLS with certificate verification, as described in [Google's SMTP instructions](https://support.google.com/mail/answer/7104828). `GMAIL_SMOKE_ALLOWLIST` is a comma-separated list of permitted recipient addresses. Fill in the sender credentials and allowlist privately, then explicitly send one synthetic message:
+## Configuration
+
+Start with [`.env.example`](.env.example). Keep `.env`, `.env.local`, production secrets, JWTs, signed URLs, private media, and provider responses out of Git and logs.
+
+| Area | Important variables |
+| --- | --- |
+| Application | `APP_ENV`, `APP_HOST`, `APP_PORT`, `CORS_ALLOWED_ORIGINS` |
+| Persistence and queue | `DATABASE_URL`, `REDIS_URL`, `REDIS_CACHE_URL`, `CELERY_BROKER_URL` |
+| Object storage | `OBJECT_STORAGE_ENDPOINT`, `OBJECT_STORAGE_PUBLIC_ENDPOINT`, `OBJECT_STORAGE_BUCKET`, credentials, upload/download URL TTLs |
+| Identity and workers | `OIDC_ISSUER`, `OIDC_AUDIENCE`, `OIDC_JWKS_URL`, `AI_WORKER_SHARED_SECRET` |
+| Job recovery | `AI_JOB_DISPATCHER_*`, `AI_WORKER_TASK_NAME`, `AI_WORKER_QUEUE_NAME` |
+| Asset retention | `ASSET_CLEANUP_*` |
+| Mail | `MAIL_BACKEND`, Resend settings, or Gmail SMTP settings and `GMAIL_SMOKE_ALLOWLIST` |
+
+The asset-cleanup and job-redispatch schedulers run by default outside tests. Tests disable them unless explicitly enabled. See [`app/settings.py`](app/settings.py) for defaults and validation, and the [deployment guide](docs/deployment-render-r2.md) for Render with Cloudflare R2.
+
+### Mail
+
+`MAIL_BACKEND=fake` is the default and is always used by Compose. It retains messages in memory and never sends mail. Production can use `resend` (the supported option for Render Free, which blocks outbound SMTP ports) or `gmail`. Gmail sending is only exercised through an explicit, allow-listed smoke command:
 
 ```bash
 uv run python -m local_stack.gmail_smoke --recipient allowed@example.com --send
 ```
 
-The command checks the allowlist and `--send` before connecting. Credentials are not included in Compose or container images. Ordinary tests use fakes and never send Gmail.
+That command refuses to connect unless the recipient is in `GMAIL_SMOKE_ALLOWLIST` and `--send` is present.
 
-## Repository checks and migrations
+## API and contracts
+
+The interactive API reference at `/docs` and [`contracts/openapi.json`](contracts/openapi.json) are the public API source of truth. Main route groups cover:
+
+| Area | Routes |
+| --- | --- |
+| Identity, teams, and projects | `/api/v1/me`, `/api/v1/teams`, `/api/v1/projects` |
+| Assets | upload intents, verification completion, immutable versions, download intents, and erasure |
+| Practice Sessions | draft creation, manifest editing, analysis attempts, cancellation, retry, speaker mapping, and session events |
+| Q&A | Q&A state, answer-upload intents, answer submission, and skips |
+| Reports | evaluation, report payload, PDF export, export status, and download intent |
+| Workers | `/internal/v1/ai-jobs/{job_id}` and ordered status updates |
+
+Public mutations use `Idempotency-Key` where repeated delivery must be safe. Versioned session updates use `ETag` and `If-Match` for optimistic concurrency. Errors use `application/problem+json` and never expose private inputs, provider bodies, secrets, or stack traces.
+
+`GET /api/v1/practice-sessions/{session_id}/events` is an authenticated Server-Sent Events stream. Notifications expose only safe status, progress, IDs, versions, and correlation data. Clients reconnect with `Last-Event-ID`; a resync event tells them to refetch canonical REST state when the retained event history cannot satisfy that cursor.
+
+The worker boundary uses versioned JSON schemas in [`contracts/schemas/`](contracts/schemas/). Queue messages and callbacks are intentionally small. Workers receive scoped artifact references, while the backend validates sequence numbers, ownership, attempt currency, question limits, evidence references, report feedback coverage, and scores before changing product state.
+
+For endpoint details and the cross-repository contract, see:
+
+- [Frontend–Backend API contract](https://github.com/VirtuJudge/Docs/blob/main/Contracts/Frontend-Backend-API.md)
+- [Backend–AI contract](https://github.com/VirtuJudge/Docs/blob/main/Contracts/Backend-AI-Contract.md)
+- [Event catalogue](https://github.com/VirtuJudge/Docs/blob/main/Contracts/Event-Catalogue.md)
+
+## Assets, privacy, and retention
+
+Browser clients upload directly to private object storage; large files never travel through API or queue payloads. An upload intent has an absolute expiry, and replaying it does not extend that deadline. Completion re-checks content length, checksum, media/document structure, and ownership before a version becomes verified.
+
+Abandoned uploads are claimed with a lease, deleted from storage, and marked deleted transactionally. A delayed tombstone re-sweep catches objects that arrive after cleanup. Verified versions remain protected when a replacement is rejected or abandoned.
+
+Every team-owned resource is authorized through Team Membership ancestry. OIDC verification checks issuer, audience, signature, expiry, and subject. Worker callbacks use a credential separate from user JWTs. Starting erasure revokes access immediately, while physical deletion follows the documented retention window.
+
+## Database migrations
+
+Backend-owned product tables use one Alembic history. Generate migrations from model changes, inspect the result, and test both directions before merging:
 
 ```bash
-uv sync --locked
-bash scripts/check.sh
 uv run alembic revision --autogenerate -m "describe change"
 uv run alembic upgrade head
 uv run alembic downgrade -1
 ```
 
-Repository checks cover lint, formatting, strict types, and tests without running external services. The explicit stack smoke check covers the real service boundaries.
+The container startup command applies `alembic upgrade head` before Uvicorn starts. AI-ML owns only its `ai_*` tables and derived-object prefix; it must not modify Backend migrations or product tables.
 
-### Test taxonomy
+## Quality checks
 
-Tests are categorized under `tests/` aligned with the four-layer architecture:
+Run the full repository gate before opening a pull request:
 
-- **Architecture tests** (`tests/architecture/`): Enforce dependency directions, ensuring ports and domain do not import outer layers.
-- **Unit tests** (`tests/unit/`): Fast, in-memory validation of domain rules, asset metadata, and container signatures without I/O or database overhead.
-- **Integration tests** (`tests/integration/`):
-  - `api/`: Route handlers, status codes, and Problem Details error responses.
-  - `adapters/`: Adapter implementations against synthetic or subprocess boundaries (FFmpeg media verifier, pypdf document verifier, S3 storage client, mail adapter).
-  - `persistence/`: Database operations, concurrent updates, locks, and migration lifecycle tests with SQLite or PostgreSQL test databases.
-- **Acceptance tests** (`tests/acceptance/`): End-to-end API workflows and business processes (asset upload intents, verification completions, version progression, project/team authorization, and abandoned upload cleanup).
-- **System tests** (`tests/system/`): Local-stack smoke checks, container CLI interactions, Redis diagnostic queues, and Gmail smoke verification.
-- **Test support** (`tests/support/`): Shared test doubles (`FakeAssetRepository`, `RecordingStorage`, `FakeSyncRedis`, `FakeTokenVerifier`), synthetic document builders, client helpers, and constants.
+```bash
+uv sync --locked
+bash scripts/check.sh
+```
 
-Individual test categories can be executed selectively:
+It checks required repository files, Ruff linting and formatting, strict mypy, OpenAPI and AI-contract snapshots, and the full pytest suite. The test layout is intentional:
+
+| Test type | Focus |
+| --- | --- |
+| `tests/architecture/` | Inward dependency rules and boundary enforcement. |
+| `tests/unit/` | Domain rules, workflows, queues, contracts, storage boundaries, notifications, and PDF generation without external services. |
+| `tests/integration/` | API behavior, adapter behavior, repositories, migrations, concurrency, and callback authentication. |
+| `tests/acceptance/` | Product workflows such as uploads, cleanup, team/project access, durable enqueue recovery, and dispatch scheduling. |
+| `tests/system/` | Compose services, stack smoke checks, worker flow, and explicit Gmail verification. |
+
+Useful focused commands:
 
 ```bash
 uv run pytest tests/architecture
@@ -144,38 +231,33 @@ uv run pytest tests/unit
 uv run pytest tests/integration
 uv run pytest tests/acceptance
 uv run pytest tests/system
+uv run python scripts/openapi_contract.py --check
+uv run python scripts/ai_contract.py --check
 ```
 
-## Asset uploads and abandoned cleanup
-
-Assets support direct private uploads for documents and media with immutable versions.
-
-### Upload lifetime and idempotency
-
-- Upload intents persist an absolute `upload_expires_at` deadline at creation using clamped TTL (`OBJECT_STORAGE_UPLOAD_URL_TTL_SECONDS`, default 900s).
-- First creation and replayed intents sign only the floored remaining seconds before `upload_expires_at`. Replays never renew beyond the deadline.
-- Replaying an expired intent or an intent for a non-pending version (`verified`, `rejected`, `deleting`, `deleted`) returns safe `409 conflict`.
-- Completing a valid `pending_upload` version succeeds after URL expiry until cleanup claims the version. A claimed version returns `409 conflict`; if cleanup deletes the logical asset because no usable version survives, later access is concealed with `404 not found`. Repeated completion of verified versions remains idempotent.
-
-### Automated cleanup lifecycle
-
-A background periodic task in the FastAPI lifespan automatically claims and cleans abandoned uploads:
-- **Eligibility**: Requires both the upload deadline to have expired (`upload_expires_at <= now`) and a retention grace period to have passed (`created_at <= now - retention_seconds`). Verified objects are never eligible.
-- **State transitions**: Short transaction locks asset and version (PostgreSQL `SKIP LOCKED`), marks version `deleting` with a lease (`ASSET_CLEANUP_LEASE_SECONDS`, default 300s), deletes object from storage (missing object is treated as success), and finalizes version state to `deleted`.
-- **Tombstone re-sweep**: Finalized `deleted` versions schedule `cleanup_next_attempt_at` for delayed re-sweep (`ASSET_CLEANUP_TOMBSTONE_DELAY_SECONDS`, default 86400s) to catch late-arriving PUT requests without starving fresh candidates.
-- **Preservation**: If a replacement version is abandoned, surviving verified document current version pointers are preserved. If a newer pending replacement still exists, it becomes current; the logical asset is marked `deleted` only when no verified or pending version survives.
-- **Scheduler**: Enabled by default in development/production, disabled in test (`app_env == "test"` unless `ASSET_CLEANUP_ENABLED=true`). Runs every `ASSET_CLEANUP_INTERVAL_SECONDS` (default 300s) in batches of `ASSET_CLEANUP_BATCH_SIZE` (default 100) using independent database sessions.
-
-### Schema migration
-
-Migration `d5e6f7a8b9c0` adds `upload_expires_at` and `cleanup_next_attempt_at` with indices to `asset_versions`. Existing rows are backfilled to `migration_time + 3600s` before applying `NOT NULL` to preserve legacy replays during rollout. Downgrade safely removes the columns and indices.
-
-### Explicit smoke check
-
-To run real PostgreSQL and MinIO integration checks against an isolated disposable database and bucket:
+The shared-stack smoke check verifies PostgreSQL/pgvector access boundaries, Redis, a MinIO round trip, and a correlated fake analysis. It uses synthetic data and removes its temporary records. For an isolated PostgreSQL/MinIO asset lifecycle check, run:
 
 ```bash
 uv run python scripts/smoke-assets.py --env-file .env.local
 ```
 
-The script requires an explicit `--env-file`, provisions unique resources, exercises concurrent uploads, fail-closed signature enforcement, media verification, and cleanup transitions, and drops all created resources upon completion without modifying application data.
+## Deployment
+
+[`render.yaml`](render.yaml) describes the prototype Render deployment: a Docker web service, Redis, startup migrations, CORS configuration, and Cloudflare R2-compatible object storage. Store all runtime secrets in Render's environment settings or another secret manager; they are intentionally absent from the Blueprint.
+
+Read [Deploy on Render with Cloudflare R2](docs/deployment-render-r2.md) before configuring a hosted environment. The deployment guide includes the credential-safe R2 smoke check and the production mail setup.
+
+## Contributing
+
+Use the shared domain language and update the owning contract or decision before implementing a cross-boundary behavior change. Keep changes small, include the relevant test depth, inspect generated OpenAPI/schema changes, and review the complete diff before opening a PR.
+
+See [CONTRIBUTING.md](CONTRIBUTING.md), [SECURITY.md](SECURITY.md), and the [review workflow](https://github.com/VirtuJudge/Docs/blob/main/Planning/Review-Workflow.md). Security reports should go directly to a maintainer; never open a public issue containing an exploit, credential, or user data.
+
+## Documentation
+
+The documentation repository holds the product requirements, architectural decisions, contracts, retention policy, and testing plan. The most useful entry points are:
+
+- [Domain language](https://github.com/VirtuJudge/Docs/blob/main/CONTEXT.md)
+- [Backend architecture](https://github.com/VirtuJudge/Docs/blob/main/Architecture/Backend-Architecture.md)
+- [Security, privacy, and retention](https://github.com/VirtuJudge/Docs/blob/main/Architecture/Security-Privacy-and-Retention.md)
+- [Architecture decisions](https://github.com/VirtuJudge/Docs/tree/main/adr)
