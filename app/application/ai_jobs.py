@@ -70,6 +70,7 @@ from app.domain.session_workflow.enums.report import (
 )
 from app.domain.session_workflow.enums.session_status import SessionStatus
 from app.domain.session_workflow.exceptions import (
+    CompletedResultValidationError,
     InvalidAttemptState,
     InvalidJobStatusTransition,
     StaleEntityVersion,
@@ -148,6 +149,88 @@ DEFAULT_REQUESTED_CAPABILITIES: list[str] = [
     "documents",
     "questions",
 ]
+
+MAX_EVALUATION_ARTIFACT_BYTES = 1024 * 1024
+
+
+def _artifact_uuid(value: Any) -> UUID:
+    try:
+        return UUID(str(value))
+    except (TypeError, ValueError):
+        return uuid5(NAMESPACE_URL, str(value))
+
+
+def _artifact_finding(value: Any) -> Finding:
+    data = dict(value)
+    return Finding(
+        id=str(data["id"]),
+        kind=FindingKind(str(data["kind"])),
+        title=str(data["title"]),
+        detail=str(data["detail"]),
+        recommendation=(str(data["recommendation"]) if data.get("recommendation") else None),
+        evidence_ids=[str(item) for item in data.get("evidence_ids", [])],
+        rubric_dimension=(
+            str(data["rubric_dimension"]) if data.get("rubric_dimension") else None
+        ),
+        speaker_labels=[str(item) for item in data.get("speaker_labels", [])],
+    )
+
+
+def _artifact_score_component(value: Any) -> ScoreComponent:
+    data = dict(value)
+    raw_label = data.get("label")
+    return ScoreComponent(
+        dimension=str(data["dimension"]),
+        status=ScoreStatus(str(data["status"])),
+        configured_weight=float(data["configured_weight"]),
+        normalized_score=(
+            float(data["normalized_score"]) if data.get("normalized_score") is not None else None
+        ),
+        display_score=(
+            int(data["display_score"]) if data.get("display_score") is not None else None
+        ),
+        label=ScoreLabel(str(raw_label)) if raw_label else None,
+        effective_weight=(
+            float(data["effective_weight"]) if data.get("effective_weight") is not None else None
+        ),
+        evidence_ids=[str(item) for item in data.get("evidence_ids", [])],
+        rationale=str(data.get("rationale") or ""),
+        limitation_code=(str(data["limitation_code"]) if data.get("limitation_code") else None),
+    )
+
+
+def _artifact_limitations(value: Any) -> list[dict[str, Any]]:
+    if not isinstance(value, list):
+        raise TypeError("limitations must be a list")
+    return [dict(item) for item in value]
+
+
+def _artifact_feedback_section(value: Any) -> FeedbackSection:
+    data = dict(value)
+    return FeedbackSection(
+        summary=str(data["summary"]),
+        strengths=[_artifact_finding(item) for item in data.get("strengths", [])],
+        improvements=[_artifact_finding(item) for item in data.get("improvements", [])],
+        score_components=[
+            _artifact_score_component(item) for item in data.get("score_components", [])
+        ],
+        limitations=_artifact_limitations(data.get("limitations", [])),
+    )
+
+
+def _artifact_member_feedback(value: Any) -> MemberFeedback:
+    data = dict(value)
+    return MemberFeedback(
+        user_id=_artifact_uuid(data["user_id"]),
+        display_name=str(data["display_name"]),
+        speaker_labels=[str(item) for item in data.get("speaker_labels", [])],
+        summary=str(data["summary"]),
+        strengths=[_artifact_finding(item) for item in data.get("strengths", [])],
+        improvements=[_artifact_finding(item) for item in data.get("improvements", [])],
+        delivery_components=[
+            _artifact_score_component(item) for item in data.get("delivery_components", [])
+        ],
+    )
 
 
 def _normalize_sha256(raw: Any) -> str:
@@ -840,163 +923,77 @@ class AIJobs:
 
                 mapped_user_ids.add(_uuid.uuid5(_uuid.NAMESPACE_DNS, str(uid_str)))
 
-        components = [
-            ScoreComponent(
-                dimension="delivery",
-                status=ScoreStatus.SCORED,
-                configured_weight=0.25,
-                normalized_score=0.80,
-                display_score=80,
-                label=ScoreLabel.STRONG,
-                evidence_ids=["ev_speech_01"],
-                rationale="Pacing and vocal projection were clear throughout.",
-            ),
-            ScoreComponent(
-                dimension="content",
-                status=ScoreStatus.SCORED,
-                configured_weight=0.25,
-                normalized_score=0.75,
-                display_score=75,
-                label=ScoreLabel.GOOD,
-                evidence_ids=["ev_slide_01"],
-                rationale="Comprehensive market analysis and clear problem-solution fit.",
-            ),
-            ScoreComponent(
-                dimension="structure",
-                status=ScoreStatus.SCORED,
-                configured_weight=0.15,
-                normalized_score=0.70,
-                display_score=70,
-                label=ScoreLabel.GOOD,
-                evidence_ids=["ev_slide_02"],
-                rationale="Logical progression from problem statement to traction metrics.",
-            ),
-            ScoreComponent(
-                dimension="visuals",
-                status=ScoreStatus.SCORED,
-                configured_weight=0.15,
-                normalized_score=0.80,
-                display_score=80,
-                label=ScoreLabel.STRONG,
-                evidence_ids=["ev_slide_03"],
-                rationale="Clean, legible slides with compelling data visualisations.",
-            ),
-            ScoreComponent(
-                dimension="qa",
-                status=ScoreStatus.SCORED,
-                configured_weight=0.20,
-                normalized_score=0.75,
-                display_score=75,
-                label=ScoreLabel.GOOD,
-                evidence_ids=["ev_qa_01"],
-                rationale="Direct answers with strong grounding in presentation claims.",
-            ),
-        ]
+        if self._storage is None:
+            raise CompletedResultValidationError("Evaluation artifact storage is not configured.")
 
-        team_feedback = FeedbackSection(
-            summary="Strong overall pitch with clear team coordination and persuasive narrative.",
-            strengths=[
-                Finding(
-                    id="find_team_01",
-                    kind=FindingKind.STRENGTH,
-                    title="Clear Value Proposition",
-                    detail="The team clearly articulated customer pain and economic value.",
-                    evidence_ids=["ev_speech_01"],
-                    rubric_dimension="content",
-                )
-            ],
-            improvements=[
-                Finding(
-                    id="find_team_02",
-                    kind=FindingKind.IMPROVEMENT,
-                    title="Competitive Differentiation",
-                    detail="Spend more time explaining technical defensibility against incumbents.",
-                    recommendation="Include a comparison grid highlighting defensible IP.",
-                    evidence_ids=["ev_slide_02"],
-                    rubric_dimension="content",
-                )
-            ],
-            score_components=components,
-        )
-
-        member_feedbacks: list[MemberFeedback] = []
-        for idx, uid in enumerate(sorted(mapped_user_ids, key=str)):
-            member_feedbacks.append(
-                MemberFeedback(
-                    user_id=uid,
-                    display_name=f"Presenter {idx + 1}",
-                    speaker_labels=[f"SPEAKER_{idx:02d}"],
-                    summary="Delivered prepared slides with confidence and addressed questions.",
-                    strengths=[
-                        Finding(
-                            id=f"find_mem_{idx}_01",
-                            kind=FindingKind.STRENGTH,
-                            title="Composed Delivery",
-                            detail="Maintained strong eye contact and controlled pacing.",
-                            evidence_ids=["ev_speech_01"],
-                            rubric_dimension="delivery",
-                        )
-                    ],
-                    improvements=[
-                        Finding(
-                            id=f"find_mem_{idx}_02",
-                            kind=FindingKind.IMPROVEMENT,
-                            title="Elaborate on Projections",
-                            detail="Provide more specifics when addressing financial milestones.",
-                            evidence_ids=["ev_qa_01"],
-                            rubric_dimension="qa",
-                        )
-                    ],
-                    delivery_components=[components[0]],
-                )
+        try:
+            raw_evaluation = await self._storage.get_object(
+                payload.evaluation_artifact.object_key,
+                MAX_EVALUATION_ARTIFACT_BYTES,
             )
+            expected_checksum = payload.evaluation_artifact.checksum.lower()
+            actual_checksum = f"sha256:{hashlib.sha256(raw_evaluation).hexdigest()}"
+            if actual_checksum != expected_checksum:
+                raise ValueError("checksum mismatch")
+            artifact = json.loads(raw_evaluation)
+            rubric = dict(artifact["rubric"])
+            components = [
+                _artifact_score_component(item) for item in artifact.get("components", [])
+            ]
+            team_feedback = _artifact_feedback_section(artifact["team_feedback"])
+            member_feedbacks = [
+                _artifact_member_feedback(item) for item in artifact.get("member_feedback", [])
+            ]
+            evaluation = Evaluation(
+                id=_artifact_uuid(artifact["id"]),
+                practice_session_id=job.practice_session_id,
+                analysis_attempt_id=job.attempt_id,
+                qa_round_id=qa_round_id,
+                rubric_id=str(rubric["rubric_id"]),
+                rubric_version=int(rubric["version"]),
+                overall_score=float(artifact["overall_score"]),
+                components=components,
+                findings=[_artifact_finding(item) for item in artifact.get("findings", [])],
+                team_feedback=team_feedback,
+                member_feedback=member_feedbacks,
+                limitations=_artifact_limitations(artifact.get("limitations", [])),
+                reproducibility=dict(artifact.get("reproducibility", {})),
+                created_at=occurred_at,
+            )
+        except Exception as exc:
+            raise CompletedResultValidationError(
+                "Evaluation artifact could not be validated."
+            ) from exc
 
         report_id = uuid4()
         if isinstance(job.payload, dict) and isinstance(job.payload.get("payload"), dict):
             raw_rep_id = job.payload["payload"].get("report_id")
             if raw_rep_id:
-                try:
-                    report_id = UUID(str(raw_rep_id))
-                except (ValueError, TypeError):
-                    import uuid as _uuid
+                report_id = _artifact_uuid(raw_rep_id)
 
-                    report_id = _uuid.uuid5(_uuid.NAMESPACE_DNS, str(raw_rep_id))
-
-        eval_id = uuid4()
-        evaluation = Evaluation(
-            id=eval_id,
-            practice_session_id=job.practice_session_id,
-            analysis_attempt_id=job.attempt_id,
-            qa_round_id=qa_round_id,
-            rubric_id=rubric_id,
-            rubric_version=rubric_version,
-            overall_score=0.76,
-            components=components,
-            findings=team_feedback.strengths + team_feedback.improvements,
-            team_feedback=team_feedback,
-            member_feedback=member_feedbacks,
-            limitations=[lim.model_dump() for lim in payload.limitations],
-            created_at=occurred_at,
+        report_title = (
+            f"{ancestry.session.name} — Final Evaluation Report"
+            if ancestry is not None and ancestry.session.name
+            else "Practice Session Final Evaluation Report"
         )
-
+        recommendations = [
+            finding.recommendation
+            for finding in team_feedback.improvements
+            if finding.recommendation
+        ]
         report = Report(
             id=report_id,
             practice_session_id=job.practice_session_id,
-            evaluation_id=eval_id,
-            title="Practice Session Pitch Evaluation",
+            evaluation_id=evaluation.id,
+            title=report_title,
             executive_summary=team_feedback.summary,
-            overall_score=0.76,
+            overall_score=evaluation.overall_score,
             score_components=components,
             team_feedback=team_feedback,
             member_feedback=member_feedbacks,
-            transcript_timeline=[],
-            document_alignment=[],
-            qa_review=[],
-            recommendations=[
-                "Refine competitive moat explanation",
-                "Practice concise Q&A responses",
-            ],
-            limitations=[lim.model_dump() for lim in payload.limitations],
+            recommendations=recommendations,
+            limitations=evaluation.limitations,
+            reproducibility=evaluation.reproducibility,
             generated_at=occurred_at,
             updated_at=occurred_at,
         )

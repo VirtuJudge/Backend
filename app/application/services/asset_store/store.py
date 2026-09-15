@@ -588,7 +588,8 @@ class AssetStore:
         await self._authorize_project(project_id, user_id)
         asset_id = uuid4()
         version_id = uuid4()
-        checksum = f"sha256:{sha256(content).hexdigest()}"
+        checksum_digest = sha256(content).hexdigest()
+        checksum = f"sha256:{checksum_digest}"
         storage_key = f"projects/{project_id}/assets/{asset_id}/{version_id}/{file_name}"
         now = datetime.now(UTC)
 
@@ -629,7 +630,7 @@ class AssetStore:
             project_id=project_id,
             operation=f"store_{kind}",
             key=str(version_id),
-            request_hash=checksum,
+            request_hash=checksum_digest,
             asset_id=asset_id,
             version_id=version_id,
         )

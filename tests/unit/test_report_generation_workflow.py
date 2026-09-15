@@ -58,7 +58,12 @@ class _FakeSessionsRepo:
 
 
 def _setup_report_pipeline() -> tuple[
-    AIJobs, FakeUnitOfWork, PracticeSession, AnalysisAttempt, AnalysisJob, QARound
+    AIJobs,
+    FakeUnitOfWork,
+    PracticeSession,
+    AnalysisAttempt,
+    AnalysisJob,
+    QARound,
 ]:
     session_id = uuid4()
     project_id = uuid4()
@@ -229,15 +234,100 @@ def _setup_report_pipeline() -> tuple[
     return service, uow, session, attempt, job, round_
 
 
+def _evaluation_artifact(user_id: str) -> bytes:
+    component_specs = [
+        ("pitch_content_and_evidence", 0.25, 0.60, 60, "good"),
+        ("business_and_problem_solution_reasoning", 0.20, 0.50, 50, "developing"),
+        ("technical_feasibility", 0.15, 0.40, 40, "developing"),
+        ("delivery_and_body_language", 0.15, 0.85, 85, "strong"),
+        ("timing_and_speech_mechanics", 0.05, 0.77, 77, "good"),
+        ("qa_quality", 0.20, 0.75, 75, "good"),
+    ]
+    components = [
+        {
+            "dimension": dimension,
+            "status": "scored",
+            "configured_weight": weight,
+            "normalized_score": score,
+            "display_score": display,
+            "label": label,
+            "effective_weight": weight,
+            "evidence_ids": [f"ev_{index}"],
+            "rationale": f"Grounded rationale for {dimension}.",
+            "limitation_code": None,
+        }
+        for index, (dimension, weight, score, display, label) in enumerate(component_specs, start=1)
+    ]
+    strength = {
+        "id": "team-strength",
+        "kind": "strength",
+        "title": "Clear phased roadmap",
+        "detail": "The presentation provides a clear phased roadmap.",
+        "recommendation": "Keep the milestones visible in future pitches.",
+        "evidence_ids": ["ev_1"],
+        "rubric_dimension": "pitch_content_and_evidence",
+        "speaker_labels": [],
+    }
+    improvement = {
+        "id": "team-improvement",
+        "kind": "improvement",
+        "title": "Add technical detail",
+        "detail": "The technical feasibility explanation needs concrete details.",
+        "recommendation": "Add a technical architecture diagram.",
+        "evidence_ids": ["ev_3"],
+        "rubric_dimension": "technical_feasibility",
+        "speaker_labels": [],
+    }
+    payload = {
+        "id": "01M2K8N0A5TD92YKD6ENT93B7V",
+        "schema_version": 1,
+        "analysis_attempt_id": "worker-attempt",
+        "qa_round_id": "worker-round",
+        "rubric": {"rubric_id": "startup_pitch", "version": 1},
+        "overall_score": 0.6251,
+        "components": components,
+        "findings": [strength, improvement],
+        "team_feedback": {
+            "summary": "The pitch has a clear phased roadmap but needs stronger technical detail.",
+            "strengths": [strength],
+            "improvements": [improvement],
+            "score_components": components,
+            "limitations": [],
+        },
+        "member_feedback": [
+            {
+                "user_id": user_id,
+                "display_name": "Presenter (SPEAKER_00)",
+                "speaker_labels": ["SPEAKER_00"],
+                "summary": "Delivery was confident with opportunities to reduce filler words.",
+                "strengths": [strength],
+                "improvements": [improvement],
+                "delivery_components": components[3:5],
+            }
+        ],
+        "limitations": [],
+        "reproducibility": {"pipeline_version": "0.1.0"},
+    }
+    return json.dumps(payload).encode()
+
+
 @pytest.mark.asyncio
 async def test_record_update_report_completed_persists_canonical_report_and_evaluation() -> None:
     service, uow, session, attempt, job, round_ = _setup_report_pipeline()
+    storage = service._storage
+    assert isinstance(storage, FakeObjectStorage)
+    presenter_id = uow.speaker_mappings.get_by_attempt_id.return_value[0].user_id
+    evaluation_key = (
+        f"projects/{session.project_id}/sessions/{session.id}/attempts/1/evaluation.json"
+    )
+    evaluation_bytes = _evaluation_artifact(str(presenter_id))
+    storage.objects[evaluation_key] = evaluation_bytes
 
     payload = ReportCompletedPayload(
         evaluation_artifact=ArtifactRef(
             artifact_id="01JEXAMPLE0000000000000071",
-            object_key=f"projects/{session.project_id}/sessions/{session.id}/attempts/1/evaluation.json",
-            checksum="sha256:" + "a" * 64,
+            object_key=evaluation_key,
+            checksum=f"sha256:{hashlib.sha256(evaluation_bytes).hexdigest()}",
             schema_version=1,
         ),
         report_artifact=ArtifactRef(
@@ -246,7 +336,7 @@ async def test_record_update_report_completed_persists_canonical_report_and_eval
             checksum="sha256:" + "b" * 64,
             schema_version=1,
         ),
-        member_feedback_user_ids=[],
+        member_feedback_user_ids=[str(presenter_id)],
         limitations=[],
     )
     update = _make_update(
@@ -273,11 +363,15 @@ async def test_record_update_report_completed_persists_canonical_report_and_eval
     # Verify report and evaluation persisted
     stored_report = await uow.reports.get_report_by_session(session.id)
     assert stored_report is not None
-    assert stored_report.overall_score == 0.76
-    assert len(stored_report.score_components) == 5
+    assert stored_report.overall_score == 0.6251
+    assert stored_report.title == "Pitch Session — Final Evaluation Report"
+    assert len(stored_report.score_components) == 6
+    assert stored_report.team_feedback.summary.startswith("The pitch has a clear phased roadmap")
 
     # Check 20% Q&A weight constraint
-    qa_component = next((c for c in stored_report.score_components if c.dimension == "qa"), None)
+    qa_component = next(
+        (c for c in stored_report.score_components if c.dimension == "qa_quality"), None
+    )
     assert qa_component is not None
     assert qa_component.configured_weight == 0.20
 

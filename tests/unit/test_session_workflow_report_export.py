@@ -1,4 +1,5 @@
 from datetime import UTC, datetime
+from hashlib import sha256
 from typing import Any
 from unittest.mock import MagicMock
 from uuid import UUID, uuid4
@@ -214,6 +215,10 @@ async def test_export_report_pdf_creates_verified_asset_and_ready_export() -> No
     assert saved_version.state == "verified"
     assert saved_version.media_type == "application/pdf"
     assert saved_version.storage_key in storage.objects
+    stored_idempotency = next(iter(asset_repo.idempotency.values()))
+    expected_request_hash = sha256(storage.objects[saved_version.storage_key]).hexdigest()
+    assert stored_idempotency.request_hash == expected_request_hash
+    assert len(stored_idempotency.request_hash) == 64
 
     # Calling with same idempotency key returns the existing export
     second_export = await workflow.export_report_pdf(

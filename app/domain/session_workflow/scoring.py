@@ -20,7 +20,7 @@ from app.domain.session_workflow.exceptions import (
     RubricMismatchError,
 )
 
-QA_DIMENSION_NAMES = {"qa", "q_and_a", "q&a", "questions_and_answers"}
+QA_DIMENSION_NAMES = {"qa", "qa_quality", "q_and_a", "q&a", "questions_and_answers"}
 
 
 def calculate_display_score(normalized_score: float) -> int:
