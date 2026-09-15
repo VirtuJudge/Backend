@@ -4,6 +4,12 @@ The VirtuJudge backend is the product control plane for pitch-practice sessions.
 
 It is a FastAPI application built around four layers. PostgreSQL is the source of truth for product state. Redis is used for Celery job delivery, rate limiting, and live session notifications; it is never the source of business truth. AI processing runs in the separate [AI-ML repository](https://github.com/VirtuJudge/AI-ML), which can write only its own derived data and must report results through the backend's internal contract.
 
+## Problem
+
+Pitch practice involves more than uploading a recording and asking a model for feedback. Teams need to control who can access shared material, keep a stable record of the exact presentation and documents an analysis used, process media asynchronously, ask grounded follow-up questions, and produce feedback that does not overstate what the evidence supports.
+
+Those steps span the browser, object storage, PostgreSQL, Redis, and a separate AI worker. The backend keeps them coherent when requests are retried, a worker updates a job more than once, an upload expires, or a user cancels a session. It also has to keep private material out of logs, public events, and queue payloads.
+
 ## What it owns
 
 - users, teams, memberships, invitations, and project access;
@@ -42,6 +48,18 @@ Dependencies point inward:
 
 `app/main.py` is the composition root. Domain and application code must not import FastAPI, SQLAlchemy, Redis, Celery, or provider SDKs.
 
+## Technology choices
+
+| Choice | Why it is here |
+| --- | --- |
+| FastAPI and Pydantic v2 | Typed HTTP boundaries, request validation, and generated OpenAPI from the running service. |
+| Python 3.11, SQLAlchemy async, Alembic, and PostgreSQL | Transactional product state, explicit migrations, and database concurrency controls without leaking ORM models into the domain. |
+| Celery with Redis | Durable job records can be dispatched to the separate AI worker without making the API wait for media processing. |
+| S3-compatible storage and MinIO locally | Browsers upload large private files directly with narrowly scoped, short-lived URLs. |
+| OIDC JWT validation | Authentication remains standards-based and separate from the identity provider UI. |
+| Redis-backed SSE | A connected browser receives safe workflow progress and can resync from REST state after a missed event. |
+| Adapter ports | Storage, mail, queue, auth, media, document, and PDF providers can be tested with fakes and replaced without changing the workflow. |
+
 ## Core workflow
 
 1. A team member uploads a presentation and optional supporting documents directly to private object storage with short-lived signed URLs. The backend verifies size, checksum, and file structure before a version can be used.
@@ -51,6 +69,24 @@ Dependencies point inward:
 5. Once Q&A is complete, the backend serializes the validated Q&A artifact, dispatches report generation, validates the returned evaluation/report, and makes a PDF export available through another signed URL.
 
 If queue delivery fails, the persisted job remains eligible for redispatch with backoff. A worker callback can therefore be retried without creating a second Analysis Attempt.
+
+## Trade-offs and failure handling
+
+- **Direct object storage instead of API uploads.** This keeps large files out of FastAPI workers and job messages. The trade-off is a more involved client flow: the client must use a signed URL, provide a checksum, and complete the upload before the asset becomes usable.
+- **Durable jobs with at-least-once delivery instead of a distributed transaction.** PostgreSQL records the job before enqueueing it, so a broker outage cannot lose the request. A worker may see the same message again, which is why job IDs, callback sequences, and state transitions are idempotent.
+- **SSE with bounded replay instead of a general event platform.** Redis keeps the live-update path small. It is not permanent event storage; a missing, expired, or trimmed cursor produces a resync signal and the frontend reloads canonical REST resources.
+- **Asynchronous analysis and report generation.** The API returns after state is committed rather than holding a request open while media is processed. Clients need to represent queued and running states, but retries and cancellation remain explicit and observable.
+- **Private uploads with automatic cleanup.** Expired, unfinished uploads are reclaimed with a lease and a delayed tombstone re-sweep. This avoids accumulating orphaned objects while preserving a previously verified version when a replacement fails.
+
+Expected failure paths are handled at the boundary where they occur. Storage or verification failures leave an asset unverified rather than exposing it to a session. Duplicate or out-of-order worker updates are ignored. A failed enqueue remains redispatchable. If a session event cannot be replayed, the client is told to resync rather than receiving partial state. Mail has a fake adapter for ordinary tests, and live Gmail delivery requires an explicit allow-listed smoke command.
+
+## Performance considerations
+
+- Files move between the browser, S3-compatible storage, and the AI worker without passing through the API process.
+- SQLAlchemy runs asynchronously for database I/O; workflows use transactions and optimistic `ETag`/`If-Match` checks where concurrent session changes would conflict.
+- Redis is limited to ephemeral responsibilities: queue transport, rate limiting, and retained session notifications. PostgreSQL remains the canonical recovery point.
+- AI processing and report generation run outside the normal request-response path. Upload verification and PDF rendering sit behind dedicated adapters, so their validation and implementation details stay out of routes and workflows.
+- Queue dispatch uses bounded scans and backoff, while asset cleanup works in leased batches so background recovery does not contend with every active request.
 
 ## Repository layout
 
