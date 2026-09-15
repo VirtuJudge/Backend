@@ -29,6 +29,12 @@ class AnalysisJobRepository(Protocol):
         session_id: UUID,
     ) -> AnalysisJob | None: ...
 
+    async def cancel_nonterminal_by_session_id(
+        self,
+        session_id: UUID,
+        now: datetime,
+    ) -> int: ...
+
     async def create(
         self,
         job: AnalysisJob,

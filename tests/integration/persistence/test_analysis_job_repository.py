@@ -202,6 +202,44 @@ async def test_create_and_get_by_id_and_attempt_id(
 
 
 @pytest.mark.anyio
+async def test_cancel_nonterminal_by_session_id_cancels_report_jobs(
+    async_db_session: AsyncSession,
+) -> None:
+    _, _, _, session_id, _, attempt_id = await _create_test_context_entities(async_db_session)
+    repo = SqlAlchemyAnalysisJobRepository(async_db_session)
+    now = datetime(2026, 9, 16, 0, 0, tzinfo=UTC)
+
+    analysis_job = _make_job(session_id, attempt_id, status=AnalysisJobStatus.RUNNING, now=now)
+    report_job = _make_job(session_id, attempt_id, status=AnalysisJobStatus.QUEUED, now=now)
+    report_job.job_type = "generate_report"
+    completed_job = _make_job(session_id, attempt_id, status=AnalysisJobStatus.COMPLETED, now=now)
+    completed_job.completed_at = now
+    completed_job.job_type = "generate_report"
+
+    await repo.create(analysis_job)
+    await repo.create(report_job)
+    await repo.create(completed_job)
+
+    cancelled = await repo.cancel_nonterminal_by_session_id(session_id, now + timedelta(minutes=1))
+
+    assert cancelled == 2
+    persisted_analysis = await repo.get_by_id(analysis_job.id)
+    persisted_report = await repo.get_by_id(report_job.id)
+    persisted_completed = await repo.get_by_id(completed_job.id)
+    assert persisted_analysis is not None
+    assert persisted_analysis.status == AnalysisJobStatus.CANCELLED
+    assert persisted_analysis.cancel_requested is True
+    assert _to_utc(persisted_analysis.completed_at) == now + timedelta(minutes=1)
+    assert persisted_report is not None
+    assert persisted_report.status == AnalysisJobStatus.CANCELLED
+    assert persisted_report.cancel_requested is True
+    assert _to_utc(persisted_report.completed_at) == now + timedelta(minutes=1)
+    assert persisted_completed is not None
+    assert persisted_completed.status == AnalysisJobStatus.COMPLETED
+    assert persisted_completed.cancel_requested is False
+
+
+@pytest.mark.anyio
 async def test_update_persists_every_intended_mutable_field(
     async_db_session: AsyncSession,
 ) -> None:

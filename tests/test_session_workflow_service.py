@@ -97,6 +97,7 @@ def uow() -> MagicMock:
     uow.jobs.get_by_attempt_id = AsyncMock(return_value=None)
     uow.jobs.get_by_id = AsyncMock(return_value=None)
     uow.jobs.change_pending_to_queued = AsyncMock(return_value=None)
+    uow.jobs.cancel_nonterminal_by_session_id = AsyncMock(return_value=0)
     uow.jobs.record_dispatch_failure = AsyncMock(return_value=None)
     uow.jobs.update = AsyncMock()
 
@@ -683,6 +684,9 @@ async def test_cancel_cancels_session_and_latest_attempt(
     assert manifest.frozen_at == frozen_time
 
     uow.attempts.update.assert_awaited_once_with(attempt, expected_version=1)
+    uow.jobs.cancel_nonterminal_by_session_id.assert_awaited_once_with(
+        practice_session.id, result.cancelled_at
+    )
     uow.sessions.update.assert_awaited_once()
     uow.manifests.update.assert_not_awaited()
     uow.commit.assert_awaited_once()
