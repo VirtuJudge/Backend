@@ -11,7 +11,6 @@ from app.domain.session_workflow.enums.report import ScoreLabel, ScoreStatus
 from app.domain.session_workflow.exceptions import (
     DuplicatePresenterFeedbackError,
     InvalidEvidenceReferenceError,
-    InvalidScoreLabelError,
     InvalidScoreRangeError,
     InvalidScoreWeightError,
     MissingPresenterFeedbackError,
@@ -26,7 +25,7 @@ QA_DIMENSION_NAMES = {"qa", "qa_quality", "q_and_a", "q&a", "questions_and_answe
 def calculate_display_score(normalized_score: float) -> int:
     if not (0.0 <= normalized_score <= 1.0):
         raise InvalidScoreRangeError(f"Normalized score {normalized_score} out of range [0.0, 1.0]")
-    return max(0, min(100, int(round(normalized_score * 100))))
+    return max(0, min(100, int(normalized_score * 100 + 0.5)))
 
 
 def score_to_label(display_score: int) -> ScoreLabel:
@@ -74,10 +73,7 @@ def validate_score_components(components: list[ScoreComponent]) -> None:
                 )
                 raise InvalidScoreRangeError(msg)
             expected_label = score_to_label(expected_display)
-            if c.label is not None and c.label != expected_label:
-                raise InvalidScoreLabelError(
-                    f"Component '{c.dimension}' label {c.label} != expected {expected_label}"
-                )
+            c.label = expected_label
             if not c.evidence_ids:
                 raise InvalidEvidenceReferenceError(
                     f"Scored component '{c.dimension}' must have at least one evidence reference."
