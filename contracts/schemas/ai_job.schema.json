@@ -279,6 +279,9 @@
         "qa_artifact": {
           "$ref": "#/$defs/ArtifactRef"
         },
+        "rubric": {
+          "$ref": "#/$defs/RubricRef"
+        },
         "speaker_mappings": {
           "type": "array",
           "items": {

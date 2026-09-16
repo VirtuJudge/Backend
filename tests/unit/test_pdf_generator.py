@@ -3,6 +3,7 @@ from datetime import UTC, datetime
 from uuid import uuid4
 
 from pypdf import PdfReader
+from pypdf.generic import IndirectObject
 
 from app.domain.session_workflow.entities.report import (
     FeedbackSection,
@@ -169,6 +170,9 @@ def test_render_report_pdf_valid_structure() -> None:
     # Strict parser validation
     reader = PdfReader(io.BytesIO(pdf_bytes), strict=True)
     assert len(reader.pages) >= 1
+    page = reader.pages[0]
+    assert isinstance(page.raw_get("/Resources"), IndirectObject)
+    assert isinstance(page.raw_get("/Contents"), IndirectObject)
 
     extracted_text = "\n".join(page.extract_text() for page in reader.pages)
 

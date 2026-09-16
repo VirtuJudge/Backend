@@ -135,6 +135,7 @@ class ConsumerGenerateReportPayload(BaseModel):
     report_id: str
     analysis_artifact: ConsumerArtifactRef
     qa_artifact: ConsumerArtifactRef
+    rubric: ConsumerRubricRef
     speaker_mappings: list[ConsumerSpeakerMapping] = Field(default_factory=list)
 
 

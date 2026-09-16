@@ -142,6 +142,7 @@ def _report(report: Report) -> ReportPayloadResponse:
         score_components=[_score_component(c) for c in report.score_components],
         team_feedback=_feedback_section(report.team_feedback),
         member_feedback=[_member_feedback(m) for m in report.member_feedback],
+        markdown=report.markdown,
         transcript_timeline=report.transcript_timeline,
         document_alignment=report.document_alignment,
         qa_review=report.qa_review,
