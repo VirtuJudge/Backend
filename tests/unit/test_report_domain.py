@@ -20,7 +20,6 @@ from app.domain.session_workflow.enums.report import (
 from app.domain.session_workflow.exceptions import (
     DuplicatePresenterFeedbackError,
     InvalidEvidenceReferenceError,
-    InvalidScoreLabelError,
     InvalidScoreRangeError,
     InvalidScoreWeightError,
     MissingPresenterFeedbackError,
@@ -78,6 +77,7 @@ def test_score_to_label_and_display_score() -> None:
     assert calculate_display_score(0.0) == 0
     assert calculate_display_score(0.395) == 40
     assert calculate_display_score(0.742) == 74
+    assert calculate_display_score(0.825) == 83
     assert calculate_display_score(1.0) == 100
 
     with pytest.raises(InvalidScoreRangeError):
@@ -146,11 +146,15 @@ def test_validate_score_components_missing_qa() -> None:
         validate_score_components(comps)
 
 
-def test_validate_score_components_invalid_label_mismatch() -> None:
+def test_validate_score_components_canonicalizes_derived_labels() -> None:
     comps = _make_valid_components()
-    comps[0].label = ScoreLabel.NEEDS_WORK
-    with pytest.raises(InvalidScoreLabelError):
-        validate_score_components(comps)
+    comps[0].normalized_score = 0.795
+    comps[0].display_score = 80
+    comps[0].label = ScoreLabel.GOOD
+
+    validate_score_components(comps)
+
+    assert comps[0].label is ScoreLabel.STRONG
 
 
 def test_validate_evidence_references() -> None:
