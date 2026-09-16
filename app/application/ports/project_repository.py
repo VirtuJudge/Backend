@@ -33,6 +33,9 @@ class ProjectRepository(ABC):
     ) -> Project | None: ...
 
     @abstractmethod
+    async def delete(self, project_id: UUID) -> bool: ...
+
+    @abstractmethod
     async def get_erasure_request(
         self,
         project_id: UUID,

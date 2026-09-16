@@ -241,6 +241,51 @@ async def get_practice_session(
     return await _to_session_response(session, workflow)
 
 
+@router.delete(
+    "/practice-sessions/{session_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["Practice Sessions"],
+    responses={
+        204: {"description": "Practice session removed"},
+        403: _problem_response_doc("Forbidden"),
+        404: _problem_response_doc("Session not found"),
+    },
+)
+@router.delete(
+    "/projects/{project_id}/practice-sessions/{session_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["Practice Sessions"],
+    include_in_schema=False,
+)
+async def delete_practice_session(
+    session_id: UUID,
+    raw_request: Request,
+    project_id: UUID | None = None,
+    current_user: User = Depends(get_current_user),
+    workflow: SessionWorkflow = Depends(get_session_workflow),
+) -> Response:
+    try:
+        await workflow.delete_session(session_id=session_id, actor_id=current_user.id)
+    except UnauthorizedSessionAction as error:
+        return problem_response(
+            status.HTTP_403_FORBIDDEN,
+            "forbidden",
+            "Forbidden",
+            str(error),
+            raw_request.url.path,
+        )
+    except SessionNotFoundError as error:
+        return problem_response(
+            status.HTTP_404_NOT_FOUND,
+            "not_found",
+            "Session not found",
+            str(error),
+            raw_request.url.path,
+        )
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
+
+
 @router.get(
     "/practice-sessions/{session_id}/events",
     response_class=StreamingResponse,

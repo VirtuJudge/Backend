@@ -38,3 +38,8 @@ class PracticeSessionRepository(Protocol):
         cursor: str | None = None,
         limit: int = 20,
     ) -> tuple[list[PracticeSession], str | None]: ...
+
+    async def delete(
+        self,
+        session_id: UUID,
+    ) -> bool: ...

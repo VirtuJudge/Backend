@@ -13,6 +13,7 @@ from app.application.ports.project_repository import ProjectRepository
 from app.application.ports.team_repository import TeamRepository
 from app.application.ports.user_repository import UserRepository
 from app.application.services.project_service import (
+    ProjectConfirmationRequired,
     ProjectForbidden,
     ProjectNotFound,
     ProjectPreconditionFailed,
@@ -200,6 +201,12 @@ class FakeProjectRepository(ProjectRepository):
             version=expected_version + 1,
         )
         return self.project
+
+    async def delete(self, project_id: UUID) -> bool:
+        if self.project and self.project.id == project_id:
+            self.project = None  # type: ignore[assignment]
+            return True
+        return False
 
     async def get_erasure_request(
         self, project_id: UUID, requested_by: UUID, key: str
@@ -466,6 +473,60 @@ def test_project_erasure_request_is_idempotent() -> None:
 
     assert first == second
     assert len(project_repository.erasure_requests) == 1
+
+
+def test_project_delete_by_owner_succeeds() -> None:
+    team_repository = FakeTeamRepository()
+    project = Project(uuid4(), TEAM_ID, "Project", None, NOW)
+    project_repository = FakeProjectRepository(project)
+    service = ProjectService(project_repository, team_repository)
+
+    run(service.delete(project.id, OWNER_ID, "Project"))
+
+    assert project_repository.project is None
+
+
+def test_project_delete_without_confirmation_succeeds_for_owner() -> None:
+    team_repository = FakeTeamRepository()
+    project = Project(uuid4(), TEAM_ID, "Project", None, NOW)
+    project_repository = FakeProjectRepository(project)
+    service = ProjectService(project_repository, team_repository)
+
+    run(service.delete(project.id, OWNER_ID))
+
+    assert project_repository.project is None
+
+
+def test_project_delete_by_member_is_forbidden() -> None:
+    team_repository = FakeTeamRepository()
+    project = Project(uuid4(), TEAM_ID, "Project", None, NOW)
+    project_repository = FakeProjectRepository(project)
+    service = ProjectService(project_repository, team_repository)
+
+    with pytest.raises(ProjectForbidden):
+        run(service.delete(project.id, MEMBER_ID))
+
+    assert project_repository.project is not None
+
+
+def test_project_delete_by_outsider_is_not_found() -> None:
+    team_repository = FakeTeamRepository()
+    project = Project(uuid4(), TEAM_ID, "Project", None, NOW)
+    project_repository = FakeProjectRepository(project)
+    service = ProjectService(project_repository, team_repository)
+
+    with pytest.raises(ProjectNotFound):
+        run(service.delete(project.id, OUTSIDER_ID))
+
+
+def test_project_delete_confirmation_mismatch_raises_error() -> None:
+    team_repository = FakeTeamRepository()
+    project = Project(uuid4(), TEAM_ID, "Project", None, NOW)
+    project_repository = FakeProjectRepository(project)
+    service = ProjectService(project_repository, team_repository)
+
+    with pytest.raises(ProjectConfirmationRequired):
+        run(service.delete(project.id, OWNER_ID, "Wrong Name"))
 
 
 @pytest.mark.parametrize(

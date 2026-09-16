@@ -58,6 +58,9 @@ class FakePracticeSessionRepository:
     ) -> list[PracticeSession]:
         return [s for s in self.sessions.values() if s.project_id == project_id]
 
+    async def delete(self, session_id: UUID) -> bool:
+        return self.sessions.pop(session_id, None) is not None
+
 
 class FakeProjectRepository:
     def __init__(self) -> None:

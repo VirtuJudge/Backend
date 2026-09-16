@@ -299,6 +299,15 @@ class SessionWorkflow:
             await self._authorize_member(uow, session, actor_id)
             return session
 
+    async def delete_session(self, session_id: UUID, actor_id: UUID) -> None:
+        async with self._uow as uow:
+            session = await uow.sessions.get_by_id(session_id)
+            if session is None:
+                raise SessionNotFoundError("Session with ID not found.")
+            await self._authorize_member(uow, session, actor_id)
+            await uow.sessions.delete(session_id)
+            await uow.commit()
+
     async def get_manifest(self, session_id: UUID) -> SessionManifest | None:
         async with self._uow as uow:
             return await uow.manifests.get_by_session_id(session_id)

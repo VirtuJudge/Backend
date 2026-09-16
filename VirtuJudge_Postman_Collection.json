@@ -1935,11 +1935,8 @@
               "listen": "test",
               "script": {
                 "exec": [
-                  "pm.test(\"Erasure request accepted (202)\", function () {",
-                  "    pm.response.to.have.status(202);",
-                  "    const data = pm.response.json();",
-                  "    pm.expect(data.id).to.be.a(\"string\");",
-                  "    pm.expect(data.project_id).to.eql(pm.collectionVariables.get(\"project_id\"));",
+                  "pm.test(\"Project deleted (204)\", function () {",
+                  "    pm.response.to.have.status(204);",
                   "});"
                 ],
                 "type": "text/javascript"
@@ -2822,6 +2819,39 @@
                   "    pm.response.to.have.status(200);",
                   "    const contentType = pm.response.headers.get(\"Content-Type\");",
                   "    pm.expect(contentType).to.include(\"text/event-stream\");",
+                  "});"
+                ],
+                "type": "text/javascript"
+              }
+            }
+          ]
+        },
+        {
+          "name": "7.6 Delete Practice Session",
+          "request": {
+            "method": "DELETE",
+            "header": [],
+            "description": "Completely removes the practice session and all related workflow entities from the database.",
+            "url": {
+              "raw": "{{base_url}}/api/v1/practice-sessions/{{session_id}}",
+              "host": [
+                "{{base_url}}"
+              ],
+              "path": [
+                "api",
+                "v1",
+                "practice-sessions",
+                "{{session_id}}"
+              ]
+            }
+          },
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "exec": [
+                  "pm.test(\"Practice session deleted (204)\", function () {",
+                  "    pm.response.to.have.status(204);",
                   "});"
                 ],
                 "type": "text/javascript"

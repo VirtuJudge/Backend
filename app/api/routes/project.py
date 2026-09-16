@@ -5,7 +5,6 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, 
 from app.api.dependencies.auth import get_current_user
 from app.api.dependencies.services import get_project_service
 from app.api.schemas.project import (
-    ErasureRequestResponse,
     ProjectCreateRequest,
     ProjectDeleteRequest,
     ProjectPage,
@@ -144,25 +143,30 @@ async def update_project(
 
 @router.delete(
     "/projects/{project_id}",
-    response_model=ErasureRequestResponse,
-    status_code=status.HTTP_202_ACCEPTED,
+    status_code=status.HTTP_204_NO_CONTENT,
     tags=["projects"],
+)
+@router.delete(
+    "/teams/{team_id}/projects/{project_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["projects"],
+    include_in_schema=False,
 )
 async def delete_project(
     project_id: UUID,
-    request: ProjectDeleteRequest,
+    team_id: UUID | None = None,
+    request: ProjectDeleteRequest | None = None,
     current_user: User = Depends(get_current_user),
     service: ProjectService = Depends(get_project_service),
-    idempotency_key: str = Header(..., min_length=1, max_length=255),
-) -> ErasureRequestResponse:
+    idempotency_key: str | None = Header(default=None),
+) -> Response:
     try:
-        erasure = await service.request_erasure(
-            project_id, current_user.id, request.confirmation, idempotency_key
-        )
+        confirmation = request.confirmation if request is not None else None
+        await service.delete(project_id, current_user.id, confirmation=confirmation)
     except ProjectNotFound as error:
         raise HTTPException(status_code=404, detail="project_not_found") from error
     except ProjectForbidden as error:
         raise HTTPException(status_code=403, detail="project_forbidden") from error
     except ProjectConfirmationRequired as error:
         raise HTTPException(status_code=409, detail="confirmation_required") from error
-    return ErasureRequestResponse(id=erasure.id, project_id=erasure.project_id)
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
