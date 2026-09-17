@@ -130,3 +130,7 @@ class AssetRepository(ABC):
         next_attempt_at: datetime,
     ) -> None:
         pass
+
+    @abstractmethod
+    async def delete_asset(self, asset_id: UUID) -> bool:
+        pass

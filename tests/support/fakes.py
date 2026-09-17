@@ -69,6 +69,15 @@ class FakeAssetRepository(AssetRepository):
     async def get_asset(self, asset_id: UUID) -> Asset | None:
         return self.assets.get(asset_id)
 
+    async def delete_asset(self, asset_id: UUID) -> bool:
+        if asset_id not in self.assets:
+            return False
+        del self.assets[asset_id]
+        ver_ids = [vid for vid, v in self.versions.items() if v.asset_id == asset_id]
+        for vid in ver_ids:
+            del self.versions[vid]
+        return True
+
     async def get_version(self, version_id: UUID) -> AssetVersion | None:
         return self.versions.get(version_id)
 
