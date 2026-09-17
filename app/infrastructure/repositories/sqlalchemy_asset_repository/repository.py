@@ -9,6 +9,7 @@ from app.application.ports.asset_repository import AssetRepository
 from app.domain.asset import Asset, AssetIdempotencyConflict, AssetNotFound, AssetVersion
 from app.domain.idempotency import AssetUploadIdempotency
 from app.domain.project import Project
+from app.infrastructure.persistence.cascade_deletion import delete_asset_records
 from app.infrastructure.persistence.configurations.asset_configuration import (
     AssetModel,
     AssetUploadIdempotencyModel,
@@ -489,3 +490,8 @@ class SqlAlchemyAssetRepository(AssetRepository):
         await cleanup_queries.finalize_version_cleanup(
             self.session, asset_id, version_id, next_attempt_at
         )
+
+    async def delete_asset(self, asset_id: UUID) -> bool:
+        success = await delete_asset_records(self.session, asset_id)
+        await self.session.flush()
+        return success

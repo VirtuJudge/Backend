@@ -152,3 +152,63 @@ async def delete_project_records(session: AsyncSession, project_id: UUID) -> boo
         await session.execute(delete(ProjectModel).where(ProjectModel.id == project_id)),
     )
     return bool((result.rowcount or 0) > 0)
+
+
+async def delete_asset_records(session: AsyncSession, asset_id: UUID) -> bool:
+    version_ids_stmt = select(AssetVersionModel.id).where(AssetVersionModel.asset_id == asset_id)
+
+    # 1. Any practice sessions using this asset as presentation_version_id
+    session_ids_stmt = select(SessionManifestModel.session_id).where(
+        SessionManifestModel.presentation_version_id.in_(version_ids_stmt)
+    )
+    session_ids = list((await session.scalars(session_ids_stmt)).all())
+    if session_ids:
+        await delete_practice_sessions(session, session_ids)
+
+    # 2. References in session manifest documents
+    await session.execute(
+        delete(SessionManifestDocumentModel).where(
+            SessionManifestDocumentModel.document_version_id.in_(version_ids_stmt)
+        )
+    )
+
+    # 2. References in session manifests (document_version_id is nullable)
+    await session.execute(
+        update(SessionManifestModel)
+        .where(SessionManifestModel.document_version_id.in_(version_ids_stmt))
+        .values(document_version_id=None)
+    )
+
+    # 3. References in answers (audio_asset_version_id is nullable)
+    await session.execute(
+        update(AnswerModel)
+        .where(AnswerModel.audio_asset_version_id.in_(version_ids_stmt))
+        .values(audio_asset_version_id=None)
+    )
+
+    # 4. References in report exports (asset_version_id is nullable)
+    await session.execute(
+        update(ReportExportModel)
+        .where(ReportExportModel.asset_version_id.in_(version_ids_stmt))
+        .values(asset_version_id=None)
+    )
+
+    # 5. Delete upload idempotency records for this asset
+    await session.execute(
+        delete(AssetUploadIdempotencyModel).where(AssetUploadIdempotencyModel.asset_id == asset_id)
+    )
+
+    # 6. Clear current_version_id on the asset to avoid circular reference constraint
+    await session.execute(
+        update(AssetModel).where(AssetModel.id == asset_id).values(current_version_id=None)
+    )
+
+    # 7. Delete asset versions
+    await session.execute(delete(AssetVersionModel).where(AssetVersionModel.asset_id == asset_id))
+
+    # 8. Delete the asset itself
+    result = cast(
+        CursorResult[Any],
+        await session.execute(delete(AssetModel).where(AssetModel.id == asset_id)),
+    )
+    return bool((result.rowcount or 0) > 0)

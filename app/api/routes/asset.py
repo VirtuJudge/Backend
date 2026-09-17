@@ -1,7 +1,7 @@
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, Header, Query, Request, status
+from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 
 from app.api.dependencies.auth import get_current_user
 from app.api.dependencies.services import get_asset_store
@@ -222,6 +222,36 @@ async def get_asset(
         return handle_asset_error(err, request.url.path)
 
     return asset_to_response(asset)
+
+
+@router.delete(
+    "/assets/{asset_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["assets"],
+    responses={
+        204: {"description": "Asset removed"},
+        404: {"description": "Asset not found"},
+    },
+)
+@router.delete(
+    "/projects/{project_id}/assets/{asset_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["assets"],
+    include_in_schema=False,
+)
+async def delete_asset(
+    asset_id: UUID,
+    request: Request,
+    project_id: UUID | None = None,
+    current_user: User = Depends(get_current_user),
+    service: AssetStore = Depends(get_asset_store),
+) -> Response:
+    try:
+        await service.delete_asset(asset_id, current_user.id)
+    except AssetDomainError as err:
+        return handle_asset_error(err, request.url.path)
+
+    return Response(status_code=status.HTTP_204_NO_CONTENT)
 
 
 @router.get(

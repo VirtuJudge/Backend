@@ -1,3 +1,4 @@
+import contextlib
 import logging
 import tempfile
 from datetime import UTC, datetime, timedelta
@@ -486,6 +487,17 @@ class AssetStore:
 
     async def get_asset(self, asset_id: UUID, user_id: UUID) -> Asset:
         return await self._authorize_asset(asset_id, user_id)
+
+    async def delete_asset(self, asset_id: UUID, user_id: UUID) -> None:
+        await self._authorize_asset(asset_id, user_id)
+        versions, _ = await self.repository.list_versions(asset_id, cursor=None, limit=100)
+        for version in versions:
+            if version.storage_key:
+                with contextlib.suppress(Exception):
+                    await self.storage.delete_object(version.storage_key)
+        deleted = await self.repository.delete_asset(asset_id)
+        if not deleted:
+            raise AssetNotFound
 
     async def list_assets(
         self,
