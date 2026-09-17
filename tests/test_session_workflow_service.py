@@ -2118,3 +2118,80 @@ async def test_ai_jobs_dispatch_preconditions_and_safety(
     )
     assert await ai_jobs_no_queue.dispatch(job_pending) is False
     assert queue.count == 0
+
+
+@pytest.mark.anyio
+async def test_delete_session_by_any_member_succeeds(uow: MagicMock) -> None:
+    session_id = uuid4()
+    project_id = uuid4()
+    creator_id = uuid4()
+    member_id = uuid4()
+    now = datetime.now(UTC)
+
+    session = PracticeSession(
+        id=session_id,
+        project_id=project_id,
+        created_by=creator_id,
+        name="Test Session",
+        status=SessionStatus.READY,
+        version=1,
+        created_at=now,
+        updated_at=now,
+        consent_granted=True,
+        started_at=None,
+        completed_at=None,
+        cancelled_at=None,
+    )
+
+    uow.sessions.get_by_id = AsyncMock(return_value=session)
+    uow.projects.is_member = AsyncMock(return_value=True)
+    uow.sessions.delete = AsyncMock(return_value=True)
+    uow.commit = AsyncMock(return_value=None)
+
+    workflow = SessionWorkflow(uow=uow)
+    await workflow.delete_session(session_id, member_id)
+
+    uow.sessions.delete.assert_awaited_once_with(session_id)
+    uow.commit.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_delete_session_not_found(uow: MagicMock) -> None:
+    session_id = uuid4()
+    actor_id = uuid4()
+
+    uow.sessions.get_by_id = AsyncMock(return_value=None)
+
+    workflow = SessionWorkflow(uow=uow)
+    with pytest.raises(SessionNotFoundError):
+        await workflow.delete_session(session_id, actor_id)
+
+
+@pytest.mark.anyio
+async def test_delete_session_by_outsider_forbidden(uow: MagicMock) -> None:
+    session_id = uuid4()
+    project_id = uuid4()
+    outsider_id = uuid4()
+    now = datetime.now(UTC)
+
+    session = PracticeSession(
+        id=session_id,
+        project_id=project_id,
+        created_by=uuid4(),
+        name="Test Session",
+        status=SessionStatus.READY,
+        version=1,
+        created_at=now,
+        updated_at=now,
+        consent_granted=True,
+        started_at=None,
+        completed_at=None,
+        cancelled_at=None,
+    )
+
+    uow.sessions.get_by_id = AsyncMock(return_value=session)
+    uow.projects.is_member = AsyncMock(return_value=False)
+
+    workflow = SessionWorkflow(uow=uow)
+    with pytest.raises(UnauthorizedSessionAction):
+        await workflow.delete_session(session_id, outsider_id)

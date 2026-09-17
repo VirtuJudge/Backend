@@ -94,6 +94,19 @@ class ProjectService:
             raise ProjectPreconditionFailed
         return updated
 
+    async def delete(
+        self,
+        project_id: UUID,
+        user_id: UUID,
+        confirmation: str | None = None,
+    ) -> None:
+        project = await self._authorized(project_id, user_id)
+        if not await self.teams.is_owner(project.team_id, user_id):
+            raise ProjectForbidden
+        if confirmation is not None and confirmation != project.name:
+            raise ProjectConfirmationRequired
+        await self.repository.delete(project_id)
+
     async def request_erasure(
         self, project_id: UUID, user_id: UUID, confirmation: str, key: str
     ) -> ErasureRequest:

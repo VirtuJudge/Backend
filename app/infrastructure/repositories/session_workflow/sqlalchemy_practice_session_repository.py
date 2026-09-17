@@ -19,6 +19,7 @@ from app.infrastructure.persistence.mappers.session_practice.session_practice_ma
     to_model,
 )
 
+from ...persistence.cascade_deletion import delete_practice_sessions
 from ...persistence.configurations.session_workflow.session_practice_configuration import (
     PracticeSessionModel,
 )
@@ -151,3 +152,11 @@ class SqlAlchemyPracticeSessionRepository(PracticeSessionRepository):
         next_cursor = str(rows[-1].id) if has_more else None
 
         return [to_domain(row) for row in rows], next_cursor
+
+    async def delete(
+        self,
+        session_id: UUID,
+    ) -> bool:
+        count = await delete_practice_sessions(self._session, [session_id])
+        await self._session.flush()
+        return count > 0

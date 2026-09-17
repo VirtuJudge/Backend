@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.application.ports.project_repository import ProjectRepository
 from app.domain.erasure_request import ErasureRequest
 from app.domain.project import Project
+from app.infrastructure.persistence.cascade_deletion import delete_project_records
 from app.infrastructure.persistence.configurations.asset_configuration import (
     AssetModel,
     AssetVersionModel,
@@ -113,6 +114,11 @@ class SqlAlchemyProjectRepository(ProjectRepository):
         await self.session.flush()
         model = await self.session.get(ProjectModel, project_id)
         return self._project(model) if model is not None else None
+
+    async def delete(self, project_id: UUID) -> bool:
+        success = await delete_project_records(self.session, project_id)
+        await self.session.flush()
+        return success
 
     async def get_erasure_request(
         self, project_id: UUID, requested_by: UUID, key: str

@@ -977,3 +977,69 @@ async def test_start_analysis_attempt_idempotency_conflict_with_different_consen
     data = response.json()
     assert data["code"] == "idempotency_conflict"
     assert data.get("trace_id") is not None
+
+
+@pytest.mark.anyio
+async def test_delete_practice_session_success(
+    client: AsyncClient, workflow_mock: MagicMock
+) -> None:
+    session_id = uuid4()
+    workflow_mock.delete_session.return_value = None
+
+    async with client:
+        response = await client.delete(f"/api/v1/practice-sessions/{session_id}")
+
+    assert response.status_code == 204
+    assert not response.content
+    workflow_mock.delete_session.assert_awaited_once()
+
+
+@pytest.mark.anyio
+async def test_delete_practice_session_under_project_path(
+    client: AsyncClient, workflow_mock: MagicMock
+) -> None:
+    project_id = uuid4()
+    session_id = uuid4()
+    workflow_mock.delete_session.return_value = None
+
+    async with client:
+        response = await client.delete(
+            f"/api/v1/projects/{project_id}/practice-sessions/{session_id}"
+        )
+
+    assert response.status_code == 204
+    assert not response.content
+
+
+@pytest.mark.anyio
+async def test_delete_practice_session_not_found(
+    client: AsyncClient, workflow_mock: MagicMock
+) -> None:
+    session_id = uuid4()
+    workflow_mock.delete_session.side_effect = SessionNotFoundError("Session not found")
+
+    async with client:
+        response = await client.delete(f"/api/v1/practice-sessions/{session_id}")
+
+    assert response.status_code == 404
+    assert response.headers["content-type"] == "application/problem+json"
+    data = response.json()
+    assert data["code"] == "not_found"
+
+
+@pytest.mark.anyio
+async def test_delete_practice_session_forbidden_for_outsider(
+    client: AsyncClient, workflow_mock: MagicMock
+) -> None:
+    session_id = uuid4()
+    workflow_mock.delete_session.side_effect = UnauthorizedSessionAction(
+        "You do not have access to this session."
+    )
+
+    async with client:
+        response = await client.delete(f"/api/v1/practice-sessions/{session_id}")
+
+    assert response.status_code == 403
+    assert response.headers["content-type"] == "application/problem+json"
+    data = response.json()
+    assert data["code"] == "forbidden"
