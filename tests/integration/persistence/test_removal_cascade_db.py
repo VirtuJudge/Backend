@@ -357,12 +357,8 @@ async def test_practice_session_delete_removes_all_related_entities(
     )
 
     # Verify parent project and user were not deleted
-    assert await _scalar_exists(
-        session, select(ProjectModel).where(ProjectModel.id == project.id)
-    )
-    assert await _scalar_exists(
-        session, select(UserModel).where(UserModel.id == user.id)
-    )
+    assert await _scalar_exists(session, select(ProjectModel).where(ProjectModel.id == project.id))
+    assert await _scalar_exists(session, select(UserModel).where(UserModel.id == user.id))
 
 
 @pytest.mark.anyio

@@ -1,6 +1,7 @@
+from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import delete, select, update
+from sqlalchemy import CursorResult, delete, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.infrastructure.persistence.configurations.asset_configuration import (
@@ -48,17 +49,13 @@ async def delete_practice_sessions(session: AsyncSession, session_ids: list[UUID
     )
 
     # 3. AI Jobs referencing the sessions
-    await session.execute(
-        delete(AIJobModel).where(AIJobModel.practice_session_id.in_(session_ids))
-    )
+    await session.execute(delete(AIJobModel).where(AIJobModel.practice_session_id.in_(session_ids)))
 
     # 4. Answers, questions, and QA rounds
     qa_round_subquery = select(QARoundModel.id).where(
         QARoundModel.practice_session_id.in_(session_ids)
     )
-    await session.execute(
-        delete(AnswerModel).where(AnswerModel.qa_round_id.in_(qa_round_subquery))
-    )
+    await session.execute(delete(AnswerModel).where(AnswerModel.qa_round_id.in_(qa_round_subquery)))
     await session.execute(
         delete(QuestionModel).where(QuestionModel.practice_session_id.in_(session_ids))
     )
@@ -76,9 +73,7 @@ async def delete_practice_sessions(session: AsyncSession, session_ids: list[UUID
     await session.execute(
         delete(AnalysisStageModel).where(AnalysisStageModel.attempt_id.in_(attempt_subquery))
     )
-    await session.execute(
-        delete(AIJobModel).where(AIJobModel.attempt_id.in_(attempt_subquery))
-    )
+    await session.execute(delete(AIJobModel).where(AIJobModel.attempt_id.in_(attempt_subquery)))
 
     # 6. Session manifest documents
     manifest_subquery = select(SessionManifestModel.id).where(
@@ -108,8 +103,11 @@ async def delete_practice_sessions(session: AsyncSession, session_ids: list[UUID
     )
 
     # 10. Practice sessions
-    result = await session.execute(
-        delete(PracticeSessionModel).where(PracticeSessionModel.id.in_(session_ids))
+    result = cast(
+        CursorResult[Any],
+        await session.execute(
+            delete(PracticeSessionModel).where(PracticeSessionModel.id.in_(session_ids))
+        ),
     )
     return int(result.rowcount or 0)
 
@@ -139,9 +137,7 @@ async def delete_project_records(session: AsyncSession, project_id: UUID) -> boo
     await session.execute(
         delete(AssetVersionModel).where(AssetVersionModel.asset_id.in_(asset_ids_subquery))
     )
-    await session.execute(
-        delete(AssetModel).where(AssetModel.project_id == project_id)
-    )
+    await session.execute(delete(AssetModel).where(AssetModel.project_id == project_id))
 
     # 3. Delete project erasure requests
     await session.execute(
@@ -151,7 +147,8 @@ async def delete_project_records(session: AsyncSession, project_id: UUID) -> boo
     )
 
     # 4. Delete the project itself
-    result = await session.execute(
-        delete(ProjectModel).where(ProjectModel.id == project_id)
+    result = cast(
+        CursorResult[Any],
+        await session.execute(delete(ProjectModel).where(ProjectModel.id == project_id)),
     )
     return bool((result.rowcount or 0) > 0)
