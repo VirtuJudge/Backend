@@ -18,6 +18,7 @@ class PracticeSessionModel(Base):
         String(length=200),
         nullable=True,
     )
+    access_revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     project_id: Mapped[UUID] = mapped_column(
         ForeignKey("projects.id"),

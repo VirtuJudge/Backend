@@ -6,6 +6,8 @@ from ...configurations.session_workflow.analysis_job_configuration import (
 
 
 def to_domain(model: AnalysisJobModel) -> AnalysisJob:
+    if model.practice_session_id is None or model.attempt_id is None:
+        raise ValueError("Erasure jobs use ErasureWorkflow instead of analysis ancestry")
     return AnalysisJob(
         id=model.id,
         practice_session_id=model.practice_session_id,

@@ -115,6 +115,10 @@ class EraseAIDataPayload(BaseModel):
     erasure_request_id: str = Field(min_length=1)
     scope: ErasureScope
     scope_id: str = Field(min_length=1)
+    practice_session_ids: list[str] = Field(default_factory=list)
+    answer_ids: list[str] = Field(default_factory=list)
+    asset_version_ids: list[str] = Field(default_factory=list)
+    retention_only: bool = False
 
 
 AIJobPayload = (
@@ -164,8 +168,15 @@ class GenerateReportQueueMessage(BaseAIJobQueueMessage[GenerateReportPayload]):
     job_type: Literal[AIJobType.GENERATE_REPORT] = AIJobType.GENERATE_REPORT
 
 
-class EraseAIDataQueueMessage(BaseAIJobQueueMessage[EraseAIDataPayload]):
+class EraseAIDataQueueMessage(BaseModel):
+    schema_version: Literal[1] = 1
+    job_id: str = Field(min_length=1)
     job_type: Literal[AIJobType.ERASE_AI_DATA] = AIJobType.ERASE_AI_DATA
+    practice_session_id: str | None = None
+    analysis_attempt: int | None = None
+    created_at: datetime
+    trace_id: str = Field(min_length=1)
+    payload: EraseAIDataPayload
 
 
 TypedAIJobQueueMessage = Annotated[
@@ -181,13 +192,21 @@ class AIJobQueueMessage(BaseModel):
     schema_version: Literal[1] = 1
     job_id: str = Field(min_length=1)
     job_type: AIJobType
-    practice_session_id: str = Field(min_length=1)
-    analysis_attempt: int = Field(ge=1)
+    practice_session_id: str | None = Field(default=None, min_length=1)
+    analysis_attempt: int | None = Field(default=None, ge=1)
     created_at: datetime
     trace_id: str = Field(min_length=1)
     payload: (
         AnalyzeSessionPayload | AnalyzeAnswerPayload | GenerateReportPayload | EraseAIDataPayload
     )
+
+    @model_validator(mode="after")
+    def validate_ancestry(self) -> "AIJobQueueMessage":
+        if self.job_type != AIJobType.ERASE_AI_DATA and (
+            self.practice_session_id is None or self.analysis_attempt is None
+        ):
+            raise ValueError("Analysis and report jobs require session and attempt ancestry")
+        return self
 
     @model_validator(mode="before")
     @classmethod

@@ -45,7 +45,9 @@ class SqlAlchemyAnalysisJobRepository(AnalysisJobRepository):
         self,
         job_id: UUID,
     ) -> AnalysisJob | None:
-        stmt = select(AnalysisJobModel).where(AnalysisJobModel.id == job_id)
+        stmt = select(AnalysisJobModel).where(
+            AnalysisJobModel.id == job_id, AnalysisJobModel.job_type != "erase_ai_data"
+        )
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
         return None if model is None else to_domain(model)
@@ -54,6 +56,7 @@ class SqlAlchemyAnalysisJobRepository(AnalysisJobRepository):
         model = await self._session.scalar(
             select(AnalysisJobModel)
             .where(AnalysisJobModel.id == job_id)
+            .where(AnalysisJobModel.job_type != "erase_ai_data")
             .with_for_update()
             .execution_options(populate_existing=True)
         )
@@ -180,6 +183,7 @@ class SqlAlchemyAnalysisJobRepository(AnalysisJobRepository):
             select(AnalysisJobModel)
             .where(
                 AnalysisJobModel.status == AnalysisJobStatus.PENDING,
+                AnalysisJobModel.job_type != "erase_ai_data",
                 AnalysisJobModel.cancel_requested.is_(False),
                 (
                     AnalysisJobModel.next_dispatch_at.is_(None)
@@ -216,6 +220,7 @@ class SqlAlchemyAnalysisJobRepository(AnalysisJobRepository):
                         AnalysisJobModel.status.in_(
                             [AnalysisJobStatus.QUEUED, AnalysisJobStatus.RUNNING]
                         ),
+                        AnalysisJobModel.job_type != "erase_ai_data",
                         AnalysisJobModel.cancel_requested.is_(False),
                         AnalysisJobModel.updated_at <= stale_before,
                     )

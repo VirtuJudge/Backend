@@ -2,7 +2,19 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import JSON, Boolean, DateTime, Enum, ForeignKey, Index, Integer, String, Text, text
+from sqlalchemy import (
+    JSON,
+    Boolean,
+    CheckConstraint,
+    DateTime,
+    Enum,
+    ForeignKey,
+    Index,
+    Integer,
+    String,
+    Text,
+    text,
+)
 from sqlalchemy.orm import Mapped, mapped_column, synonym
 
 from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
@@ -16,18 +28,18 @@ class AnalysisJobModel(Base):
         primary_key=True,
     )
 
-    attempt_id: Mapped[UUID] = mapped_column(
+    attempt_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("analysis_attempts.id"),
-        nullable=False,
+        nullable=True,
     )
 
     answer_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("answers.id", ondelete="CASCADE"), nullable=True, unique=True
     )
 
-    practice_session_id: Mapped[UUID] = mapped_column(
+    practice_session_id: Mapped[UUID | None] = mapped_column(
         ForeignKey("practice_sessions.id"),
-        nullable=False,
+        nullable=True,
         index=True,
     )
 
@@ -35,6 +47,11 @@ class AnalysisJobModel(Base):
         Integer,
         nullable=False,
         default=1,
+    )
+    erasure_request_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("erasure_requests.id"),
+        nullable=True,
+        unique=True,
     )
 
     job_type: Mapped[str] = mapped_column(
@@ -147,6 +164,13 @@ class AnalysisJobModel(Base):
     dispatch_envelope = synonym("payload")
 
     __table_args__ = (
+        CheckConstraint(
+            "(job_type = 'erase_ai_data' AND erasure_request_id IS NOT NULL "
+            "AND attempt_id IS NULL AND practice_session_id IS NULL) OR "
+            "(job_type <> 'erase_ai_data' AND erasure_request_id IS NULL "
+            "AND attempt_id IS NOT NULL AND practice_session_id IS NOT NULL)",
+            name="ck_ai_jobs_scope_ancestry",
+        ),
         Index(
             "uq_ai_jobs_session_attempt",
             "attempt_id",

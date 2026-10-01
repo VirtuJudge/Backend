@@ -2,10 +2,14 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from app.api.dependencies.erasure import get_erasure_workflow
 from app.api.dependencies.services import get_ai_jobs
 from app.api.dependencies.worker_auth import AuthenticatedWorker, require_worker_auth
 from app.api.schemas.ai_jobs import AIJobStatusResponse, AIWorkerUpdate
 from app.application.ai_jobs import AIJobs
+from app.application.erasure_workflow import ErasureWorkflow
+from app.domain.erasure import ErasureConflict, ErasureJobState
+from app.domain.session_workflow.entities.analysis_job import AnalysisJob
 from app.domain.session_workflow.exceptions import InvalidJobStatusTransition
 
 router = APIRouter(prefix="/internal/v1", tags=["Internal AI Jobs"])
@@ -24,8 +28,9 @@ async def get_internal_ai_job_status(
     job_id: UUID,
     worker: AuthenticatedWorker = Depends(require_worker_auth),
     ai_jobs: AIJobs = Depends(get_ai_jobs),
+    erasure: ErasureWorkflow = Depends(get_erasure_workflow),
 ) -> AIJobStatusResponse:
-    job = await ai_jobs.get_job(job_id)
+    job = await ai_jobs.get_job(job_id) or await erasure.job_state(job_id)
     if job is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -55,10 +60,14 @@ async def record_internal_ai_job_update(
     update: AIWorkerUpdate,
     worker: AuthenticatedWorker = Depends(require_worker_auth),
     ai_jobs: AIJobs = Depends(get_ai_jobs),
+    erasure: ErasureWorkflow = Depends(get_erasure_workflow),
 ) -> AIJobStatusResponse:
+    job: ErasureJobState | AnalysisJob | None
     try:
-        job = await ai_jobs.record_update(job_id, update)
-    except InvalidJobStatusTransition as exc:
+        job = await ai_jobs.record_update(job_id, update) or await erasure.record_update(
+            job_id, update
+        )
+    except (InvalidJobStatusTransition, ErasureConflict) as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail=str(exc),

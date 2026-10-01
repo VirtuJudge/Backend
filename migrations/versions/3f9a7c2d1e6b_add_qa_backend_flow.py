@@ -9,6 +9,7 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects.postgresql import ENUM
 
 revision: str = "3f9a7c2d1e6b"
 down_revision: str | Sequence[str] | None = "f31a1f55d085"
@@ -16,14 +17,14 @@ branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
 
-qaroundstate_enum = sa.Enum(
+qaroundstate_enum = ENUM(
     "not_started", "in_progress", "completed", name="qaroundstate", create_type=False
 )
-questionkind_enum = sa.Enum("primary", "follow_up", name="questionkind", create_type=False)
-questionstate_enum = sa.Enum(
+questionkind_enum = ENUM("primary", "follow_up", name="questionkind", create_type=False)
+questionstate_enum = ENUM(
     "pending", "active", "answered", "skipped", name="questionstate", create_type=False
 )
-answerstatus_enum = sa.Enum("draft", "submitted", "skipped", name="answerstatus", create_type=False)
+answerstatus_enum = ENUM("draft", "submitted", "skipped", name="answerstatus", create_type=False)
 
 
 def upgrade() -> None:

@@ -13,6 +13,7 @@ from app.api.correlation import CorrelationIdMiddleware
 from app.api.errors import register_error_handlers
 from app.api.routes import routers
 from app.application.ai_jobs import AIJobs, RedispatchResult
+from app.application.erasure_workflow import ErasureWorkflow
 from app.application.ports import ProjectRepository
 from app.application.ports.session_practice.analysis_attempt_repository import (
     AnalysisAttemptRepository,
@@ -42,6 +43,7 @@ from app.infrastructure.mail import create_mail_sender
 from app.infrastructure.media.ffmpeg_verifier import FFmpegMediaVerifier
 from app.infrastructure.pdf.pdf_generator import PyPdfReportGenerator
 from app.infrastructure.queues.celery_ai_job_queue import CeleryAIJobQueue
+from app.infrastructure.redis.erasure import RedisErasureCache
 from app.infrastructure.redis.rate_limiter import RedisRateLimiter
 from app.infrastructure.redis.session_notifications import RedisSessionNotifications
 from app.infrastructure.repositories.session_workflow import (
@@ -53,6 +55,9 @@ from app.infrastructure.repositories.session_workflow import (
 )
 from app.infrastructure.repositories.sqlalchemy_asset_repository import (
     SqlAlchemyAssetRepository,
+)
+from app.infrastructure.repositories.sqlalchemy_erasure_repository import (
+    SqlAlchemyErasureRepository,
 )
 from app.infrastructure.repositories.sqlalchemy_invitation_resend_key_repository import (
     SqlalchemyInvitationResendKeyRepository,
@@ -126,6 +131,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         cleanup_task: asyncio.Task[None] | None = None
         dispatcher_task: asyncio.Task[None] | None = None
+        erasure_task: asyncio.Task[None] | None = None
+        if resolved_settings.erasure_enabled is True or (
+            resolved_settings.erasure_enabled is None and resolved_settings.app_env != "test"
+        ):
+
+            async def _erasure_loop() -> None:
+                while True:
+                    try:
+                        await app.state.run_erasure_iteration()
+                    except asyncio.CancelledError:
+                        break
+                    except Exception:
+                        logger.warning("Erasure scheduler iteration failed")
+                    await asyncio.sleep(resolved_settings.erasure_interval_seconds)
+
+            erasure_task = asyncio.create_task(_erasure_loop())
+        app.state.erasure_task = erasure_task
 
         if cleanup_enabled:
 
@@ -182,6 +204,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         try:
             yield
         finally:
+            if erasure_task is not None:
+                erasure_task.cancel()
+                with contextlib.suppress(asyncio.CancelledError):
+                    await erasure_task
             if cleanup_task is not None:
                 cleanup_task.cancel()
                 with contextlib.suppress(asyncio.CancelledError):
@@ -249,6 +275,27 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.state.ai_job_queue = CeleryAIJobQueue.from_settings(resolved_settings)
     application.state.pdf_generator = PyPdfReportGenerator()
     application.state.object_storage = S3ObjectStorage(resolved_settings)
+    application.state.erasure_workflow_factory = lambda session: ErasureWorkflow(
+        SqlAlchemyErasureRepository(session),
+        application.state.object_storage,
+        application.state.ai_job_queue,
+        application.state.ai_job_queue,
+        RedisErasureCache(redis),
+        application.state.session_notifications,
+    )
+
+    async def run_erasure_iteration() -> int:
+        async with application.state.session_factory() as session:
+            workflow = application.state.erasure_workflow_factory(session)
+            await workflow.sweep_retention(batch_size=resolved_settings.erasure_batch_size)
+            return int(
+                await workflow.run_due(
+                    batch_size=resolved_settings.erasure_batch_size,
+                    lease_seconds=resolved_settings.erasure_lease_seconds,
+                )
+            )
+
+    application.state.run_erasure_iteration = run_erasure_iteration
     application.state.ai_jobs_factory = lambda uow, queue: AIJobs(
         uow,
         queue=queue,

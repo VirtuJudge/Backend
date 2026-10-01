@@ -14,6 +14,7 @@ from app.domain.session_workflow.exceptions import (
     IdempotencyConflict,
     StaleEntityVersion,
 )
+from app.infrastructure.persistence.configurations.project_configuration import ProjectModel
 from app.infrastructure.persistence.mappers.session_practice.session_practice_mapper import (
     to_domain,
     to_model,
@@ -34,7 +35,15 @@ class SqlAlchemyPracticeSessionRepository(PracticeSessionRepository):
         session_id: UUID,
     ) -> PracticeSession | None:
 
-        stmt = select(PracticeSessionModel).where(PracticeSessionModel.id == session_id)
+        stmt = (
+            select(PracticeSessionModel)
+            .join(ProjectModel)
+            .where(
+                PracticeSessionModel.id == session_id,
+                PracticeSessionModel.access_revoked_at.is_(None),
+                ProjectModel.access_revoked_at.is_(None),
+            )
+        )
 
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()
@@ -48,9 +57,23 @@ class SqlAlchemyPracticeSessionRepository(PracticeSessionRepository):
         self,
         session_id: UUID,
     ) -> PracticeSession | None:
+        project_id = select(PracticeSessionModel.project_id).where(
+            PracticeSessionModel.id == session_id
+        )
+        project = await self._session.scalar(
+            select(ProjectModel)
+            .where(
+                ProjectModel.id == project_id.scalar_subquery(),
+                ProjectModel.access_revoked_at.is_(None),
+            )
+            .with_for_update()
+        )
+        if project is None:
+            return None
         stmt = (
             select(PracticeSessionModel)
             .where(PracticeSessionModel.id == session_id)
+            .where(PracticeSessionModel.access_revoked_at.is_(None))
             .with_for_update()
         )
         result = await self._session.execute(stmt)
@@ -137,6 +160,7 @@ class SqlAlchemyPracticeSessionRepository(PracticeSessionRepository):
         stmt = (
             select(PracticeSessionModel)
             .where(PracticeSessionModel.project_id == project_id)
+            .where(PracticeSessionModel.access_revoked_at.is_(None))
             .order_by(PracticeSessionModel.id)
             .limit(limit + 1)
         )

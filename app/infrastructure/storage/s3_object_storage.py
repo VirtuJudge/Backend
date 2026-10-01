@@ -262,6 +262,22 @@ class S3ObjectStorage(ObjectStoragePort):
 
         await asyncio.to_thread(_delete_sync)
 
+    async def list_objects(self, prefix: str) -> list[str]:
+        def list_sync() -> list[str]:
+            try:
+                pages = self.internal_client.get_paginator("list_objects_v2").paginate(
+                    Bucket=self.bucket, Prefix=prefix
+                )
+                return [item["Key"] for page in pages for item in page.get("Contents", [])]
+            except (
+                botocore.exceptions.BotoCoreError,
+                botocore.exceptions.ClientError,
+                OSError,
+            ) as err:
+                raise StorageUnavailable("Storage inventory unavailable") from err
+
+        return await asyncio.to_thread(list_sync)
+
     async def put_object(self, storage_key: str, data: bytes, content_type: str) -> None:
         def _put_sync() -> None:
             try:

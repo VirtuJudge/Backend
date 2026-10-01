@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 from uuid import uuid4
 
@@ -6,162 +6,123 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from app.api.dependencies.auth import get_current_user
-from app.api.dependencies.services import get_project_service
-from app.application.services.project_service import (
-    ProjectConfirmationRequired,
-    ProjectForbidden,
-    ProjectNotFound,
-    ProjectService,
-)
+from app.api.dependencies.erasure import get_erasure_workflow
+from app.application.erasure_workflow import ErasureWorkflow
+from app.domain.erasure import Erasure, ErasureConflict, ErasureForbidden, ErasureNotFound
 from app.domain.user import User
 from app.main import create_app
 from app.settings import Settings
 
 
-def _create_user() -> User:
-    return User(
+@pytest.mark.anyio
+@pytest.mark.parametrize("scope", ["project", "practice_session"])
+async def test_deletion_returns_erasure_and_location(scope: str) -> None:
+    app = create_app(Settings(app_env="test", database_url="sqlite+aiosqlite:///:memory:"))
+    now = datetime.now(UTC)
+    user = User(
         id=uuid4(),
-        issuer="https://identity.example.com",
-        subject="test-user",
-        email="test@example.com",
+        issuer="test",
+        subject="owner",
+        email="owner@example.com",
+        display_name="Owner",
+        created_at=now,
+    )
+    target = uuid4()
+    erasure = Erasure(uuid4(), uuid4(), scope, target, user.id, now, now + timedelta(hours=24))
+    workflow = AsyncMock(spec=ErasureWorkflow)
+    workflow.request.return_value = erasure
+    app.dependency_overrides[get_current_user] = lambda: user
+    app.dependency_overrides[get_erasure_workflow] = lambda: workflow
+    path = (
+        f"/api/v1/projects/{target}"
+        if scope == "project"
+        else f"/api/v1/practice-sessions/{target}"
+    )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.request(
+            "DELETE",
+            path,
+            headers={"Idempotency-Key": "key"},
+            json={"confirmation": "Synthetic project"} if scope == "project" else None,
+        )
+    assert response.status_code == 202
+    assert response.json()["id"] == str(erasure.id)
+    assert response.headers["Location"] == f"/api/v1/erasure-requests/{erasure.id}"
+    expected = (
+        (scope, target, user.id, "key", "Synthetic project")
+        if scope == "project"
+        else (scope, target, user.id, "key")
+    )
+    workflow.request.assert_awaited_once_with(*expected)
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("scope", ["project", "practice_session"])
+@pytest.mark.parametrize(
+    "error, code",
+    [
+        (ErasureNotFound(), 404),
+        (ErasureForbidden(), 403),
+        (ErasureConflict("confirmation_required"), 409),
+    ],
+)
+async def test_deletion_errors_are_safe(scope: str, error: Exception, code: int) -> None:
+    app = create_app(Settings(app_env="test", database_url="sqlite+aiosqlite:///:memory:"))
+    user = User(
+        id=uuid4(),
+        issuer="test",
+        subject="owner",
+        email="owner@example.com",
+        display_name="Owner",
         created_at=datetime.now(UTC),
-        display_name="Test User",
     )
-
-
-@pytest.mark.anyio
-async def test_delete_project_by_owner_succeeds() -> None:
-    settings = Settings(app_env="test", database_url="sqlite+aiosqlite:///:memory:")
-    app = create_app(settings)
-    user = _create_user()
-    project_id = uuid4()
-
-    mock_service = AsyncMock(spec=ProjectService)
-    mock_service.delete.return_value = None
-
+    workflow = AsyncMock(spec=ErasureWorkflow)
+    workflow.request.side_effect = error
     app.dependency_overrides[get_current_user] = lambda: user
-    app.dependency_overrides[get_project_service] = lambda: mock_service
-
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.delete(f"/api/v1/projects/{project_id}")
-
-    assert response.status_code == 204
-    assert not response.content
-    mock_service.delete.assert_awaited_once_with(project_id, user.id, confirmation=None)
-
-
-@pytest.mark.anyio
-async def test_delete_project_with_matching_confirmation_succeeds() -> None:
-    settings = Settings(app_env="test", database_url="sqlite+aiosqlite:///:memory:")
-    app = create_app(settings)
-    user = _create_user()
-    project_id = uuid4()
-
-    mock_service = AsyncMock(spec=ProjectService)
-    mock_service.delete.return_value = None
-
-    app.dependency_overrides[get_current_user] = lambda: user
-    app.dependency_overrides[get_project_service] = lambda: mock_service
-
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.request(
-            "DELETE",
-            f"/api/v1/projects/{project_id}",
-            json={"confirmation": "Awesome Project"},
-        )
-
-    assert response.status_code == 204
-    mock_service.delete.assert_awaited_once_with(
-        project_id, user.id, confirmation="Awesome Project"
+    app.dependency_overrides[get_erasure_workflow] = lambda: workflow
+    target = uuid4()
+    path = (
+        f"/api/v1/projects/{target}"
+        if scope == "project"
+        else f"/api/v1/practice-sessions/{target}"
     )
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.delete(path, headers={"Idempotency-Key": "key"})
+        missing_key = await client.delete(path)
+    assert response.status_code == code
+    assert response.headers["content-type"] == "application/problem+json"
+    assert missing_key.status_code == 422
 
 
 @pytest.mark.anyio
-async def test_delete_project_by_member_forbidden() -> None:
-    settings = Settings(app_env="test", database_url="sqlite+aiosqlite:///:memory:")
-    app = create_app(settings)
-    user = _create_user()
-    project_id = uuid4()
-
-    mock_service = AsyncMock(spec=ProjectService)
-    mock_service.delete.side_effect = ProjectForbidden
-
+async def test_status_response_excludes_internal_deletion_inventory() -> None:
+    app = create_app(Settings(app_env="test", database_url="sqlite+aiosqlite:///:memory:"))
+    now = datetime.now(UTC)
+    user = User(
+        id=uuid4(),
+        issuer="test",
+        subject="owner",
+        email="owner@example.com",
+        display_name="Owner",
+        created_at=now,
+    )
+    erasure = Erasure(
+        uuid4(),
+        uuid4(),
+        "project",
+        uuid4(),
+        user.id,
+        now,
+        now + timedelta(hours=24),
+        inventory={"storage_key": "synthetic-private-key"},
+    )
+    workflow = AsyncMock(spec=ErasureWorkflow)
+    workflow.get.return_value = erasure
     app.dependency_overrides[get_current_user] = lambda: user
-    app.dependency_overrides[get_project_service] = lambda: mock_service
-
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.delete(f"/api/v1/projects/{project_id}")
-
-    assert response.status_code == 403
-    assert response.json()["detail"] == "project_forbidden"
-
-
-@pytest.mark.anyio
-async def test_delete_project_by_outsider_or_not_found() -> None:
-    settings = Settings(app_env="test", database_url="sqlite+aiosqlite:///:memory:")
-    app = create_app(settings)
-    user = _create_user()
-    project_id = uuid4()
-
-    mock_service = AsyncMock(spec=ProjectService)
-    mock_service.delete.side_effect = ProjectNotFound
-
-    app.dependency_overrides[get_current_user] = lambda: user
-    app.dependency_overrides[get_project_service] = lambda: mock_service
-
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.delete(f"/api/v1/projects/{project_id}")
-
-    assert response.status_code == 404
-    assert response.json()["detail"] == "project_not_found"
-
-
-@pytest.mark.anyio
-async def test_delete_project_confirmation_mismatch_conflict() -> None:
-    settings = Settings(app_env="test", database_url="sqlite+aiosqlite:///:memory:")
-    app = create_app(settings)
-    user = _create_user()
-    project_id = uuid4()
-
-    mock_service = AsyncMock(spec=ProjectService)
-    mock_service.delete.side_effect = ProjectConfirmationRequired
-
-    app.dependency_overrides[get_current_user] = lambda: user
-    app.dependency_overrides[get_project_service] = lambda: mock_service
-
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.request(
-            "DELETE",
-            f"/api/v1/projects/{project_id}",
-            json={"confirmation": "Wrong Project Name"},
-        )
-
-    assert response.status_code == 409
-    assert response.json()["detail"] == "confirmation_required"
-
-
-@pytest.mark.anyio
-async def test_delete_project_via_team_path() -> None:
-    settings = Settings(app_env="test", database_url="sqlite+aiosqlite:///:memory:")
-    app = create_app(settings)
-    user = _create_user()
-    team_id = uuid4()
-    project_id = uuid4()
-
-    mock_service = AsyncMock(spec=ProjectService)
-    mock_service.delete.return_value = None
-
-    app.dependency_overrides[get_current_user] = lambda: user
-    app.dependency_overrides[get_project_service] = lambda: mock_service
-
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://test") as client:
-        response = await client.delete(f"/api/v1/teams/{team_id}/projects/{project_id}")
-
-    assert response.status_code == 204
-    mock_service.delete.assert_awaited_once_with(project_id, user.id, confirmation=None)
+    app.dependency_overrides[get_erasure_workflow] = lambda: workflow
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get(f"/api/v1/erasure-requests/{erasure.id}")
+    assert response.status_code == 200
+    assert "inventory" not in response.json()
+    assert "synthetic-private-key" not in response.text
+    workflow.get.assert_awaited_once_with(erasure.id, user.id)

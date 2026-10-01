@@ -299,6 +299,11 @@ class FakeAssetRepository(AssetRepository):
 
 
 class FakeObjectStorage(ObjectStoragePort):
+    async def list_objects(self, prefix: str) -> list[str]:
+        if self.transient_failure:
+            raise StorageUnavailable("Storage unavailable")
+        return [key for key in self.objects if key.startswith(prefix)]
+
     def __init__(self) -> None:
         self.objects: dict[str, bytes] = {}
         self.transient_failure = False

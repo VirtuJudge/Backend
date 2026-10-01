@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.domain.session_workflow.entities.analysis_job import AnalysisJob
 from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
 from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
+from app.domain.session_workflow.enums.session_status import SessionStatus
 from app.infrastructure.persistence.configurations import (
     AssetModel,
     AssetVersionModel,
@@ -89,7 +90,7 @@ async def _create_base_hierarchy(
             name="Session",
             project_id=project_id,
             created_by=user_id,
-            status="READY",
+            status=SessionStatus.READY,
             version=1,
             created_at=now,
             updated_at=now,

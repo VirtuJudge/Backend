@@ -41,6 +41,8 @@ async def stream_live_session_events(
         for event in initial.events:
             cursor = event.sequence
             yield event.to_sse_frame()
+            if event.event_name.value == "erasure.updated.v1":
+                return
     try:
         while not await request.is_disconnected():
             batch = await notifications.wait_for_events(
@@ -68,5 +70,7 @@ async def stream_live_session_events(
             for event in batch.events:
                 cursor = event.sequence
                 yield event.to_sse_frame()
+                if event.event_name.value == "erasure.updated.v1":
+                    return
     except asyncio.CancelledError:
         raise

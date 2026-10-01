@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
@@ -8,10 +8,12 @@ from fastapi.responses import StreamingResponse
 from httpx import ASGITransport, AsyncClient
 
 from app.api.dependencies.auth import get_current_user
+from app.api.dependencies.erasure import get_erasure_workflow
 from app.api.dependencies.session_notifications import get_session_notifications
 from app.api.dependencies.session_workflow import get_session_workflow
 from app.api.routes.session_practice import stream_practice_session_events
 from app.application.session_workflow import SessionWorkflow
+from app.domain.erasure import Erasure, ErasureForbidden, ErasureNotFound
 from app.domain.session_workflow.entities.analysis_attempt import AnalysisAttempt
 from app.domain.session_workflow.entities.session_practice import PracticeSession
 from app.domain.session_workflow.entities.speaker_mapping import SpeakerMapping
@@ -115,11 +117,28 @@ def current_user() -> User:
 
 
 @pytest.fixture
-def client(workflow_mock: MagicMock, current_user: User) -> AsyncClient:
+def erasure_mock(current_user: User) -> AsyncMock:
+    mock = AsyncMock()
+    now = datetime.now(UTC)
+    mock.request.return_value = Erasure(
+        uuid4(),
+        uuid4(),
+        "practice_session",
+        uuid4(),
+        current_user.id,
+        now,
+        now + timedelta(hours=24),
+    )
+    return mock
+
+
+@pytest.fixture
+def client(workflow_mock: MagicMock, current_user: User, erasure_mock: AsyncMock) -> AsyncClient:
     settings = Settings(app_env="test", database_url="sqlite+aiosqlite:///:memory:")
     app = create_app(settings)
     app.dependency_overrides[get_current_user] = lambda: current_user
     app.dependency_overrides[get_session_workflow] = lambda: workflow_mock
+    app.dependency_overrides[get_erasure_workflow] = lambda: erasure_mock
     notification_store = FakeSessionNotifications()
     app.dependency_overrides[get_session_notifications] = lambda: notification_store
 
@@ -981,45 +1000,48 @@ async def test_start_analysis_attempt_idempotency_conflict_with_different_consen
 
 @pytest.mark.anyio
 async def test_delete_practice_session_success(
-    client: AsyncClient, workflow_mock: MagicMock
+    client: AsyncClient, erasure_mock: AsyncMock
 ) -> None:
     session_id = uuid4()
-    workflow_mock.delete_session.return_value = None
 
     async with client:
-        response = await client.delete(f"/api/v1/practice-sessions/{session_id}")
+        response = await client.delete(
+            f"/api/v1/practice-sessions/{session_id}", headers={"Idempotency-Key": "delete-session"}
+        )
 
-    assert response.status_code == 204
-    assert not response.content
-    workflow_mock.delete_session.assert_awaited_once()
+    assert response.status_code == 202
+    assert response.json()["status"] == "pending"
+    erasure_mock.request.assert_awaited_once()
 
 
 @pytest.mark.anyio
 async def test_delete_practice_session_under_project_path(
-    client: AsyncClient, workflow_mock: MagicMock
+    client: AsyncClient, erasure_mock: AsyncMock
 ) -> None:
     project_id = uuid4()
     session_id = uuid4()
-    workflow_mock.delete_session.return_value = None
 
     async with client:
         response = await client.delete(
-            f"/api/v1/projects/{project_id}/practice-sessions/{session_id}"
+            f"/api/v1/projects/{project_id}/practice-sessions/{session_id}",
+            headers={"Idempotency-Key": "delete-session"},
         )
 
-    assert response.status_code == 204
-    assert not response.content
+    assert response.status_code == 202
+    assert response.headers["Location"].startswith("/api/v1/erasure-requests/")
 
 
 @pytest.mark.anyio
 async def test_delete_practice_session_not_found(
-    client: AsyncClient, workflow_mock: MagicMock
+    client: AsyncClient, erasure_mock: AsyncMock
 ) -> None:
     session_id = uuid4()
-    workflow_mock.delete_session.side_effect = SessionNotFoundError("Session not found")
+    erasure_mock.request.side_effect = ErasureNotFound()
 
     async with client:
-        response = await client.delete(f"/api/v1/practice-sessions/{session_id}")
+        response = await client.delete(
+            f"/api/v1/practice-sessions/{session_id}", headers={"Idempotency-Key": "delete-session"}
+        )
 
     assert response.status_code == 404
     assert response.headers["content-type"] == "application/problem+json"
@@ -1029,15 +1051,15 @@ async def test_delete_practice_session_not_found(
 
 @pytest.mark.anyio
 async def test_delete_practice_session_forbidden_for_outsider(
-    client: AsyncClient, workflow_mock: MagicMock
+    client: AsyncClient, erasure_mock: AsyncMock
 ) -> None:
     session_id = uuid4()
-    workflow_mock.delete_session.side_effect = UnauthorizedSessionAction(
-        "You do not have access to this session."
-    )
+    erasure_mock.request.side_effect = ErasureForbidden()
 
     async with client:
-        response = await client.delete(f"/api/v1/practice-sessions/{session_id}")
+        response = await client.delete(
+            f"/api/v1/practice-sessions/{session_id}", headers={"Idempotency-Key": "delete-session"}
+        )
 
     assert response.status_code == 403
     assert response.headers["content-type"] == "application/problem+json"

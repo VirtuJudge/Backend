@@ -36,6 +36,9 @@ def test_migration_metadata_parity(tmp_path: Path) -> None:
     inspector = inspect(engine)
 
     target_tables = [
+        "erasure_requests",
+        "erasure_steps",
+        "erasure_items",
         "analysis_attempts",
         "session_command_idempotency",
         "session_manifest_documents",
@@ -116,7 +119,9 @@ def test_migration_metadata_parity(tmp_path: Path) -> None:
 
     # Specific assertions for ai_jobs
     job_table = Base.metadata.tables["ai_jobs"]
-    assert not job_table.columns["practice_session_id"].nullable
+    assert job_table.columns["practice_session_id"].nullable
+    assert job_table.columns["attempt_id"].nullable
+    assert job_table.columns["erasure_request_id"].nullable
     job_type_type = job_table.columns["job_type"].type
     assert isinstance(job_type_type, String)
     assert job_type_type.length == 50

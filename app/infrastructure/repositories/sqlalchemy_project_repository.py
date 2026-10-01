@@ -56,7 +56,7 @@ class SqlAlchemyProjectRepository(ProjectRepository):
     ) -> tuple[list[Project], UUID | None]:
         stmt = (
             select(ProjectModel)
-            .where(ProjectModel.team_id == team_id)
+            .where(ProjectModel.team_id == team_id, ProjectModel.access_revoked_at.is_(None))
             .order_by(ProjectModel.id)
             .limit(limit + 1)
         )
@@ -71,7 +71,14 @@ class SqlAlchemyProjectRepository(ProjectRepository):
         return [self._project(row) for row in rows], next_cursor
 
     async def get_by_id(self, project_id: UUID) -> Project | None:
-        model = await self.session.get(ProjectModel, project_id)
+        model = await self.session.scalar(
+            select(ProjectModel)
+            .where(
+                ProjectModel.id == project_id,
+                ProjectModel.access_revoked_at.is_(None),
+            )
+            .with_for_update()
+        )
         return self._project(model) if model is not None else None
 
     async def create(self, project: Project) -> Project:
@@ -148,9 +155,10 @@ class SqlAlchemyProjectRepository(ProjectRepository):
     async def is_member(self, project_id: UUID, user_id: UUID) -> bool:
         stmt = select(ProjectModel).where(
             ProjectModel.id == project_id,
+            ProjectModel.access_revoked_at.is_(None),
             ProjectModel.team.has(TeamModel.members.any(TeamMemberModel.user_id == user_id)),
         )
-        result = await self.session.execute(stmt)
+        result = await self.session.execute(stmt.with_for_update())
         return result.scalar() is not None
 
     async def get_team_member_id(self, project_id: UUID, user_id: UUID) -> UUID | None:
@@ -167,6 +175,7 @@ class SqlAlchemyProjectRepository(ProjectRepository):
     async def is_owner(self, project_id: UUID, user_id: UUID) -> bool:
         stmt = select(ProjectModel.id).where(
             ProjectModel.id == project_id,
+            ProjectModel.access_revoked_at.is_(None),
             ProjectModel.team.has(
                 TeamModel.members.any(
                     (TeamMemberModel.user_id == user_id) & (TeamMemberModel.role == "owner")

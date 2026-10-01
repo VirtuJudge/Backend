@@ -1,4 +1,5 @@
 import asyncio
+import json
 import logging
 from datetime import UTC, datetime
 from typing import Any
@@ -8,6 +9,7 @@ from celery import Celery
 from celery.exceptions import CeleryError
 from kombu.exceptions import KombuError
 from pydantic import BaseModel
+from redis import Redis
 from redis.exceptions import RedisError
 
 from app.application.ai_job_contracts import AIJobQueueMessage
@@ -203,6 +205,60 @@ class CeleryAIJobQueue(AIJobQueuePort):
 
     def __repr__(self) -> str:
         return f"CeleryAIJobQueue(task_name={self.task_name!r}, queue_name={self.queue_name!r})"
+
+    async def cancel_jobs(self, job_ids: list[str]) -> int:
+        if not job_ids:
+            return 0
+        targets = set(job_ids)
+
+        def cancel() -> int:
+            self._celery_app.control.revoke(job_ids, terminate=False)
+            removed = 0
+            broker = str(self._celery_app.conf.broker_url)
+            with Redis.from_url(broker) as redis:
+                for priority in (0, 3, 6, 9):
+                    key = (
+                        self.queue_name if priority == 0 else f"{self.queue_name}\x06\x16{priority}"
+                    )
+                    offset = 0
+                    matches = []
+                    while batch := redis.lrange(key, offset, offset + 99):
+                        for raw in batch:
+                            message = json.loads(raw)
+                            if str(message.get("headers", {}).get("id")) in targets:
+                                matches.append(raw)
+                        offset += len(batch)
+                    for raw in matches:
+                        removed += int(redis.lrem(key, 0, raw))
+                # Kombu keeps reserved deliveries in a hash until ACK. Remove
+                # only revoked target payloads so a disconnected worker cannot
+                # later restore their sensitive envelope to the queue.
+                for delivery_tag, raw in redis.hscan_iter("unacked", count=100):
+                    message = json.loads(raw)[0]
+                    if str(message.get("headers", {}).get("id")) in targets:
+                        with redis.pipeline() as transaction:
+                            transaction.hdel("unacked", delivery_tag)
+                            transaction.zrem("unacked_index", delivery_tag)
+                            result = transaction.execute()
+                        removed += int(result[0])
+            inspect = self._celery_app.control.inspect(timeout=2.0)
+            for snapshot in (inspect.active(), inspect.reserved(), inspect.scheduled()):
+                if snapshot is None:
+                    raise AIQueueTemporaryFailure("Worker cancellation supervision unavailable")
+                if any(
+                    str(task.get("request", task).get("id")) in targets
+                    for tasks in (snapshot or {}).values()
+                    for task in tasks
+                ):
+                    raise AIQueueTemporaryFailure("Cancelled jobs are still finishing")
+            return removed
+
+        try:
+            return await asyncio.to_thread(cancel)
+        except AIQueueTemporaryFailure:
+            raise
+        except Exception as exc:
+            raise AIQueueTemporaryFailure("Job cancellation is unavailable") from exc
 
 
 CeleryAIQueue = CeleryAIJobQueue

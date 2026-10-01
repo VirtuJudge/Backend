@@ -33,7 +33,14 @@ class SqlAlchemyAssetRepository(AssetRepository):
         self.session = session
 
     async def get_project(self, project_id: UUID) -> Project | None:
-        model = await self.session.get(ProjectModel, project_id)
+        model = await self.session.scalar(
+            select(ProjectModel)
+            .where(
+                ProjectModel.id == project_id,
+                ProjectModel.access_revoked_at.is_(None),
+            )
+            .with_for_update()
+        )
         if model is None:
             return None
         return Project(
@@ -53,6 +60,11 @@ class SqlAlchemyAssetRepository(AssetRepository):
         return (await self.session.scalar(stmt)) is not None
 
     async def is_project_erasure_requested(self, project_id: UUID) -> bool:
+        revoked = await self.session.scalar(
+            select(ProjectModel.access_revoked_at).where(ProjectModel.id == project_id)
+        )
+        if revoked is not None:
+            return True
         stmt = select(ProjectErasureRequestModel.id).where(
             ProjectErasureRequestModel.project_id == project_id
         )

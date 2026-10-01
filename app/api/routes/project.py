@@ -3,7 +3,9 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 
 from app.api.dependencies.auth import get_current_user
+from app.api.dependencies.erasure import get_erasure_workflow
 from app.api.dependencies.services import get_project_service
+from app.api.schemas.erasure import ErasureResponse
 from app.api.schemas.project import (
     ProjectCreateRequest,
     ProjectDeleteRequest,
@@ -11,14 +13,15 @@ from app.api.schemas.project import (
     ProjectResponse,
     ProjectUpdateRequest,
 )
+from app.application.erasure_workflow import ErasureWorkflow
 from app.application.services.project_service import (
-    ProjectConfirmationRequired,
     ProjectForbidden,
     ProjectNotFound,
     ProjectPreconditionFailed,
     ProjectService,
     project_etag,
 )
+from app.domain.erasure import ErasureConflict, ErasureForbidden, ErasureNotFound
 from app.domain.user import User
 
 router = APIRouter(
@@ -143,30 +146,36 @@ async def update_project(
 
 @router.delete(
     "/projects/{project_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=ErasureResponse,
     tags=["projects"],
 )
 @router.delete(
     "/teams/{team_id}/projects/{project_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
+    status_code=status.HTTP_202_ACCEPTED,
     tags=["projects"],
     include_in_schema=False,
 )
 async def delete_project(
     project_id: UUID,
+    response: Response,
     team_id: UUID | None = None,
     request: ProjectDeleteRequest | None = None,
     current_user: User = Depends(get_current_user),
-    service: ProjectService = Depends(get_project_service),
-    idempotency_key: str | None = Header(default=None),
-) -> Response:
+    workflow: ErasureWorkflow = Depends(get_erasure_workflow),
+    idempotency_key: str = Header(min_length=1, max_length=255),
+) -> ErasureResponse:
     try:
         confirmation = request.confirmation if request is not None else None
-        await service.delete(project_id, current_user.id, confirmation=confirmation)
-    except ProjectNotFound as error:
+        parent = {"expected_team_id": team_id} if team_id is not None else {}
+        erasure = await workflow.request(
+            "project", project_id, current_user.id, idempotency_key, confirmation, **parent
+        )
+    except ErasureNotFound as error:
         raise HTTPException(status_code=404, detail="project_not_found") from error
-    except ProjectForbidden as error:
+    except ErasureForbidden as error:
         raise HTTPException(status_code=403, detail="project_forbidden") from error
-    except ProjectConfirmationRequired as error:
-        raise HTTPException(status_code=409, detail="confirmation_required") from error
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    except ErasureConflict as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    response.headers["Location"] = f"/api/v1/erasure-requests/{erasure.id}"
+    return ErasureResponse.model_validate(erasure)
