@@ -486,15 +486,16 @@ def test_project_delete_by_owner_succeeds() -> None:
     assert project_repository.project is None
 
 
-def test_project_delete_without_confirmation_succeeds_for_owner() -> None:
+def test_project_delete_without_confirmation_is_rejected_for_owner() -> None:
     team_repository = FakeTeamRepository()
     project = Project(uuid4(), TEAM_ID, "Project", None, NOW)
     project_repository = FakeProjectRepository(project)
     service = ProjectService(project_repository, team_repository)
 
-    run(service.delete(project.id, OWNER_ID))
+    with pytest.raises(ProjectConfirmationRequired):
+        run(service.delete(project.id, OWNER_ID))
 
-    assert project_repository.project is None
+    assert project_repository.project is project
 
 
 def test_project_delete_by_member_is_forbidden() -> None:
@@ -519,14 +520,19 @@ def test_project_delete_by_outsider_is_not_found() -> None:
         run(service.delete(project.id, OUTSIDER_ID))
 
 
-def test_project_delete_confirmation_mismatch_raises_error() -> None:
+@pytest.mark.parametrize(
+    "confirmation", [None, "", "Wrong Name", "project", " Project", "Project "]
+)
+def test_project_delete_confirmation_mismatch_raises_error(confirmation: str | None) -> None:
     team_repository = FakeTeamRepository()
     project = Project(uuid4(), TEAM_ID, "Project", None, NOW)
     project_repository = FakeProjectRepository(project)
     service = ProjectService(project_repository, team_repository)
 
     with pytest.raises(ProjectConfirmationRequired):
-        run(service.delete(project.id, OWNER_ID, "Wrong Name"))
+        run(service.delete(project.id, OWNER_ID, confirmation))
+
+    assert project_repository.project is project
 
 
 @pytest.mark.parametrize(

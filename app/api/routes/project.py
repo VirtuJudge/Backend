@@ -158,18 +158,17 @@ async def update_project(
 )
 async def delete_project(
     project_id: UUID,
+    request: ProjectDeleteRequest,
     response: Response,
     team_id: UUID | None = None,
-    request: ProjectDeleteRequest | None = None,
     current_user: User = Depends(get_current_user),
     workflow: ErasureWorkflow = Depends(get_erasure_workflow),
     idempotency_key: str = Header(min_length=1, max_length=255),
 ) -> ErasureResponse:
     try:
-        confirmation = request.confirmation if request is not None else None
         parent = {"expected_team_id": team_id} if team_id is not None else {}
         erasure = await workflow.request(
-            "project", project_id, current_user.id, idempotency_key, confirmation, **parent
+            "project", project_id, current_user.id, idempotency_key, request.confirmation, **parent
         )
     except ErasureNotFound as error:
         raise HTTPException(status_code=404, detail="project_not_found") from error

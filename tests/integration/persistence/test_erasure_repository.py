@@ -20,8 +20,43 @@ from app.infrastructure.persistence.configurations import (
 from app.infrastructure.repositories.sqlalchemy_erasure_repository import (
     SqlAlchemyErasureRepository,
 )
+from app.infrastructure.repositories.sqlalchemy_project_repository import (
+    SqlAlchemyProjectRepository,
+)
 from tests.acceptance.test_erasure_workflow import Queue, complete, due_again, seed, workflow
 from tests.support.fakes import FakeObjectStorage
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    "confirmation",
+    [None, "", "Wrong name", "synthetic project", " Synthetic project", "Synthetic project "],
+)
+async def test_project_erasure_rejects_invalid_confirmation_without_revoking_access(
+    db_session_factory: async_sessionmaker[AsyncSession], confirmation: str | None
+) -> None:
+    async with db_session_factory() as session:
+        data = await seed(session)
+        repository = SqlAlchemyErasureRepository(session)
+        now = datetime.now(UTC)
+        with pytest.raises(ErasureConflict, match="confirmation_required"):
+            await repository.accept(
+                "project", data["project"], data["owner"], "key", confirmation, now
+            )
+        assert await session.scalar(select(ErasureRequestModel)) is None
+        assert await SqlAlchemyProjectRepository(session).get_by_id(data["project"]) is not None
+        practice_session = await session.get(PracticeSessionModel, data["session"])
+        assert practice_session is not None and practice_session.status == SessionStatus.READY
+        asset = await session.get(AssetModel, data["asset"])
+        assert asset is not None and asset.state == "verified"
+
+        accepted = await repository.accept(
+            "project", data["project"], data["owner"], "key", "Synthetic project", now
+        )
+        replay = await repository.accept(
+            "project", data["project"], data["owner"], "key", "Synthetic project", now
+        )
+        assert replay.id == accepted.id
 
 
 @pytest.mark.anyio

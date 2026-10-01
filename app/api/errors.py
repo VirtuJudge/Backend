@@ -173,6 +173,7 @@ async def asset_request_validation_handler(
         or "/internal" in request.url.path
         or "/ai-jobs" in request.url.path
         or "/report-exports" in request.url.path
+        or (request.method == "DELETE" and "/projects/" in request.url.path)
     ):
         trace_id = get_correlation_id() or getattr(request.state, "correlation_id", None)
         content: dict[str, Any] = {
