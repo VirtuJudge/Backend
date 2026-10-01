@@ -7,7 +7,11 @@ from httpx import ASGITransport, AsyncClient
 
 from app.api.dependencies.auth import get_current_user
 from app.api.dependencies.erasure import get_erasure_workflow
+from app.api.dependencies.services import get_project_service
 from app.application.erasure_workflow import ErasureWorkflow
+from app.application.ports.project_repository import ProjectRepository
+from app.application.ports.team_repository import TeamRepository
+from app.application.services.project_service import ProjectService
 from app.domain.erasure import Erasure, ErasureConflict, ErasureForbidden, ErasureNotFound
 from app.domain.user import User
 from app.main import create_app
@@ -37,6 +41,9 @@ async def test_deletion_returns_erasure_and_location(scope: str) -> None:
     workflow.request.return_value = erasure
     app.dependency_overrides[get_current_user] = lambda: user
     app.dependency_overrides[get_erasure_workflow] = lambda: workflow
+    app.dependency_overrides[get_project_service] = lambda: ProjectService(
+        AsyncMock(spec=ProjectRepository), AsyncMock(spec=TeamRepository), workflow
+    )
     path = (
         f"/api/v1/teams/{team_id}/projects/{target}"
         if scope == "team_project"
@@ -59,7 +66,11 @@ async def test_deletion_returns_erasure_and_location(scope: str) -> None:
         if erasure_scope == "project"
         else (scope, target, user.id, "key")
     )
-    parent = {"expected_team_id": team_id} if scope == "team_project" else {}
+    parent = (
+        {"expected_team_id": team_id if scope == "team_project" else None}
+        if erasure_scope == "project"
+        else {}
+    )
     workflow.request.assert_awaited_once_with(*expected, **parent)
 
 
@@ -87,6 +98,9 @@ async def test_deletion_errors_are_safe(scope: str, error: Exception, code: int)
     workflow.request.side_effect = error
     app.dependency_overrides[get_current_user] = lambda: user
     app.dependency_overrides[get_erasure_workflow] = lambda: workflow
+    app.dependency_overrides[get_project_service] = lambda: ProjectService(
+        AsyncMock(spec=ProjectRepository), AsyncMock(spec=TeamRepository), workflow
+    )
     target = uuid4()
     path = (
         f"/api/v1/projects/{target}"
@@ -125,6 +139,9 @@ async def test_project_deletion_requires_confirmation_body(
     workflow = AsyncMock(spec=ErasureWorkflow)
     app.dependency_overrides[get_current_user] = lambda: user
     app.dependency_overrides[get_erasure_workflow] = lambda: workflow
+    app.dependency_overrides[get_project_service] = lambda: ProjectService(
+        AsyncMock(spec=ProjectRepository), AsyncMock(spec=TeamRepository), workflow
+    )
     target, team_id = uuid4(), uuid4()
     path = (
         f"/api/v1/teams/{team_id}/projects/{target}"

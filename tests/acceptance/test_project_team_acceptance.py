@@ -2,6 +2,7 @@ import asyncio
 from collections.abc import Coroutine
 from datetime import UTC, datetime
 from typing import Any, TypeVar
+from unittest.mock import AsyncMock
 from uuid import UUID, uuid4
 
 import jwt
@@ -9,11 +10,11 @@ import pytest
 from fastapi import HTTPException
 
 from app.api.dependencies.team_authorization import get_team_owner
+from app.application.erasure_workflow import ErasureWorkflow
 from app.application.ports.project_repository import ProjectRepository
 from app.application.ports.team_repository import TeamRepository
 from app.application.ports.user_repository import UserRepository
 from app.application.services.project_service import (
-    ProjectConfirmationRequired,
     ProjectForbidden,
     ProjectNotFound,
     ProjectPreconditionFailed,
@@ -355,7 +356,7 @@ def test_outside_user_cannot_list_or_modify_team_projects() -> None:
     team_repository = FakeTeamRepository()
     project = Project(uuid4(), TEAM_ID, "Project", None, NOW)
     project_repository = FakeProjectRepository(project)
-    service = ProjectService(project_repository, team_repository)
+    service = ProjectService(project_repository, team_repository, AsyncMock(spec=ErasureWorkflow))
 
     with pytest.raises(ProjectForbidden):
         run(service.list(TEAM_ID, OUTSIDER_ID, None, None, 50))
@@ -373,7 +374,7 @@ def test_outside_user_cannot_list_or_modify_team_projects() -> None:
 def test_team_member_can_create_and_list_projects() -> None:
     team_repository = FakeTeamRepository()
     project_repository = FakeProjectRepository(Project(uuid4(), TEAM_ID, "Project", None, NOW))
-    service = ProjectService(project_repository, team_repository)
+    service = ProjectService(project_repository, team_repository, AsyncMock(spec=ErasureWorkflow))
 
     created = run(service.create(TEAM_ID, MEMBER_ID, "New Project", "description"))
     listed, cursor = run(service.list(TEAM_ID, MEMBER_ID, None, None, 50))
@@ -422,7 +423,9 @@ def test_team_and_project_updates_require_current_etag() -> None:
 
     project = Project(uuid4(), TEAM_ID, "Project", None, NOW)
     project_repository = FakeProjectRepository(project)
-    project_service = ProjectService(project_repository, team_repository)
+    project_service = ProjectService(
+        project_repository, team_repository, AsyncMock(spec=ErasureWorkflow)
+    )
     updated_project = run(
         project_service.update(
             project.id,
@@ -445,94 +448,6 @@ def test_team_and_project_updates_require_current_etag() -> None:
                 project_etag(project),
             )
         )
-
-
-def test_project_erasure_request_is_idempotent() -> None:
-    team_repository = FakeTeamRepository()
-    project = Project(uuid4(), TEAM_ID, "Project", None, NOW)
-    project_repository = FakeProjectRepository(project)
-    service = ProjectService(project_repository, team_repository)
-
-    first = run(
-        service.request_erasure(
-            project.id,
-            OWNER_ID,
-            "Project",
-            "erase-1",
-        )
-    )
-
-    second = run(
-        service.request_erasure(
-            project.id,
-            OWNER_ID,
-            "Project",
-            "erase-1",
-        )
-    )
-
-    assert first == second
-    assert len(project_repository.erasure_requests) == 1
-
-
-def test_project_delete_by_owner_succeeds() -> None:
-    team_repository = FakeTeamRepository()
-    project = Project(uuid4(), TEAM_ID, "Project", None, NOW)
-    project_repository = FakeProjectRepository(project)
-    service = ProjectService(project_repository, team_repository)
-
-    run(service.delete(project.id, OWNER_ID, "Project"))
-
-    assert project_repository.project is None
-
-
-def test_project_delete_without_confirmation_is_rejected_for_owner() -> None:
-    team_repository = FakeTeamRepository()
-    project = Project(uuid4(), TEAM_ID, "Project", None, NOW)
-    project_repository = FakeProjectRepository(project)
-    service = ProjectService(project_repository, team_repository)
-
-    with pytest.raises(ProjectConfirmationRequired):
-        run(service.delete(project.id, OWNER_ID))
-
-    assert project_repository.project is project
-
-
-def test_project_delete_by_member_is_forbidden() -> None:
-    team_repository = FakeTeamRepository()
-    project = Project(uuid4(), TEAM_ID, "Project", None, NOW)
-    project_repository = FakeProjectRepository(project)
-    service = ProjectService(project_repository, team_repository)
-
-    with pytest.raises(ProjectForbidden):
-        run(service.delete(project.id, MEMBER_ID))
-
-    assert project_repository.project is not None
-
-
-def test_project_delete_by_outsider_is_not_found() -> None:
-    team_repository = FakeTeamRepository()
-    project = Project(uuid4(), TEAM_ID, "Project", None, NOW)
-    project_repository = FakeProjectRepository(project)
-    service = ProjectService(project_repository, team_repository)
-
-    with pytest.raises(ProjectNotFound):
-        run(service.delete(project.id, OUTSIDER_ID))
-
-
-@pytest.mark.parametrize(
-    "confirmation", [None, "", "Wrong Name", "project", " Project", "Project "]
-)
-def test_project_delete_confirmation_mismatch_raises_error(confirmation: str | None) -> None:
-    team_repository = FakeTeamRepository()
-    project = Project(uuid4(), TEAM_ID, "Project", None, NOW)
-    project_repository = FakeProjectRepository(project)
-    service = ProjectService(project_repository, team_repository)
-
-    with pytest.raises(ProjectConfirmationRequired):
-        run(service.delete(project.id, OWNER_ID, confirmation))
-
-    assert project_repository.project is project
 
 
 @pytest.mark.parametrize(

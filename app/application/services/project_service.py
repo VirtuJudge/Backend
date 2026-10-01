@@ -2,9 +2,10 @@ from datetime import UTC, datetime
 from hashlib import sha256
 from uuid import UUID, uuid4
 
+from app.application.erasure_workflow import ErasureWorkflow
 from app.application.ports.project_repository import ProjectRepository
 from app.application.ports.team_repository import TeamRepository
-from app.domain.erasure_request import ErasureRequest
+from app.domain.erasure import Erasure
 from app.domain.project import Project
 
 
@@ -20,18 +21,17 @@ class ProjectPreconditionFailed(Exception):
     pass
 
 
-class ProjectConfirmationRequired(Exception):
-    pass
-
-
 def project_etag(project: Project) -> str:
     return sha256(f"{project.id}:{project.version}".encode()).hexdigest()
 
 
 class ProjectService:
-    def __init__(self, repository: ProjectRepository, teams: TeamRepository):
+    def __init__(
+        self, repository: ProjectRepository, teams: TeamRepository, erasure: ErasureWorkflow
+    ):
         self.repository = repository
         self.teams = teams
+        self.erasure = erasure
 
     async def _authorized(self, project_id: UUID, user_id: UUID) -> Project:
         project = await self.repository.get_by_id(project_id)
@@ -98,32 +98,21 @@ class ProjectService:
         self,
         project_id: UUID,
         user_id: UUID,
-        confirmation: str | None = None,
-    ) -> None:
-        project = await self._authorized(project_id, user_id)
-        if not await self.teams.is_owner(project.team_id, user_id):
-            raise ProjectForbidden
-        if confirmation != project.name:
-            raise ProjectConfirmationRequired
-        await self.repository.delete(project_id)
+        confirmation: str | None,
+        key: str,
+        *,
+        expected_team_id: UUID | None = None,
+    ) -> Erasure:
+        return await self.erasure.request(
+            "project",
+            project_id,
+            user_id,
+            key,
+            confirmation,
+            expected_team_id=expected_team_id,
+        )
 
     async def request_erasure(
         self, project_id: UUID, user_id: UUID, confirmation: str, key: str
-    ) -> ErasureRequest:
-        project = await self._authorized(project_id, user_id)
-        if not await self.teams.is_owner(project.team_id, user_id):
-            raise ProjectForbidden
-        if confirmation != project.name:
-            raise ProjectConfirmationRequired
-        previous = await self.repository.get_erasure_request(project_id, user_id, key)
-        if previous is not None:
-            return previous
-        return await self.repository.create_erasure_request(
-            ErasureRequest(
-                id=uuid4(),
-                project_id=project_id,
-                requested_by=user_id,
-                created_at=datetime.now(UTC),
-            ),
-            key,
-        )
+    ) -> Erasure:
+        return await self.delete(project_id, user_id, confirmation, key)
