@@ -7,7 +7,7 @@ from alembic.config import Config
 from sqlalchemy import create_engine, inspect, make_url
 
 ROOT = Path(__file__).resolve().parents[4]
-BACKEND_HEAD_REVISION = "e6f7a8b9c0d1"
+BACKEND_HEAD_REVISION = "f7a8b9c0d1e2"
 
 
 def migration_configuration(sync_url: str) -> Config:

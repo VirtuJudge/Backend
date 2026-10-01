@@ -37,6 +37,7 @@ def test_migration_metadata_parity(tmp_path: Path) -> None:
 
     target_tables = [
         "erasure_requests",
+        "erasure_command_idempotency",
         "erasure_steps",
         "erasure_items",
         "analysis_attempts",

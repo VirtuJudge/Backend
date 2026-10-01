@@ -4,6 +4,7 @@ from app.infrastructure.persistence.configurations.asset_configuration import (
     AssetVersionModel,
 )
 from app.infrastructure.persistence.configurations.erasure import (
+    ErasureCommandIdempotencyModel,
     ErasureItemModel,
     ErasureRequestModel,
     ErasureStepModel,
@@ -49,6 +50,7 @@ from .session_workflow.session_practice_configuration import (
 from .session_workflow.speaker_mapping_configuration import SpeakerMappingModel
 
 __all__ = [
+    "ErasureCommandIdempotencyModel",
     "ErasureItemModel",
     "ErasureRequestModel",
     "ErasureStepModel",

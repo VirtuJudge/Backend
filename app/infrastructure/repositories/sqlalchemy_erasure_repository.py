@@ -33,6 +33,7 @@ from app.infrastructure.persistence.configurations import (
     AssetModel,
     AssetUploadIdempotencyModel,
     AssetVersionModel,
+    ErasureCommandIdempotencyModel,
     ErasureItemModel,
     ErasureRequestModel,
     ErasureStepModel,
@@ -120,6 +121,43 @@ class SqlAlchemyErasureRepository:
         await self._membership(model.team_id, actor_id)
         return await self._domain(model)
 
+    async def _record_command(
+        self,
+        request: ErasureRequestModel,
+        scope: str,
+        scope_id: UUID,
+        actor_id: UUID | None,
+        key: str,
+        digest: str,
+    ) -> None:
+        if actor_id is None:
+            return
+        previous = await self.session.get(
+            ErasureCommandIdempotencyModel, (actor_id, scope, scope_id, key)
+        )
+        if previous is not None:
+            if previous.request_hash != digest:
+                raise ErasureConflict("idempotency_conflict")
+            return
+        if (
+            request.requested_by == actor_id
+            and request.scope == scope
+            and request.scope_id == scope_id
+            and request.idempotency_key == key
+            and request.request_hash != digest
+        ):
+            raise ErasureConflict("idempotency_conflict")
+        self.session.add(
+            ErasureCommandIdempotencyModel(
+                actor_id=actor_id,
+                scope=scope,
+                scope_id=scope_id,
+                idempotency_key=key,
+                request_hash=digest,
+                request_id=request.id,
+            )
+        )
+
     async def accept(
         self,
         scope: str,
@@ -135,21 +173,26 @@ class SqlAlchemyErasureRepository:
     ) -> Erasure:
         digest = sha256((confirmation or "").encode()).hexdigest()
         previous = await self.session.scalar(
-            select(ErasureRequestModel).where(
+            select(ErasureRequestModel)
+            .where(
                 ErasureRequestModel.scope == scope,
                 ErasureRequestModel.scope_id == scope_id,
             )
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         if previous is not None:
             if (expected_team_id is not None and previous.team_id != expected_team_id) or (
                 expected_project_id is not None and previous.project_id != expected_project_id
             ):
                 raise ErasureNotFound
-            if actor_id is not None:
-                if await self._membership(previous.team_id, actor_id) != "owner":
-                    raise ErasureForbidden
-                if previous.idempotency_key == key and previous.request_hash != digest:
-                    raise ErasureConflict("idempotency_conflict")
+            if (
+                actor_id is not None
+                and await self._membership(previous.team_id, actor_id) != "owner"
+            ):
+                raise ErasureForbidden
+            await self._record_command(previous, scope, scope_id, actor_id, key, digest)
+            await self.session.commit()
             return await self._domain(previous)
 
         project_id: UUID | None
@@ -192,14 +235,17 @@ class SqlAlchemyErasureRepository:
                 raise ErasureConflict("confirmation_required")
 
         previous = await self.session.scalar(
-            select(ErasureRequestModel).where(
+            select(ErasureRequestModel)
+            .where(
                 ErasureRequestModel.scope == scope,
                 ErasureRequestModel.scope_id == scope_id,
             )
+            .with_for_update()
+            .execution_options(populate_existing=True)
         )
         if previous is not None:
-            if previous.idempotency_key == key and previous.request_hash != digest:
-                raise ErasureConflict("idempotency_conflict")
+            await self._record_command(previous, scope, scope_id, actor_id, key, digest)
+            await self.session.commit()
             return await self._domain(previous)
         ancestor = await self.session.scalar(
             select(ErasureRequestModel).where(
@@ -420,6 +466,7 @@ class SqlAlchemyErasureRepository:
                 updated_at=now,
             )
         )
+        await self._record_command(request, scope, scope_id, actor_id, key, digest)
         await self.session.commit()
         return await self._domain(request)
 
