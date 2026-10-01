@@ -28,7 +28,9 @@ class ProjectPage(BaseModel):
 
 
 class ProjectDeleteRequest(BaseModel):
-    confirmation: str = Field(min_length=1)
+    confirmation: str = Field(
+        min_length=1, description="Must exactly match the current project name."
+    )
 
 
 class ErasureRequestResponse(BaseModel):

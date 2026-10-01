@@ -54,6 +54,19 @@ def test_generator_is_deterministic() -> None:
         assert first_json == format_openapi_json(generate_openapi_spec(app))
 
 
+def test_project_deletion_requires_non_nullable_confirmation_body() -> None:
+    spec = generate_openapi_spec()
+    body = spec["paths"]["/api/v1/projects/{project_id}"]["delete"]["requestBody"]
+    assert body["required"] is True
+    assert body["content"]["application/json"]["schema"] == {
+        "$ref": "#/components/schemas/ProjectDeleteRequest"
+    }
+    request = spec["components"]["schemas"]["ProjectDeleteRequest"]
+    assert request["required"] == ["confirmation"]
+    assert request["properties"]["confirmation"]["type"] == "string"
+    assert request["properties"]["confirmation"]["minLength"] == 1
+
+
 def test_offline_generation_without_server_or_database() -> None:
     spec = generate_openapi_spec()
     assert spec.get("openapi") == "3.1.0"

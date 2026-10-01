@@ -1571,6 +1571,7 @@
       "ProjectDeleteRequest": {
         "properties": {
           "confirmation": {
+            "description": "Must exactly match the current project name.",
             "minLength": 1,
             "title": "Confirmation",
             "type": "string"
@@ -7970,18 +7971,11 @@
           "content": {
             "application/json": {
               "schema": {
-                "anyOf": [
-                  {
-                    "$ref": "#/components/schemas/ProjectDeleteRequest"
-                  },
-                  {
-                    "type": "null"
-                  }
-                ],
-                "title": "Request"
+                "$ref": "#/components/schemas/ProjectDeleteRequest"
               }
             }
-          }
+          },
+          "required": true
         },
         "responses": {
           "202": {

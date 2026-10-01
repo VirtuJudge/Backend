@@ -103,7 +103,7 @@ class ProjectService:
         project = await self._authorized(project_id, user_id)
         if not await self.teams.is_owner(project.team_id, user_id):
             raise ProjectForbidden
-        if confirmation is not None and confirmation != project.name:
+        if confirmation != project.name:
             raise ProjectConfirmationRequired
         await self.repository.delete(project_id)
 
