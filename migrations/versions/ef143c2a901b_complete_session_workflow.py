@@ -9,13 +9,14 @@ from collections.abc import Sequence
 
 import sqlalchemy as sa
 from alembic import op
+from sqlalchemy.dialects.postgresql import ENUM
 
 revision: str = "ef143c2a901b"
 down_revision: str | Sequence[str] | None = "13b7d8c79976"
 branch_labels: str | Sequence[str] | None = None
 depends_on: str | Sequence[str] | None = None
 
-analysisjobstatus_enum = sa.Enum(
+analysisjobstatus_enum = ENUM(
     "pending",
     "queued",
     "running",
@@ -26,7 +27,7 @@ analysisjobstatus_enum = sa.Enum(
     create_type=False,
 )
 
-stagetype_enum = sa.Enum(
+stagetype_enum = ENUM(
     "transcription",
     "diarization",
     "document_analysis",
@@ -36,7 +37,7 @@ stagetype_enum = sa.Enum(
     create_type=False,
 )
 
-stagestatus_enum = sa.Enum(
+stagestatus_enum = ENUM(
     "pending",
     "running",
     "completed",

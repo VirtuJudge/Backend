@@ -72,7 +72,7 @@ class AssetStore:
 
     async def _authorize_asset(self, asset_id: UUID, user_id: UUID) -> Asset:
         asset = await self.repository.get_asset(asset_id)
-        if asset is None or asset.state == "deleted":
+        if asset is None or asset.state in ("deleting", "deleted"):
             raise AssetNotFound
         await self._authorize_project(asset.project_id, user_id)
         return asset

@@ -8,8 +8,6 @@
     "schema_version",
     "job_id",
     "job_type",
-    "practice_session_id",
-    "analysis_attempt",
     "created_at",
     "trace_id",
     "payload"
@@ -314,12 +312,32 @@
         },
         "scope_id": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "pattern": "^[A-Za-z0-9_-]+$"
+        },
+        "practice_session_ids": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^[A-Za-z0-9_-]+$"}
+        },
+        "answer_ids": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^[A-Za-z0-9_-]+$"}
+        },
+        "asset_version_ids": {
+          "type": "array",
+          "items": {"type": "string", "pattern": "^[A-Za-z0-9_-]+$"}
+        },
+        "retention_only": {
+          "type": "boolean"
         }
       }
     }
   },
   "allOf": [
+    {
+      "if": {"properties": {"job_type": {"enum": ["analyze_session", "analyze_answer", "generate_report"]}}},
+      "then": {"required": ["practice_session_id", "analysis_attempt"]}
+    },
     {
       "if": {
         "properties": {

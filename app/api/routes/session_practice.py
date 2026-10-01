@@ -6,12 +6,15 @@ from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
 from fastapi.responses import StreamingResponse
 
 from app.api.dependencies.auth import get_current_user
+from app.api.dependencies.erasure import get_erasure_workflow
 from app.api.dependencies.session_notifications import (
     get_session_notifications,
     reject_access_token_query,
 )
 from app.api.dependencies.session_workflow import get_session_workflow
 from app.api.errors import problem_response
+from app.api.routes.erasure import erasure_error
+from app.api.schemas.erasure import ErasureResponse
 from app.api.schemas.session_practice import (
     AnalysisAttemptListResponse,
     AnalysisAttemptResponse,
@@ -30,8 +33,10 @@ from app.api.schemas.speaker_mapping import (
     UpdateSpeakerMappingsRequest,
 )
 from app.api.session_event_stream import stream_live_session_events
+from app.application.erasure_workflow import ErasureWorkflow
 from app.application.ports.session_notification import SessionNotificationPort
 from app.application.session_workflow import SessionWorkflow
+from app.domain.erasure import ErasureConflict, ErasureForbidden, ErasureNotFound
 from app.domain.project import ProjectNotFoundError
 from app.domain.session_workflow.entities.session_practice import PracticeSession
 from app.domain.session_workflow.entities.speaker_mapping import SpeakerMapping
@@ -243,47 +248,47 @@ async def get_practice_session(
 
 @router.delete(
     "/practice-sessions/{session_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=ErasureResponse,
     tags=["Practice Sessions"],
     responses={
-        204: {"description": "Practice session removed"},
+        202: {"description": "Practice session erasure accepted"},
         403: _problem_response_doc("Forbidden"),
         404: _problem_response_doc("Session not found"),
     },
 )
 @router.delete(
     "/projects/{project_id}/practice-sessions/{session_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
+    status_code=status.HTTP_202_ACCEPTED,
     tags=["Practice Sessions"],
     include_in_schema=False,
 )
 async def delete_practice_session(
     session_id: UUID,
     raw_request: Request,
+    response: Response,
     project_id: UUID | None = None,
     current_user: User = Depends(get_current_user),
-    workflow: SessionWorkflow = Depends(get_session_workflow),
-) -> Response:
+    workflow: ErasureWorkflow = Depends(get_erasure_workflow),
+    idempotency_key: str = Header(min_length=1, max_length=255),
+) -> Any:
     try:
-        await workflow.delete_session(session_id=session_id, actor_id=current_user.id)
-    except UnauthorizedSessionAction as error:
-        return problem_response(
-            status.HTTP_403_FORBIDDEN,
-            "forbidden",
-            "Forbidden",
-            str(error),
-            raw_request.url.path,
-        )
-    except SessionNotFoundError as error:
-        return problem_response(
-            status.HTTP_404_NOT_FOUND,
-            "not_found",
-            "Session not found",
-            str(error),
-            raw_request.url.path,
-        )
-
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+        if project_id is None:
+            erasure = await workflow.request(
+                "practice_session", session_id, current_user.id, idempotency_key
+            )
+        else:
+            erasure = await workflow.request(
+                "practice_session",
+                session_id,
+                current_user.id,
+                idempotency_key,
+                expected_project_id=project_id,
+            )
+        response.headers["Location"] = f"/api/v1/erasure-requests/{erasure.id}"
+        return ErasureResponse.model_validate(erasure)
+    except (ErasureNotFound, ErasureForbidden, ErasureConflict) as error:
+        return erasure_error(error, raw_request)
 
 
 @router.get(

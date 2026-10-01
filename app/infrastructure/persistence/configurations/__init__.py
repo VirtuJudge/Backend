@@ -3,6 +3,11 @@ from app.infrastructure.persistence.configurations.asset_configuration import (
     AssetUploadIdempotencyModel,
     AssetVersionModel,
 )
+from app.infrastructure.persistence.configurations.erasure import (
+    ErasureItemModel,
+    ErasureRequestModel,
+    ErasureStepModel,
+)
 from app.infrastructure.persistence.configurations.project_configuration import ProjectModel
 from app.infrastructure.persistence.configurations.project_erasure_request import (
     ProjectErasureRequestModel,
@@ -44,6 +49,9 @@ from .session_workflow.session_practice_configuration import (
 from .session_workflow.speaker_mapping_configuration import SpeakerMappingModel
 
 __all__ = [
+    "ErasureItemModel",
+    "ErasureRequestModel",
+    "ErasureStepModel",
     "UserModel",
     "TeamModel",
     "ProjectModel",

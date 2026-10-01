@@ -40,5 +40,10 @@ class ObjectStoragePort(ABC):
         pass
 
     @abstractmethod
+    async def list_objects(self, prefix: str) -> list[str]:
+        """List object keys under an exact server-selected ownership prefix."""
+        pass
+
+    @abstractmethod
     async def put_object(self, storage_key: str, data: bytes, content_type: str) -> None:
         pass

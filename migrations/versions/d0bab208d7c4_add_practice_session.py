@@ -144,4 +144,9 @@ def downgrade() -> None:
         batch_op.drop_index(batch_op.f("ix_practice_sessions_project_id"))
 
     op.drop_table("practice_sessions")
+    # PostgreSQL enum types outlive their tables unless explicitly removed.
+    # Removing these owned types allows downgrade -> upgrade on the same DB.
+    if op.get_bind().dialect.name == "postgresql":
+        sa.Enum(name="analysisattemptstatus").drop(op.get_bind(), checkfirst=True)
+        sa.Enum(name="sessionstatus").drop(op.get_bind(), checkfirst=True)
     # ### end Alembic commands ###

@@ -80,6 +80,29 @@ async def test_stream_replays_after_last_event_id() -> None:
 
 
 @pytest.mark.anyio
+async def test_stream_closes_after_erasure_revocation_event() -> None:
+    notifications = FakeSessionNotifications()
+    session_id = str(uuid4())
+    event = await notifications.publish(
+        PendingSessionNotification(
+            event_name=NotificationEventName.ERASURE_UPDATED,
+            practice_session_id=session_id,
+            occurred_at=datetime.now(UTC),
+            trace_id="trace",
+            payload={
+                "erasure_request_id": str(uuid4()),
+                "scope": "practice_session",
+                "status": "pending",
+            },
+        )
+    )
+    stream = stream_live_session_events(ConnectedRequest(), notifications, session_id, 0)  # type: ignore[arg-type]
+    assert await anext(stream) == event.to_sse_frame()
+    with pytest.raises(StopAsyncIteration):
+        await anext(stream)
+
+
+@pytest.mark.anyio
 async def test_stream_emits_resync_for_missing_or_unavailable_cursor() -> None:
     notifications = FakeSessionNotifications()
     session_id = str(uuid4())

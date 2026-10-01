@@ -10,6 +10,8 @@ from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
 
 from app.api.dependencies.services import get_ai_jobs
+from app.api.dependencies.erasure import get_erasure_workflow
+from app.application.erasure_workflow import ErasureWorkflow
 from app.application.ai_job_contracts import AIWorkerUpdate
 from app.application.ai_jobs import AIJobs
 from app.domain.session_workflow.entities.analysis_job import AnalysisJob
@@ -104,6 +106,10 @@ def _build_test_app() -> tuple[FastAPI, FakeAnalysisJobRepository, MagicMock]:
     ai_jobs_spy.record_update = AsyncMock(side_effect=ai_jobs.record_update)
 
     app.dependency_overrides[get_ai_jobs] = lambda: ai_jobs_spy
+    erasure = AsyncMock(spec=ErasureWorkflow)
+    erasure.job_state.return_value = None
+    erasure.record_update.return_value = None
+    app.dependency_overrides[get_erasure_workflow] = lambda: erasure
     return app, fake_repo, ai_jobs_spy
 
 

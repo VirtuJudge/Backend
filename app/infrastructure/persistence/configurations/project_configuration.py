@@ -43,6 +43,7 @@ class ProjectModel(Base):
     )
 
     version: Mapped[int] = mapped_column(nullable=False, default=1)
+    access_revoked_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
 
     team: Mapped["TeamModel"] = relationship(
         back_populates="projects",

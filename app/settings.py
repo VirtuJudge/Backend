@@ -34,6 +34,10 @@ class Settings(BaseSettings):
     object_storage_read_timeout_seconds: float = 60.0
     document_verifier_timeout_seconds: float = 60.0
     asset_cleanup_enabled: bool | None = None
+    erasure_enabled: bool | None = None
+    erasure_interval_seconds: float = Field(default=10.0, ge=0.001)
+    erasure_batch_size: int = Field(default=50, ge=1, le=1000)
+    erasure_lease_seconds: int = Field(default=300, ge=30)
     asset_cleanup_interval_seconds: float = Field(default=300.0, ge=0.001)
     asset_cleanup_batch_size: int = Field(default=100, ge=1, le=1000)
     asset_cleanup_retention_seconds: int = Field(default=86400, ge=0)
