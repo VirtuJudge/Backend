@@ -9,11 +9,11 @@ from fastapi import FastAPI, status
 from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
 
-from app.api.dependencies.services import get_ai_jobs
 from app.api.dependencies.erasure import get_erasure_workflow
-from app.application.erasure_workflow import ErasureWorkflow
+from app.api.dependencies.services import get_ai_jobs
 from app.application.ai_job_contracts import AIWorkerUpdate
 from app.application.ai_jobs import AIJobs
+from app.application.erasure_workflow import ErasureWorkflow
 from app.domain.session_workflow.entities.analysis_job import AnalysisJob
 from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
 from app.main import create_app
