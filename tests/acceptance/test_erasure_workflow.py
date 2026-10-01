@@ -24,6 +24,9 @@ from app.infrastructure.persistence.configurations import (
     TeamModel,
     UserModel,
 )
+from app.infrastructure.persistence.configurations.project_erasure_request import (
+    ProjectErasureRequestModel,
+)
 from app.infrastructure.redis.erasure import RedisErasureCache
 from app.infrastructure.redis.session_notifications import RedisSessionNotifications
 from app.infrastructure.repositories.session_workflow import SqlAlchemyPracticeSessionRepository
@@ -33,6 +36,7 @@ from app.infrastructure.repositories.sqlalchemy_erasure_repository import (
 from app.infrastructure.repositories.sqlalchemy_project_repository import (
     SqlAlchemyProjectRepository,
 )
+from app.main import project_service_factory
 from tests.support.fakes import FakeObjectStorage
 
 
@@ -216,8 +220,9 @@ async def complete(work: ErasureWorkflow, message: EraseAIDataQueueMessage) -> N
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("entry_point", ["delete", "request_erasure"])
 async def test_project_erasure_revokes_then_purges_all_stores_and_keeps_tombstone(
-    db_session_factory: async_sessionmaker[AsyncSession],
+    db_session_factory: async_sessionmaker[AsyncSession], entry_point: str
 ) -> None:
     redis = fakeredis.aioredis.FakeRedis(decode_responses=True)
     storage = FakeObjectStorage()
@@ -229,21 +234,23 @@ async def test_project_erasure_revokes_then_purges_all_stores_and_keeps_tombston
             await storage.put_object(data["pdf_key"], b"private report", "application/pdf")
             await redis.set(f"session-events:{{{data['session']}}}:sequence", "1")
         work = workflow(session, storage, queue, redis)
-        request = await work.request(
-            "project", target["project"], target["owner"], "delete", "Synthetic project"
-        )
+        service = project_service_factory(session, work)
+        delete = getattr(service, entry_point)
+        request = await delete(target["project"], target["owner"], "Synthetic project", "delete")
+        assert await session.get(ProjectModel, target["project"]) is not None
+        assert not (await session.scalars(select(ProjectErasureRequestModel))).all()
+        assert request.scope == "project"
+        assert request.requested_by == target["owner"]
         assert request.deadline_at - request.requested_at == timedelta(hours=24)
         assert await SqlAlchemyProjectRepository(session).get_by_id(target["project"]) is None
         assert (
             await SqlAlchemyPracticeSessionRepository(session).get_by_id(target["session"]) is None
         )
         assert (
-            await work.request(
-                "project", target["project"], target["owner"], "delete", "Synthetic project"
-            )
+            await delete(target["project"], target["owner"], "Synthetic project", "delete")
         ).id == request.id
         with pytest.raises(ErasureConflict):
-            await work.request("project", target["project"], target["owner"], "delete", "wrong")
+            await delete(target["project"], target["owner"], "wrong", "delete")
         with pytest.raises(ErasureNotFound):
             await work.get(request.id, unrelated["owner"])
         await work.run_due()
@@ -272,9 +279,7 @@ async def test_project_erasure_revokes_then_purges_all_stores_and_keeps_tombston
         assert unrelated["key"] in storage.objects
         assert unrelated["pdf_key"] in storage.objects
         assert (
-            await work.request(
-                "project", target["project"], target["owner"], "replay", "Synthetic project"
-            )
+            await delete(target["project"], target["owner"], "Synthetic project", "replay")
         ).id == request.id
     await redis.aclose()
 

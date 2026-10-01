@@ -246,7 +246,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.state.worker_auth_verifier = create_worker_auth_verifier(resolved_settings)
     application.state.user_service_factory = user_service_factory
     application.state.team_service_factory = team_service_factory
-    application.state.project_service_factory = project_service_factory
+    application.state.project_service_factory = lambda session: project_service_factory(
+        session, application.state.erasure_workflow_factory(session)
+    )
     application.state.settings = resolved_settings
     application.state.asset_store_factory = lambda session: asset_store_factory(
         session, resolved_settings
@@ -320,10 +322,11 @@ def team_service_factory(session: AsyncSession) -> TeamService:
     return TeamService(SqlAlchemyTeamRepository(session))
 
 
-def project_service_factory(session: AsyncSession) -> ProjectService:
+def project_service_factory(session: AsyncSession, erasure: ErasureWorkflow) -> ProjectService:
     return ProjectService(
         SqlAlchemyProjectRepository(session),
         SqlAlchemyTeamRepository(session),
+        erasure,
     )
 
 

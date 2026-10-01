@@ -9,6 +9,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.application.ai_job_contracts import AIWorkerUpdate
 from app.infrastructure.persistence.configurations import PracticeSessionModel, ProjectModel
+from app.main import project_service_factory
 from tests.acceptance.test_erasure_workflow import Queue, due_again, seed, workflow
 from tests.support.fakes import FakeObjectStorage
 
@@ -30,8 +31,9 @@ async def test_project_erasure_runs_real_ai_consumer_and_purges_all_stores(
                 await storage.put_object(key, b"synthetic", "application/octet-stream")
             await redis.set(f"session-events:{{{data['session']}}}:sequence", "1")
         work = workflow(session, storage, queue, redis)
-        request = await work.request(
-            "project", target["project"], target["owner"], "cross-repo", "Synthetic project"
+        service = project_service_factory(session, work)
+        request = await service.delete(
+            target["project"], target["owner"], "Synthetic project", "cross-repo"
         )
         await work.run_due()
         message = queue.messages[0]

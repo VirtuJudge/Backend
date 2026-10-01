@@ -3,7 +3,6 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, Header, HTTPException, Query, Response, status
 
 from app.api.dependencies.auth import get_current_user
-from app.api.dependencies.erasure import get_erasure_workflow
 from app.api.dependencies.services import get_project_service
 from app.api.schemas.erasure import ErasureResponse
 from app.api.schemas.project import (
@@ -13,7 +12,6 @@ from app.api.schemas.project import (
     ProjectResponse,
     ProjectUpdateRequest,
 )
-from app.application.erasure_workflow import ErasureWorkflow
 from app.application.services.project_service import (
     ProjectForbidden,
     ProjectNotFound,
@@ -162,7 +160,7 @@ async def delete_project(
     response: Response,
     team_id: UUID | None = None,
     current_user: User = Depends(get_current_user),
-    workflow: ErasureWorkflow = Depends(get_erasure_workflow),
+    service: ProjectService = Depends(get_project_service),
     idempotency_key: str = Header(
         min_length=1,
         max_length=255,
@@ -174,9 +172,12 @@ async def delete_project(
     ),
 ) -> ErasureResponse:
     try:
-        parent = {"expected_team_id": team_id} if team_id is not None else {}
-        erasure = await workflow.request(
-            "project", project_id, current_user.id, idempotency_key, request.confirmation, **parent
+        erasure = await service.delete(
+            project_id,
+            current_user.id,
+            request.confirmation,
+            idempotency_key,
+            expected_team_id=team_id,
         )
     except ErasureNotFound as error:
         raise HTTPException(status_code=404, detail="project_not_found") from error
