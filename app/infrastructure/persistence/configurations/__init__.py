@@ -10,6 +10,9 @@ from app.infrastructure.persistence.configurations.erasure import (
     ErasureStepModel,
 )
 from app.infrastructure.persistence.configurations.project_configuration import ProjectModel
+from app.infrastructure.persistence.configurations.project_creation_idempotency import (
+    ProjectCreationIdempotencyModel,
+)
 from app.infrastructure.persistence.configurations.project_erasure_request import (
     ProjectErasureRequestModel,
 )
@@ -57,6 +60,7 @@ __all__ = [
     "UserModel",
     "TeamModel",
     "ProjectModel",
+    "ProjectCreationIdempotencyModel",
     "TeamMemberModel",
     "TeamCreationIdempotencyModel",
     "ProjectErasureRequestModel",

@@ -2,11 +2,14 @@ from typing import Any, cast
 from uuid import UUID
 
 from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.engine import CursorResult
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.ports.project_repository import ProjectRepository
 from app.domain.erasure_request import ErasureRequest
+from app.domain.idempotency import ProjectCreationIdempotency
 from app.domain.project import Project
 from app.infrastructure.persistence.cascade_deletion import delete_project_records
 from app.infrastructure.persistence.configurations.asset_configuration import (
@@ -14,6 +17,9 @@ from app.infrastructure.persistence.configurations.asset_configuration import (
     AssetVersionModel,
 )
 from app.infrastructure.persistence.configurations.project_configuration import ProjectModel
+from app.infrastructure.persistence.configurations.project_creation_idempotency import (
+    ProjectCreationIdempotencyModel,
+)
 from app.infrastructure.persistence.configurations.project_erasure_request import (
     ProjectErasureRequestModel,
 )
@@ -94,6 +100,49 @@ class SqlAlchemyProjectRepository(ProjectRepository):
         )
         await self.session.flush()
         return project
+
+    async def get_creation_idempotency(
+        self, user_id: UUID, team_id: UUID, operation: str, key: str
+    ) -> ProjectCreationIdempotency | None:
+        model = await self.session.get(
+            ProjectCreationIdempotencyModel, (user_id, team_id, operation, key)
+        )
+        if model is None:
+            return None
+        return ProjectCreationIdempotency(
+            model.user_id,
+            model.team_id,
+            model.operation,
+            model.key,
+            model.request_hash,
+            model.project_id,
+        )
+
+    async def create_with_idempotency(
+        self, project: Project, record: ProjectCreationIdempotency
+    ) -> ProjectCreationIdempotency:
+        insert = sqlite_insert if self.session.get_bind().dialect.name == "sqlite" else pg_insert
+        result = await self.session.execute(
+            insert(ProjectCreationIdempotencyModel)
+            .values(
+                user_id=record.user_id,
+                team_id=record.team_id,
+                operation=record.operation,
+                key=record.key,
+                request_hash=record.request_hash,
+                project_id=record.project_id,
+            )
+            .on_conflict_do_nothing(index_elements=["user_id", "team_id", "operation", "key"])
+            .returning(ProjectCreationIdempotencyModel.project_id)
+        )
+        if result.scalar_one_or_none() is not None:
+            await self.create(project)
+            return record
+        previous = await self.get_creation_idempotency(
+            record.user_id, record.team_id, record.operation, record.key
+        )
+        assert previous is not None
+        return previous
 
     async def update(
         self,

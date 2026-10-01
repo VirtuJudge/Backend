@@ -54,6 +54,19 @@ def test_generator_is_deterministic() -> None:
         assert first_json == format_openapi_json(generate_openapi_spec(app))
 
 
+def test_project_creation_requires_idempotency_header() -> None:
+    spec = generate_openapi_spec()
+    operation = spec["paths"]["/api/v1/teams/{team_id}/projects"]["post"]
+    header = next(
+        parameter
+        for parameter in operation["parameters"]
+        if parameter["in"] == "header" and parameter["name"].lower() == "idempotency-key"
+    )
+    assert header["required"] is True
+    assert header["schema"]["minLength"] == 1
+    assert header["schema"]["maxLength"] == 255
+
+
 def test_project_deletion_requires_non_nullable_confirmation_body() -> None:
     spec = generate_openapi_spec()
     body = spec["paths"]["/api/v1/projects/{project_id}"]["delete"]["requestBody"]

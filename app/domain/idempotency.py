@@ -19,3 +19,13 @@ class AssetUploadIdempotency:
     request_hash: str
     asset_id: UUID
     version_id: UUID
+
+
+@dataclass(frozen=True, slots=True)
+class ProjectCreationIdempotency:
+    user_id: UUID
+    team_id: UUID
+    operation: str
+    key: str
+    request_hash: str
+    project_id: UUID
