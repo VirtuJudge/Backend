@@ -9,7 +9,7 @@ import pytest
 
 from app.domain.asset import AssetCorrupt, StorageUnavailable
 from app.infrastructure.media.ffmpeg_verifier import FFmpegMediaVerifier
-from app.infrastructure.media.worker_launcher import main as launcher_main
+from app.infrastructure.media.process import LAUNCHER_PATH
 from tests.integration.adapters.conftest import FFMPEG_AVAILABLE
 
 pytestmark = pytest.mark.skipif(not FFMPEG_AVAILABLE, reason="ffmpeg/ffprobe not installed")
@@ -100,12 +100,19 @@ async def test_timeout_and_cancellation(
         await task
 
 
-def test_worker_launcher_direct() -> None:
-    # Missing tool exits with 127
-    with patch.object(sys, "argv", ["worker_launcher.py", "--", "/nonexistent/tool"]):
-        with pytest.raises(SystemExit) as exc_info:
-            launcher_main()
-        assert exc_info.value.code == 127
+def test_worker_launcher_missing_tool_preserves_parent_limits() -> None:
+    resource = pytest.importorskip("resource")
+    limits = (resource.RLIMIT_AS, resource.RLIMIT_CPU, resource.RLIMIT_FSIZE)
+    before = [resource.getrlimit(limit) for limit in limits]
+
+    result = subprocess.run(
+        [sys.executable, str(LAUNCHER_PATH), "--", "/nonexistent/tool"],
+        capture_output=True,
+        timeout=10,
+    )
+
+    assert result.returncode == 127
+    assert [resource.getrlimit(limit) for limit in limits] == before
 
 
 @pytest.mark.anyio
