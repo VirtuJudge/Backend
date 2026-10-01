@@ -29,7 +29,7 @@ from app.application.services.team_service import (
 )
 from app.application.services.user_service import UserService
 from app.domain.erasure_request import ErasureRequest
-from app.domain.idempotency import TeamCreationIdempotency
+from app.domain.idempotency import ProjectCreationIdempotency, TeamCreationIdempotency
 from app.domain.project import Project
 from app.domain.team import Team
 from app.domain.team_member import TeamMember
@@ -160,6 +160,7 @@ class FakeProjectRepository(ProjectRepository):
     def __init__(self, project: Project) -> None:
         self.project = project
         self.erasure_requests: dict[str, ErasureRequest] = {}
+        self.idempotency: dict[tuple[UUID, UUID, str, str], ProjectCreationIdempotency] = {}
         self.last_expected_version: int | None = None
 
     async def list_for_team(
@@ -181,6 +182,22 @@ class FakeProjectRepository(ProjectRepository):
     async def create(self, project: Project) -> Project:
         self.project = project
         return project
+
+    async def get_creation_idempotency(
+        self, user_id: UUID, team_id: UUID, operation: str, key: str
+    ) -> ProjectCreationIdempotency | None:
+        return self.idempotency.get((user_id, team_id, operation, key))
+
+    async def create_with_idempotency(
+        self, project: Project, record: ProjectCreationIdempotency
+    ) -> ProjectCreationIdempotency:
+        scope = (record.user_id, record.team_id, record.operation, record.key)
+        previous = self.idempotency.get(scope)
+        if previous is not None:
+            return previous
+        await self.create(project)
+        self.idempotency[scope] = record
+        return record
 
     async def update(
         self,
@@ -368,7 +385,7 @@ def test_outside_user_cannot_list_or_modify_team_projects() -> None:
         run(service.get(project.id, OUTSIDER_ID))
 
     with pytest.raises(ProjectForbidden):
-        run(service.create(TEAM_ID, OUTSIDER_ID, "Other", None))
+        run(service.create(TEAM_ID, OUTSIDER_ID, "Other", None, "key"))
 
 
 def test_team_member_can_create_and_list_projects() -> None:
@@ -376,7 +393,7 @@ def test_team_member_can_create_and_list_projects() -> None:
     project_repository = FakeProjectRepository(Project(uuid4(), TEAM_ID, "Project", None, NOW))
     service = ProjectService(project_repository, team_repository, AsyncMock(spec=ErasureWorkflow))
 
-    created = run(service.create(TEAM_ID, MEMBER_ID, "New Project", "description"))
+    created = run(service.create(TEAM_ID, MEMBER_ID, "New Project", "description", "key"))
     listed, cursor = run(service.list(TEAM_ID, MEMBER_ID, None, None, 50))
 
     assert isinstance(created, Project)

@@ -13,7 +13,9 @@ from app.api.schemas.project import (
     ProjectUpdateRequest,
 )
 from app.application.services.project_service import (
+    ProjectCreationUnavailable,
     ProjectForbidden,
+    ProjectIdempotencyConflict,
     ProjectNotFound,
     ProjectPreconditionFailed,
     ProjectService,
@@ -61,11 +63,18 @@ async def create_project(
     request: ProjectCreateRequest,
     current_user: User = Depends(get_current_user),
     service: ProjectService = Depends(get_project_service),
+    idempotency_key: str = Header(min_length=1, max_length=255),
 ) -> ProjectResponse:
     try:
-        project = await service.create(team_id, current_user.id, request.name, request.description)
+        project = await service.create(
+            team_id, current_user.id, request.name, request.description, idempotency_key
+        )
     except ProjectForbidden as error:
         raise HTTPException(status_code=403, detail="team_forbidden") from error
+    except ProjectIdempotencyConflict as error:
+        raise HTTPException(status_code=409, detail="idempotency_key_reused") from error
+    except ProjectCreationUnavailable as error:
+        raise HTTPException(status_code=409, detail="project_creation_unavailable") from error
     return project_response(project)
 
 

@@ -228,6 +228,10 @@ Abandoned uploads are claimed with a lease, deleted from storage, and marked del
 
 Every team-owned resource is authorized through Team Membership ancestry. OIDC verification checks issuer, audience, signature, expiry, and subject. Worker callbacks use a credential separate from user JWTs. Starting erasure revokes access immediately, while physical deletion follows the documented retention window.
 
+Project creation requires `Idempotency-Key` (1 to 255 characters), scoped to the actor, Team, and create operation. Matching retries return `201` with the same Project ID and current fields. The hash covers the validated name and description; omitted and null descriptions are equivalent. Changed payloads return `409 idempotency_key_reused`. Membership is rechecked on replay, and revoked or purged projects return `409 project_creation_unavailable` without being recreated.
+
+Migration `0a1b2c3d4e5f` adds project creation keys and must be applied before deploying this version. Keys and projects commit atomically. Content-free key records survive project erasure. Downgrading preserves projects but drops retry history; preserve the table and prefer a forward fix while creation retries are outstanding.
+
 Project deletion requires a confirmation body and `Idempotency-Key`. Keys are scoped to actor, target, and delete operation, with both project delete paths sharing the same scope. Every accepted key is remembered, including additional keys for an existing request. Repeating a key with a changed confirmation returns `409 idempotency_conflict`; a valid replay returns `202` with the same Erasure Request ID and `Location`, including after physical deletion. The returned status reflects current erasure progress. Replay rechecks current Team Owner permission and parent path ancestry.
 
 Migration `f7a8b9c0d1e2` adds scoped command records and backfills the original keys from existing Erasure Requests. Apply it before deploying this version. The records contain hashes rather than confirmation text and survive target deletion. A downgrade drops only command records; it preserves erasure progress, but loses conflict detection for additional keys, so retain the table and prefer a forward fix while deletion retries are outstanding.
@@ -274,6 +278,8 @@ uv run pytest tests/system
 uv run python scripts/openapi_contract.py --check
 uv run python scripts/ai_contract.py --check
 ```
+
+CI runs concurrent matching and conflicting project creation tests against PostgreSQL. To run them locally against a disposable test database, set `PROJECT_TEST_DATABASE_URL` to a `postgresql+asyncpg` URL and run `uv run pytest tests/integration/persistence/test_project_creation_idempotency.py`. Without that variable, the PostgreSQL cases are skipped; SQLite API, persistence, and migration cases still run.
 
 The shared-stack smoke check verifies PostgreSQL/pgvector access boundaries, Redis, a MinIO round trip, and a correlated fake analysis. It uses synthetic data and removes its temporary records. For an isolated PostgreSQL/MinIO asset lifecycle check, run:
 

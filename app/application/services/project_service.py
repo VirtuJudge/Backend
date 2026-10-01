@@ -1,3 +1,4 @@
+import json
 from datetime import UTC, datetime
 from hashlib import sha256
 from uuid import UUID, uuid4
@@ -6,6 +7,7 @@ from app.application.erasure_workflow import ErasureWorkflow
 from app.application.ports.project_repository import ProjectRepository
 from app.application.ports.team_repository import TeamRepository
 from app.domain.erasure import Erasure
+from app.domain.idempotency import ProjectCreationIdempotency
 from app.domain.project import Project
 
 
@@ -18,6 +20,14 @@ class ProjectForbidden(Exception):
 
 
 class ProjectPreconditionFailed(Exception):
+    pass
+
+
+class ProjectIdempotencyConflict(Exception):
+    pass
+
+
+class ProjectCreationUnavailable(Exception):
     pass
 
 
@@ -54,19 +64,39 @@ class ProjectService:
         return await self.repository.list_for_team(team_id, cursor, search, limit)
 
     async def create(
-        self, team_id: UUID, user_id: UUID, name: str, description: str | None
+        self, team_id: UUID, user_id: UUID, name: str, description: str | None, key: str
     ) -> Project:
         if not await self.teams.is_member(team_id, user_id):
             raise ProjectForbidden
-        return await self.repository.create(
-            Project(
+        request_hash = sha256(
+            json.dumps(
+                {"name": name, "description": description},
+                sort_keys=True,
+                separators=(",", ":"),
+            ).encode()
+        ).hexdigest()
+        operation = "create_project"
+        previous = await self.repository.get_creation_idempotency(user_id, team_id, operation, key)
+        if previous is None:
+            project = Project(
                 id=uuid4(),
                 team_id=team_id,
                 name=name,
                 description=description,
                 created_at=datetime.now(UTC),
             )
-        )
+            previous = await self.repository.create_with_idempotency(
+                project,
+                ProjectCreationIdempotency(
+                    user_id, team_id, operation, key, request_hash, project.id
+                ),
+            )
+        if previous.request_hash != request_hash:
+            raise ProjectIdempotencyConflict
+        created = await self.repository.get_by_id(previous.project_id)
+        if created is None:
+            raise ProjectCreationUnavailable
+        return created
 
     async def get(self, project_id: UUID, user_id: UUID) -> Project:
         return await self._authorized(project_id, user_id)

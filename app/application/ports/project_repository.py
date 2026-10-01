@@ -3,6 +3,7 @@ from typing import Any
 from uuid import UUID
 
 from app.domain.erasure_request import ErasureRequest
+from app.domain.idempotency import ProjectCreationIdempotency
 from app.domain.project import Project
 
 
@@ -21,6 +22,16 @@ class ProjectRepository(ABC):
 
     @abstractmethod
     async def create(self, project: Project) -> Project: ...
+
+    @abstractmethod
+    async def get_creation_idempotency(
+        self, user_id: UUID, team_id: UUID, operation: str, key: str
+    ) -> ProjectCreationIdempotency | None: ...
+
+    @abstractmethod
+    async def create_with_idempotency(
+        self, project: Project, record: ProjectCreationIdempotency
+    ) -> ProjectCreationIdempotency: ...
 
     @abstractmethod
     async def update(

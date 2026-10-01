@@ -36,6 +36,7 @@ def test_migration_metadata_parity(tmp_path: Path) -> None:
     inspector = inspect(engine)
 
     target_tables = [
+        "project_creation_idempotency",
         "erasure_requests",
         "erasure_command_idempotency",
         "erasure_steps",

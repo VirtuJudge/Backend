@@ -142,6 +142,7 @@ async def exercise(settings: Settings) -> None:
                 await api.post(
                     f"/api/v1/teams/{team['id']}/projects",
                     json={"name": "Smoke Project"},
+                    headers={"Idempotency-Key": f"project-{marker}"},
                 ),
                 201,
             )
