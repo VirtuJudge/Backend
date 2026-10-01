@@ -163,7 +163,15 @@ async def delete_project(
     team_id: UUID | None = None,
     current_user: User = Depends(get_current_user),
     workflow: ErasureWorkflow = Depends(get_erasure_workflow),
-    idempotency_key: str = Header(min_length=1, max_length=255),
+    idempotency_key: str = Header(
+        min_length=1,
+        max_length=255,
+        description=(
+            "Scoped to actor, project, and delete operation. Reusing a key with a different "
+            "confirmation returns 409; replay returns the existing Erasure Request and Location, "
+            "including after project deletion."
+        ),
+    ),
 ) -> ErasureResponse:
     try:
         parent = {"expected_team_id": team_id} if team_id is not None else {}

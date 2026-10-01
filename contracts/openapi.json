@@ -7956,10 +7956,12 @@
             }
           },
           {
+            "description": "Scoped to actor, project, and delete operation. Reusing a key with a different confirmation returns 409; replay returns the existing Erasure Request and Location, including after project deletion.",
             "in": "header",
             "name": "idempotency-key",
             "required": true,
             "schema": {
+              "description": "Scoped to actor, project, and delete operation. Reusing a key with a different confirmation returns 409; replay returns the existing Erasure Request and Location, including after project deletion.",
               "maxLength": 255,
               "minLength": 1,
               "title": "Idempotency-Key",

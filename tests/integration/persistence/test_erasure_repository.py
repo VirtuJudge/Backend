@@ -318,3 +318,40 @@ async def test_live_upload_grant_delays_final_purge_until_expiration(
         assert (await work.get(request.id, data["owner"])).status == "completed"
         assert data["key"] not in storage.objects
     await redis.aclose()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("changed_payload", [False, True])
+async def test_concurrent_replay_remembers_later_keys(
+    db_session_factory: async_sessionmaker[AsyncSession], changed_payload: bool
+) -> None:
+    async with db_session_factory() as session:
+        if session.bind.dialect.name != "postgresql":
+            pytest.skip("Concurrent replay requires PostgreSQL row locks")
+        data = await seed(session)
+        accepted = await SqlAlchemyErasureRepository(session).accept(
+            "project",
+            data["project"],
+            data["owner"],
+            "original",
+            "Synthetic project",
+            datetime.now(UTC),
+        )
+
+    async def replay(confirmation: str) -> Erasure:
+        async with db_session_factory() as session:
+            return await SqlAlchemyErasureRepository(session).accept(
+                "project", data["project"], data["owner"], "later", confirmation, datetime.now(UTC)
+            )
+
+    results = await asyncio.gather(
+        replay("Synthetic project"),
+        replay("Changed payload" if changed_payload else "Synthetic project"),
+        return_exceptions=True,
+    )
+    successes = [result for result in results if isinstance(result, Erasure)]
+    conflicts = [result for result in results if isinstance(result, ErasureConflict)]
+    assert len(successes) == (1 if changed_payload else 2)
+    assert len(conflicts) == (1 if changed_payload else 0)
+    assert all(result.id == accepted.id for result in successes)
+    assert all(str(result) == "idempotency_conflict" for result in conflicts)

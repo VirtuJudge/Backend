@@ -61,3 +61,16 @@ class ErasureItemModel(Base):
     status: Mapped[str] = mapped_column(String(30), default="pending")
 
     __table_args__ = (Index("uq_erasure_item", "request_id", "storage_key", unique=True),)
+
+
+class ErasureCommandIdempotencyModel(Base):
+    __tablename__ = "erasure_command_idempotency"
+
+    actor_id: Mapped[UUID] = mapped_column(primary_key=True)
+    scope: Mapped[str] = mapped_column(String(30), primary_key=True)
+    scope_id: Mapped[UUID] = mapped_column(primary_key=True)
+    idempotency_key: Mapped[str] = mapped_column(String(255), primary_key=True)
+    request_hash: Mapped[str] = mapped_column(String(64))
+    request_id: Mapped[UUID] = mapped_column(
+        ForeignKey("erasure_requests.id", ondelete="CASCADE"),
+    )
