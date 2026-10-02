@@ -88,7 +88,6 @@ class TeamInvitationModel(Base):
     idempotency_key: Mapped[str] = mapped_column(
         String(255),
         nullable=False,
-        unique=True,
     )
 
     version: Mapped[int] = mapped_column(

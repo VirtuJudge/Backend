@@ -1,5 +1,6 @@
 import asyncio
 import hashlib
+import json
 import secrets
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -16,8 +17,13 @@ from app.application.templates.invitation import (
     invitation_html_template,
     invitation_text_template,
 )
+from app.domain.idempotency import InvitationCreationIdempotency
 from app.domain.team_invitation import DeliveryStatus, InvitationStatus, TeamInvitation
 from app.domain.team_member import TeamMember
+
+
+class InvitationIdempotencyConflict(Exception):
+    pass
 
 
 class InvitationAlreadyExistsError(Exception):
@@ -103,16 +109,29 @@ class TeamInvitationService:
         email: str,
         role: str,
         idempotency_key: str,
+        *,
+        actor_id: UUID,
     ) -> InvitationCreationResult:
         email = normalize_email(email)
-        existing = await self.repository.get_by_idempotency_key(idempotency_key)
+        operation = "create_invitation"
+        request_hash = hashlib.sha256(
+            json.dumps({"email": email, "role": role}, sort_keys=True).encode()
+        ).hexdigest()
+        existing = await self.repository.get_creation_idempotency(
+            actor_id, team_id, operation, idempotency_key
+        )
 
         if existing is not None:
-            return InvitationCreationResult(existing)
+            return await self._replay_creation(existing, request_hash)
 
         if await self.member_repository.get_by_team_and_email(team_id, email):
             raise AlreadyTeamMemberError(f"{email} is already a member of this team")
         if await self.repository.exists_pending_invitation(team_id, email):
+            existing = await self.repository.get_creation_idempotency(
+                actor_id, team_id, operation, idempotency_key
+            )
+            if existing is not None:
+                return await self._replay_creation(existing, request_hash)
             raise InvitationAlreadyExistsError(f"A pending invitation already exists for {email}")
 
         token = secrets.token_urlsafe(32)  # send to email
@@ -133,9 +152,23 @@ class TeamInvitationService:
             resend_idempotency_keys=[],
             version=1,
         )
-        invitation = await self.repository.create(invitation, idempotency_key)
-
+        record = InvitationCreationIdempotency(
+            actor_id, team_id, operation, idempotency_key, request_hash, invitation.id
+        )
+        saved = await self.repository.create_with_idempotency(invitation, record)
+        if saved.invitation_id != invitation.id:
+            return await self._replay_creation(saved, request_hash)
         return InvitationCreationResult(invitation, token)
+
+    async def _replay_creation(
+        self, record: InvitationCreationIdempotency, request_hash: str
+    ) -> InvitationCreationResult:
+        if record.request_hash != request_hash:
+            raise InvitationIdempotencyConflict
+        invitation = await self.repository.get_by_id(record.invitation_id)
+        if invitation is None:
+            raise TeamInvitationNotFoundError
+        return InvitationCreationResult(invitation)
 
     async def list_invitations(
         self, team_id: UUID, cursor: UUID | None = None, limit: int = 20

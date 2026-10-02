@@ -10644,6 +10644,9 @@
               }
             }
           },
+          "409": {
+            "description": "Conflicting invitation or idempotency_key_reused"
+          },
           "422": {
             "content": {
               "application/json": {

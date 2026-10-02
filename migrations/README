@@ -1,1 +1,11 @@
 Single migration history for backend-owned product tables.
+
+Issue #60: upgrade to 1b2c3d4e5f6a before deploying scoped invitation creation.
+The migration removes global key uniqueness and adds atomic actor/Team/operation
+records with normalized request hashes. Existing invitations and tokens survive;
+legacy keys cannot replay because their creating actor was never recorded.
+
+Prefer a forward fix when rolling back. Downgrade discards scoped replay records
+and restores global uniqueness; it refuses while duplicate raw invitation keys
+exist across scopes. Stop invitation writes and resolve those duplicates before
+attempting a downgrade. Do not rewrite invitation tokens or delivery state.

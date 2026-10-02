@@ -36,6 +36,8 @@ def test_migration_metadata_parity(tmp_path: Path) -> None:
     inspector = inspect(engine)
 
     target_tables = [
+        "invitation_creation_idempotency",
+        "team_invitations",
         "project_creation_idempotency",
         "erasure_requests",
         "erasure_command_idempotency",
@@ -61,6 +63,20 @@ def test_migration_metadata_parity(tmp_path: Path) -> None:
             assert db_col["nullable"] == orm_col.nullable, (
                 f"Nullability mismatch on {table_name}.{col_name}"
             )
+
+    invitation_table = Base.metadata.tables["invitation_creation_idempotency"]
+    assert set(invitation_table.primary_key.columns.keys()) == {
+        "actor_id",
+        "team_id",
+        "operation",
+        "key",
+    }
+    assert not invitation_table.columns["request_hash"].nullable
+    invitation_key_constraints = inspector.get_unique_constraints("team_invitations")
+    assert not any(
+        constraint["column_names"] == ["idempotency_key"]
+        for constraint in invitation_key_constraints
+    )
 
     # Specific assertions for analysis_attempts
     attempt_table = Base.metadata.tables["analysis_attempts"]

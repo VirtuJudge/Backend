@@ -9,6 +9,9 @@ from app.infrastructure.persistence.configurations.erasure import (
     ErasureRequestModel,
     ErasureStepModel,
 )
+from app.infrastructure.persistence.configurations.invitation_creation_idempotency import (
+    InvitationCreationIdempotencyModel,
+)
 from app.infrastructure.persistence.configurations.project_configuration import ProjectModel
 from app.infrastructure.persistence.configurations.project_creation_idempotency import (
     ProjectCreationIdempotencyModel,
@@ -68,6 +71,7 @@ __all__ = [
     "AssetVersionModel",
     "AssetUploadIdempotencyModel",
     "TeamInvitationModel",
+    "InvitationCreationIdempotencyModel",
     "InvitationResendIdempotencyModel",
     "SessionManifestModel",
     "SessionManifestDocumentModel",
