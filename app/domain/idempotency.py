@@ -29,3 +29,13 @@ class ProjectCreationIdempotency:
     key: str
     request_hash: str
     project_id: UUID
+
+
+@dataclass(frozen=True, slots=True)
+class InvitationCreationIdempotency:
+    actor_id: UUID
+    team_id: UUID
+    operation: str
+    key: str
+    request_hash: str
+    invitation_id: UUID

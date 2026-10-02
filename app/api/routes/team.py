@@ -34,6 +34,7 @@ from app.application.services.team_invitation_service import (
     AlreadyConsumedInvitationError,
     AlreadyTeamMemberError,
     InvitationAlreadyExistsError,
+    InvitationIdempotencyConflict,
     InvitationNotPendingError,
     InvitationPreconditionFailed,
     TeamInvitationNotFoundError,
@@ -198,6 +199,7 @@ async def delete_team_member(
     status_code=status.HTTP_201_CREATED,
     tags=["teams"],
     responses={
+        409: {"description": "Conflicting invitation or idempotency_key_reused"},
         201: {
             "headers": {
                 "ETag": {
@@ -205,7 +207,7 @@ async def delete_team_member(
                     "schema": {"type": "string"},
                 }
             }
-        }
+        },
     },
     dependencies=[
         Depends(
@@ -234,7 +236,10 @@ async def invite_team_member(
             request.email,
             request.role,
             idempotency_key=idempotency_key,
+            actor_id=_owner.user_id,
         )
+    except InvitationIdempotencyConflict as error:
+        raise HTTPException(status_code=409, detail="idempotency_key_reused") from error
     except AlreadyTeamMemberError as error:
         raise HTTPException(status_code=409, detail="already_team_member") from error
     except InvitationAlreadyExistsError as error:

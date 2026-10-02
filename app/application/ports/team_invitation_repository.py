@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from uuid import UUID
 
+from app.domain.idempotency import InvitationCreationIdempotency
 from app.domain.team_invitation import TeamInvitation
 from app.domain.team_member import TeamMember
 
@@ -21,10 +22,16 @@ class TeamInvitationRepository(ABC):
         pass
 
     @abstractmethod
-    async def get_by_idempotency_key(
-        self,
-        idempotency_key: str,
-    ) -> TeamInvitation | None:
+    async def get_creation_idempotency(
+        self, actor_id: UUID, team_id: UUID, operation: str, key: str
+    ) -> InvitationCreationIdempotency | None:
+        pass
+
+    @abstractmethod
+    async def create_with_idempotency(
+        self, invitation: TeamInvitation, record: InvitationCreationIdempotency
+    ) -> InvitationCreationIdempotency:
+        """Atomically commit the invitation and key, or return the winning record."""
         pass
 
     @abstractmethod

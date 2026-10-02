@@ -13,19 +13,24 @@ from app.application.ports.team_repository import TeamRepository
 from app.application.ports.user_repository import UserRepository
 from app.application.services.team_invitation_service import (
     AlreadyConsumedInvitationError,
+    InvitationIdempotencyConflict,
     TeamInvitationExpiredError,
     TeamInvitationService,
 )
+from app.domain.idempotency import InvitationCreationIdempotency
 from app.domain.invitation_resend_idompotency_key import InvitationResendIdempotency
 from app.domain.team_invitation import DeliveryStatus, InvitationStatus, TeamInvitation
 from app.domain.team_member import TeamMember
 from app.domain.user import User
 from app.infrastructure.mail import FakeMailSender
 
+ACTOR_ID = uuid4()
+
 
 class MemoryInvitationRepository:
     def __init__(self, invitation: TeamInvitation | None = None) -> None:
         self.invitation = invitation
+        self.records: dict[tuple[UUID, UUID, str, str], InvitationCreationIdempotency] = {}
         self.accepted_memberships: list[TeamMember] = []
 
     async def create(self, invitation: TeamInvitation, idempotency_key: str) -> TeamInvitation:
@@ -40,10 +45,20 @@ class MemoryInvitationRepository:
     ) -> tuple[list[TeamInvitation], UUID | None]:
         return ([self.invitation] if self.invitation is not None else []), None
 
-    async def get_by_idempotency_key(self, idempotency_key: str) -> TeamInvitation | None:
-        if self.invitation is not None and self.invitation.idempotency_key == idempotency_key:
-            return self.invitation
-        return None
+    async def get_creation_idempotency(
+        self, actor_id: UUID, team_id: UUID, operation: str, key: str
+    ) -> InvitationCreationIdempotency | None:
+        return self.records.get((actor_id, team_id, operation, key))
+
+    async def create_with_idempotency(
+        self, invitation: TeamInvitation, record: InvitationCreationIdempotency
+    ) -> InvitationCreationIdempotency:
+        scope = (record.actor_id, record.team_id, record.operation, record.key)
+        if scope in self.records:
+            return self.records[scope]
+        await self.create(invitation, record.key)
+        self.records[scope] = record
+        return record
 
     async def get_by_id(self, invitation_id: UUID) -> TeamInvitation | None:
         if self.invitation is not None and self.invitation.id == invitation_id:
@@ -163,6 +178,7 @@ async def test_invite_normalizes_email_and_builds_multipart_message() -> None:
         " Invitee@Example.COM ",
         "member",
         "new-key",
+        actor_id=ACTOR_ID,
     )
 
     assert result.invitation.email == "invitee@example.com"
@@ -175,15 +191,22 @@ async def test_invite_normalizes_email_and_builds_multipart_message() -> None:
 async def test_invite_replay_returns_existing_invitation_without_generating_token(
     delivery_status: DeliveryStatus,
 ) -> None:
-    existing = invitation()
+    repository = MemoryInvitationRepository()
+    created = await service(repository).invite_member(
+        uuid4(), "invitee@example.com", "member", "create-key", actor_id=ACTOR_ID
+    )
+    existing = created.invitation
     existing.delivery_status = delivery_status
-    repository = MemoryInvitationRepository(existing)
 
     with patch(
         "app.application.services.team_invitation_service.secrets.token_urlsafe"
     ) as generate:
         result = await service(repository).invite_member(
-            existing.team_id, existing.email, existing.role, existing.idempotency_key
+            existing.team_id,
+            existing.email,
+            existing.role,
+            existing.idempotency_key,
+            actor_id=ACTOR_ID,
         )
 
     assert result.invitation is existing
@@ -203,6 +226,7 @@ async def test_send_invitation_builds_text_and_html_message() -> None:
         "Invitee@Example.COM",
         "member",
         "new-key",
+        actor_id=ACTOR_ID,
     )
 
     assert result.token is not None
@@ -282,3 +306,94 @@ async def test_resend_persists_new_token_hash_and_is_idempotent() -> None:
     assert repository.invitation is not None
     assert repository.invitation.token_hash == resent.token_hash
     assert repeated.id == resent.id
+
+
+@pytest.mark.anyio
+async def test_creation_hash_uses_normalized_email() -> None:
+    repository = MemoryInvitationRepository()
+    invitation_service = service(repository)
+    team_id = uuid4()
+    created = await invitation_service.invite_member(
+        team_id, " Invitee@Example.COM ", "member", "key", actor_id=ACTOR_ID
+    )
+    replay = await invitation_service.invite_member(
+        team_id, "invitee@example.com", "member", "key", actor_id=ACTOR_ID
+    )
+    assert replay.invitation is created.invitation
+    assert replay.token is None
+    assert len(repository.records) == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("email", "role"), [("different@example.com", "member"), ("invitee@example.com", "owner")]
+)
+async def test_creation_rejects_conflicting_email_or_role(email: str, role: str) -> None:
+    repository = MemoryInvitationRepository()
+    invitation_service = service(repository)
+    team_id = uuid4()
+    created = await invitation_service.invite_member(
+        team_id, "invitee@example.com", "member", "key", actor_id=ACTOR_ID
+    )
+    with pytest.raises(InvitationIdempotencyConflict):
+        await invitation_service.invite_member(team_id, email, role, "key", actor_id=ACTOR_ID)
+    assert repository.invitation is created.invitation
+    assert len(repository.records) == 1
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("different_scope", ["actor", "team", "operation"])
+async def test_creation_keys_are_independent_across_scopes(different_scope: str) -> None:
+    repository = MemoryInvitationRepository()
+    invitation_service = service(repository)
+    team_id = uuid4()
+    created = await invitation_service.invite_member(
+        team_id, "invitee@example.com", "member", "key", actor_id=ACTOR_ID
+    )
+    if different_scope == "operation":
+        record = repository.records.pop((ACTOR_ID, team_id, "create_invitation", "key"))
+        repository.records[(ACTOR_ID, team_id, "other_operation", "key")] = record
+    second = await invitation_service.invite_member(
+        uuid4() if different_scope == "team" else team_id,
+        "other@example.com",
+        "member",
+        "key",
+        actor_id=uuid4() if different_scope == "actor" else ACTOR_ID,
+    )
+    assert second.invitation.id != created.invitation.id
+    assert second.token
+
+
+@pytest.mark.anyio
+async def test_legacy_global_key_is_not_used_for_creation_replay() -> None:
+    legacy = invitation()
+    repository = MemoryInvitationRepository(legacy)
+    result = await service(repository).invite_member(
+        uuid4(), "other@example.com", "member", legacy.idempotency_key, actor_id=ACTOR_ID
+    )
+    assert result.invitation.id != legacy.id
+    assert result.token
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("conflicting", [False, True])
+async def test_creation_race_returns_winner_without_new_token(conflicting: bool) -> None:
+    repository = MemoryInvitationRepository()
+    invitation_service = service(repository)
+    team_id = uuid4()
+    created = await invitation_service.invite_member(
+        team_id, "invitee@example.com", "member", "key", actor_id=ACTOR_ID
+    )
+    with patch.object(repository, "get_creation_idempotency", return_value=None):
+        if conflicting:
+            with pytest.raises(InvitationIdempotencyConflict):
+                await invitation_service.invite_member(
+                    team_id, "other@example.com", "member", "key", actor_id=ACTOR_ID
+                )
+        else:
+            replay = await invitation_service.invite_member(
+                team_id, "invitee@example.com", "member", "key", actor_id=ACTOR_ID
+            )
+            assert replay.invitation is created.invitation
+            assert replay.token is None
+    assert repository.invitation is created.invitation

@@ -1,13 +1,16 @@
 from uuid import UUID
 
 from sqlalchemy import insert, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.application.ports.team_invitation_repository import TeamInvitationRepository
+from app.domain.idempotency import InvitationCreationIdempotency
 from app.domain.team_invitation import InvitationStatus, TeamInvitation
 from app.domain.team_member import TeamMember
 from app.infrastructure.persistence.configurations import (
+    InvitationCreationIdempotencyModel,
     InvitationResendIdempotencyModel,
 )
 from app.infrastructure.persistence.configurations.team_configuration import TeamModel
@@ -55,7 +58,7 @@ class SqlAlchemyTeamInvitationRepository(TeamInvitationRepository):
             expires_at=invitation.expires_at,
         )
         await self.session.execute(stmt)
-        await self.session.commit()
+        await self.session.flush()
         return invitation
 
     async def exists_pending_invitation(self, team_id: UUID, email: str) -> bool:
@@ -88,21 +91,49 @@ class SqlAlchemyTeamInvitationRepository(TeamInvitationRepository):
 
         return [self._invitation(invitation) for invitation in rows], next_cursor
 
-    async def get_by_idempotency_key(
-        self,
-        idempotency_key: str,
-    ) -> TeamInvitation | None:
-
-        stmt = select(TeamInvitationModel).where(
-            TeamInvitationModel.idempotency_key == idempotency_key
+    async def get_creation_idempotency(
+        self, actor_id: UUID, team_id: UUID, operation: str, key: str
+    ) -> InvitationCreationIdempotency | None:
+        model = await self.session.get(
+            InvitationCreationIdempotencyModel, (actor_id, team_id, operation, key)
         )
-
-        model = await self.session.scalar(stmt)
-
         if model is None:
             return None
+        return InvitationCreationIdempotency(
+            model.actor_id,
+            model.team_id,
+            model.operation,
+            model.key,
+            model.request_hash,
+            model.invitation_id,
+        )
 
-        return self._invitation(model)
+    async def create_with_idempotency(
+        self, invitation: TeamInvitation, record: InvitationCreationIdempotency
+    ) -> InvitationCreationIdempotency:
+        try:
+            async with self.session.begin_nested():
+                await self.create(invitation, record.key)
+                self.session.add(
+                    InvitationCreationIdempotencyModel(
+                        actor_id=record.actor_id,
+                        team_id=record.team_id,
+                        operation=record.operation,
+                        key=record.key,
+                        request_hash=record.request_hash,
+                        invitation_id=record.invitation_id,
+                    )
+                )
+                await self.session.flush()
+        except IntegrityError:
+            previous = await self.get_creation_idempotency(
+                record.actor_id, record.team_id, record.operation, record.key
+            )
+            if previous is None:
+                raise
+            return previous
+        await self.session.commit()
+        return record
 
     async def get_by_id(self, invitation_id: UUID) -> TeamInvitation | None:
         stmt = select(TeamInvitationModel).where(TeamInvitationModel.id == invitation_id)

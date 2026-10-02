@@ -1,3 +1,5 @@
+import asyncio
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -5,8 +7,10 @@ import pytest
 from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
+    async_sessionmaker,
 )
 
+from app.domain.idempotency import InvitationCreationIdempotency
 from app.domain.team_invitation import (
     DeliveryStatus,
     InvitationStatus,
@@ -201,10 +205,19 @@ async def test_get_by_idempotency_key_returns_invitation(
         team_id=team.id,
     )
 
-    result = await repository.get_by_idempotency_key(invitation.idempotency_key)
-
-    assert result is not None
-    assert result.id == invitation.id
+    actor = UserModel(id=uuid4(), issuer="test", subject=str(uuid4()), created_at=datetime.now(UTC))
+    session.add(actor)
+    await session.commit()
+    record = InvitationCreationIdempotency(
+        actor.id, team.id, "create_invitation", invitation.idempotency_key, "a" * 64, uuid4()
+    )
+    invitation.id = record.invitation_id
+    invitation.token_hash = str(uuid4())
+    await repository.create_with_idempotency(invitation, record)
+    result = await repository.get_creation_idempotency(
+        actor.id, team.id, "create_invitation", invitation.idempotency_key
+    )
+    assert result == record
 
 
 @pytest.mark.anyio
@@ -222,7 +235,9 @@ async def test_get_by_idempotency_key_returns_returns_none_when_missing(
     session.add(team)
     await session.commit()
 
-    result = await repository.get_by_idempotency_key("non-existent-key")
+    result = await repository.get_creation_idempotency(
+        uuid4(), team.id, "create_invitation", "non-existent-key"
+    )
 
     assert result is None
 
@@ -480,3 +495,66 @@ async def test_get_by_resend_idempotency_key_returns_none_when_missing(
     result = await repository.get_by_resend_idempotency_key("non-existent-resend-key")
 
     assert result is None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("conflicting", [False, True])
+async def test_concurrent_creation_rolls_back_losing_invitation(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    seed_db: tuple[UUID, UUID, UUID],
+    conflicting: bool,
+) -> None:
+    actor_id, team_id, _ = seed_db
+    async with db_session_factory() as session:
+        template = await create_test_invitation(session, team_id)
+        await session.commit()
+    key = f"race-{uuid4()}"
+    first = replace(template, id=uuid4(), idempotency_key=key, token_hash=str(uuid4()))
+    second = replace(
+        first,
+        id=uuid4(),
+        token_hash=str(uuid4()),
+        email="different@example.com" if conflicting else first.email,
+    )
+    records = [
+        InvitationCreationIdempotency(
+            actor_id, team_id, "create_invitation", key, request_hash, invitation.id
+        )
+        for invitation, request_hash in [
+            (first, "a" * 64),
+            (second, ("b" if conflicting else "a") * 64),
+        ]
+    ]
+
+    async def create(
+        invitation: TeamInvitation, record: InvitationCreationIdempotency
+    ) -> InvitationCreationIdempotency:
+        async with db_session_factory() as session:
+            return await SqlAlchemyTeamInvitationRepository(session).create_with_idempotency(
+                invitation, record
+            )
+
+    winners = await asyncio.gather(create(first, records[0]), create(second, records[1]))
+    assert winners[0] == winners[1]
+    assert winners[0] in records
+    async with db_session_factory() as session:
+        assert (
+            await session.scalar(
+                select(func.count())
+                .select_from(TeamInvitationModel)
+                .where(TeamInvitationModel.idempotency_key == key)
+            )
+            == 1
+        )
+        repository = SqlAlchemyTeamInvitationRepository(session)
+        persisted = await repository.get_by_id(winners[0].invitation_id)
+        assert persisted is not None
+        expected = first if winners[0].invitation_id == first.id else second
+        assert persisted.token_hash == expected.token_hash
+        assert persisted.email == expected.email
+        for actor, team, operation in [
+            (uuid4(), team_id, "create_invitation"),
+            (actor_id, uuid4(), "create_invitation"),
+            (actor_id, team_id, "resend_invitation"),
+        ]:
+            assert await repository.get_creation_idempotency(actor, team, operation, key) is None
