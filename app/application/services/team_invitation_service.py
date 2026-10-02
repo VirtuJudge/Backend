@@ -1,6 +1,7 @@
 import asyncio
 import hashlib
 import secrets
+from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -75,6 +76,12 @@ def invitation_message(recipient: str, url: str) -> MailMessage:
     )
 
 
+@dataclass(frozen=True)
+class InvitationCreationResult:
+    invitation: TeamInvitation
+    token: str | None = None
+
+
 class TeamInvitationService:
     def __init__(
         self,
@@ -96,12 +103,12 @@ class TeamInvitationService:
         email: str,
         role: str,
         idempotency_key: str,
-    ) -> tuple[TeamInvitation, str]:
+    ) -> InvitationCreationResult:
         email = normalize_email(email)
         existing = await self.repository.get_by_idempotency_key(idempotency_key)
 
         if existing is not None:
-            return existing, ""
+            return InvitationCreationResult(existing)
 
         if await self.member_repository.get_by_team_and_email(team_id, email):
             raise AlreadyTeamMemberError(f"{email} is already a member of this team")
@@ -128,7 +135,7 @@ class TeamInvitationService:
         )
         invitation = await self.repository.create(invitation, idempotency_key)
 
-        return invitation, token
+        return InvitationCreationResult(invitation, token)
 
     async def list_invitations(
         self, team_id: UUID, cursor: UUID | None = None, limit: int = 20
