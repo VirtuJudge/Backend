@@ -330,13 +330,14 @@ async def resend_team_invitation(
         raise HTTPException(status_code=404, detail="team_invitation_not_found") from error
     except InvitationNotPendingError as error:
         raise HTTPException(status_code=409, detail="invitation_not_pending") from error
-    background_tasks.add_task(
-        service.send_invitation_email,
-        invitation,
-        token,
-        settings.frontend_url or "",
-        mail_sender,
-    )
+    if token:
+        background_tasks.add_task(
+            service.send_invitation_email,
+            invitation,
+            token,
+            settings.frontend_url or "",
+            mail_sender,
+        )
     response.headers["ETag"] = f'"{invitation_etag(invitation)}"'
     return InviteMemberResponse.model_validate(invitation, from_attributes=True)
 
