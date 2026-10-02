@@ -1,6 +1,7 @@
 import hashlib
 from datetime import UTC, datetime, timedelta
 from typing import cast
+from unittest.mock import patch
 from uuid import UUID, uuid4
 
 import pytest
@@ -157,15 +158,39 @@ def service(
 async def test_invite_normalizes_email_and_builds_multipart_message() -> None:
     repository = MemoryInvitationRepository()
 
-    created, token = await service(repository).invite_member(
+    result = await service(repository).invite_member(
         uuid4(),
         " Invitee@Example.COM ",
         "member",
         "new-key",
     )
 
-    assert created.email == "invitee@example.com"
-    assert token
+    assert result.invitation.email == "invitee@example.com"
+    assert result.token
+    assert result.invitation.token_hash == hashlib.sha256(result.token.encode()).hexdigest()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("delivery_status", list(DeliveryStatus))
+async def test_invite_replay_returns_existing_invitation_without_generating_token(
+    delivery_status: DeliveryStatus,
+) -> None:
+    existing = invitation()
+    existing.delivery_status = delivery_status
+    repository = MemoryInvitationRepository(existing)
+
+    with patch(
+        "app.application.services.team_invitation_service.secrets.token_urlsafe"
+    ) as generate:
+        result = await service(repository).invite_member(
+            existing.team_id, existing.email, existing.role, existing.idempotency_key
+        )
+
+    assert result.invitation is existing
+    assert result.token is None
+    assert existing.delivery_status == delivery_status
+    assert existing.version == 1
+    generate.assert_not_called()
 
 
 @pytest.mark.anyio
@@ -173,16 +198,17 @@ async def test_send_invitation_builds_text_and_html_message() -> None:
     repository = MemoryInvitationRepository()
     sender = FakeMailSender()
 
-    created, token = await service(repository).invite_member(
+    result = await service(repository).invite_member(
         uuid4(),
         "Invitee@Example.COM",
         "member",
         "new-key",
     )
 
+    assert result.token is not None
     await service(repository).send_invitation_email(
-        created,
-        token,
+        result.invitation,
+        result.token,
         "https://frontend.example.com",
         sender,
     )

@@ -229,7 +229,7 @@ async def invite_team_member(
     settings: Settings = Depends(get_settings),
 ) -> InviteMemberResponse:
     try:
-        invitation, token = await service.invite_member(
+        result = await service.invite_member(
             team_id,
             request.email,
             request.role,
@@ -239,13 +239,15 @@ async def invite_team_member(
         raise HTTPException(status_code=409, detail="already_team_member") from error
     except InvitationAlreadyExistsError as error:
         raise HTTPException(status_code=409, detail="invitation_already_exists") from error
-    background_tasks.add_task(
-        service.send_invitation_email,
-        invitation,
-        token,
-        settings.frontend_url or "",
-        mail_sender,
-    )
+    invitation = result.invitation
+    if result.token is not None:
+        background_tasks.add_task(
+            service.send_invitation_email,
+            invitation,
+            result.token,
+            settings.frontend_url or "",
+            mail_sender,
+        )
     response.headers["ETag"] = f'"{invitation_etag(invitation)}"'
     return InviteMemberResponse.model_validate(invitation, from_attributes=True)
 
