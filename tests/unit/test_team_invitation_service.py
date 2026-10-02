@@ -1,4 +1,5 @@
 import hashlib
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import cast
 from unittest.mock import patch
@@ -306,6 +307,35 @@ async def test_resend_persists_new_token_hash_and_is_idempotent() -> None:
     assert repository.invitation is not None
     assert repository.invitation.token_hash == resent.token_hash
     assert repeated.id == resent.id
+    assert token
+    assert resent.token_hash == hashlib.sha256(token.encode()).hexdigest()
+    assert repeated_token == ""
+    assert repeated.delivery_attempts == 1
+    assert repeated.version == 2
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("delivery_status", list(DeliveryStatus))
+async def test_resend_replay_preserves_token_and_delivery_state(
+    delivery_status: DeliveryStatus,
+) -> None:
+    pending = invitation()
+    repository = MemoryInvitationRepository(pending)
+    invitation_service = service(repository)
+    await invitation_service.resend_invitation(pending.team_id, pending.id, "resend-key")
+    pending.delivery_status = delivery_status
+    before = replace(pending)
+
+    with patch(
+        "app.application.services.team_invitation_service.secrets.token_urlsafe"
+    ) as generate:
+        repeated, token = await invitation_service.resend_invitation(
+            pending.team_id, pending.id, "resend-key"
+        )
+
+    assert repeated == before
+    assert token == ""
+    generate.assert_not_called()
 
 
 @pytest.mark.anyio
