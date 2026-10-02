@@ -50,10 +50,3 @@ class TeamInvitationRepository(ABC):
     async def accept(self, invitation: TeamInvitation, membership: TeamMember) -> bool:
         """Atomically consume a pending invitation and create its membership."""
         pass
-
-    @abstractmethod
-    async def get_by_resend_idempotency_key(
-        self,
-        resend_idempotency_key: str,
-    ) -> TeamInvitation | None:
-        pass

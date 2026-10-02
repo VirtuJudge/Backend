@@ -18,6 +18,7 @@ from app.application.templates.invitation import (
     invitation_text_template,
 )
 from app.domain.idempotency import InvitationCreationIdempotency
+from app.domain.invitation_resend_idompotency_key import InvitationResendIdempotency
 from app.domain.team_invitation import DeliveryStatus, InvitationStatus, TeamInvitation
 from app.domain.team_member import TeamMember
 
@@ -181,37 +182,45 @@ class TeamInvitationService:
         team_id: UUID,
         invitation_id: UUID,
         resend_idempotency_key: str,
+        *,
+        actor_id: UUID,
     ) -> tuple[TeamInvitation, str]:
-
-        existing = await self.resend_idomkey_repository.get_by_resend_idempotency_key(
-            resend_idempotency_key
-        )
-        existing_invitation = (
-            await self.repository.get_by_id(existing.invitation_id) if existing else None
-        )
-        if existing_invitation is not None:
-            return existing_invitation, ""
-
         invitation = await self.repository.get_by_id(invitation_id)
         if invitation is None or invitation.team_id != team_id:
-            raise TeamInvitationNotFoundError(
-                f"Invitation with ID {invitation_id} not found for team {team_id}"
-            )
+            raise TeamInvitationNotFoundError
+        operation = "resend_invitation"
+        request_hash = hashlib.sha256(b"{}").hexdigest()
+        existing = await self.resend_idomkey_repository.get_by_resend_idempotency_key(
+            actor_id, team_id, invitation_id, operation, resend_idempotency_key
+        )
+        if existing is not None:
+            if existing.request_hash != request_hash:
+                raise InvitationIdempotencyConflict
+            return invitation, ""
         if invitation.status != InvitationStatus.PENDING:
             raise InvitationNotPendingError("Only pending invitations can be resent.")
 
         token = secrets.token_urlsafe(32)
-
         invitation.token_hash = hashlib.sha256(token.encode()).hexdigest()
-
-        await self.resend_idomkey_repository.create(invitation, resend_idempotency_key)
-
         invitation.delivery_attempts += 1
         invitation.delivery_status = DeliveryStatus.QUEUED
-
-        invitation = await self.repository.update(invitation)
-
-        return invitation, token
+        record = InvitationResendIdempotency(
+            id=uuid4(),
+            actor_id=actor_id,
+            team_id=team_id,
+            invitation_id=invitation_id,
+            operation=operation,
+            key=resend_idempotency_key,
+            request_hash=request_hash,
+            created_at=datetime.now(UTC),
+        )
+        saved = await self.resend_idomkey_repository.create(invitation, record)
+        if saved.request_hash != request_hash:
+            raise InvitationIdempotencyConflict
+        persisted = await self.repository.get_by_id(invitation_id)
+        if persisted is None or persisted.team_id != team_id:
+            raise TeamInvitationNotFoundError
+        return persisted, token if saved.id == record.id else ""
 
     async def revoke_invitation(self, team_id: UUID, invitation_id: UUID, if_match: str) -> None:
         invitation = await self.repository.get_by_id(invitation_id)

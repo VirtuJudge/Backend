@@ -17,9 +17,6 @@ from app.domain.team_invitation import (
     TeamInvitation,
 )
 from app.domain.team_member import TeamMember
-from app.infrastructure.persistence.configurations import (
-    InvitationResendIdempotencyModel,
-)
 from app.infrastructure.persistence.configurations.team_configuration import TeamModel
 from app.infrastructure.persistence.configurations.team_invitation_configuration import (
     TeamInvitationModel,
@@ -371,46 +368,6 @@ async def test_get_invitation_by_token_returns_none_when_not_found(
 
 
 @pytest.mark.anyio
-async def test_get_by_resend_idempotency_key_returns_invitation(
-    async_db_session: AsyncSession,
-) -> None:
-    session = async_db_session
-    repository = SqlAlchemyTeamInvitationRepository(session)
-
-    team = TeamModel(
-        id=uuid4(),
-        name=f"Team-{uuid4().hex[:8]}",
-        created_at=datetime.now(UTC),
-    )
-    session.add(team)
-    await session.commit()
-
-    invitation = await create_test_invitation(
-        session,
-        team_id=team.id,
-    )
-
-    resend_key = f"resend-key-{uuid4().hex}"
-
-    resend_idempotency = InvitationResendIdempotencyModel(
-        id=uuid4(),
-        invitation_id=invitation.id,
-        key=resend_key,
-        created_at=datetime.now(UTC),
-    )
-
-    session.add(resend_idempotency)
-    await session.commit()
-
-    result = await repository.get_by_resend_idempotency_key(resend_key)
-
-    assert result is not None
-    assert result.id == invitation.id
-    assert result.team_id == invitation.team_id
-    assert result.email == invitation.email
-
-
-@pytest.mark.anyio
 async def test_update_rejects_stale_version(
     async_db_session: AsyncSession,
 ) -> None:
@@ -484,17 +441,6 @@ async def test_accept_atomically_consumes_invitation_and_creates_one_membership(
     assert persisted is not None
     assert persisted.status == InvitationStatus.ACCEPTED
     assert membership_count == 1
-
-
-@pytest.mark.anyio
-async def test_get_by_resend_idempotency_key_returns_none_when_missing(
-    async_db_session: AsyncSession,
-) -> None:
-    repository = SqlAlchemyTeamInvitationRepository(async_db_session)
-
-    result = await repository.get_by_resend_idempotency_key("non-existent-resend-key")
-
-    assert result is None
 
 
 @pytest.mark.anyio

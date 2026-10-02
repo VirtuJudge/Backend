@@ -15,7 +15,9 @@ from app.application.ports.user_repository import UserRepository
 from app.application.services.team_invitation_service import (
     AlreadyConsumedInvitationError,
     InvitationIdempotencyConflict,
+    InvitationNotPendingError,
     TeamInvitationExpiredError,
+    TeamInvitationNotFoundError,
     TeamInvitationService,
 )
 from app.domain.idempotency import InvitationCreationIdempotency
@@ -84,9 +86,6 @@ class MemoryInvitationRepository:
         self.accepted_memberships.append(membership)
         return True
 
-    async def get_by_resend_idempotency_key(self, resend_idempotency_key: str) -> None:
-        return None
-
 
 class MemoryMemberRepository:
     async def get_by_team_and_email(self, team_id: UUID, email: str) -> None:
@@ -116,22 +115,25 @@ class MemoryResendKeyRepository:
         self.record: InvitationResendIdempotency | None = None
 
     async def get_by_resend_idempotency_key(
-        self, resend_idempotency_key: str
+        self, actor_id: UUID, team_id: UUID, invitation_id: UUID, operation: str, key: str
     ) -> InvitationResendIdempotency | None:
-        if self.record is not None and self.record.key == resend_idempotency_key:
-            return self.record
+        record = self.record
+        if record is not None and (
+            record.actor_id,
+            record.team_id,
+            record.invitation_id,
+            record.operation,
+            record.key,
+        ) == (actor_id, team_id, invitation_id, operation, key):
+            return record
         return None
 
     async def create(
-        self, invitation: TeamInvitation, resend_idempotency_key: str
+        self, invitation: TeamInvitation, record: InvitationResendIdempotency
     ) -> InvitationResendIdempotency:
-        self.record = InvitationResendIdempotency(
-            id=uuid4(),
-            invitation_id=invitation.id,
-            key=resend_idempotency_key,
-            created_at=datetime.now(UTC),
-        )
-        return self.record
+        self.record = record
+        invitation.version += 1
+        return record
 
 
 def invitation(*, email: str = "invitee@example.com") -> TeamInvitation:
@@ -295,12 +297,14 @@ async def test_resend_persists_new_token_hash_and_is_idempotent() -> None:
         pending.team_id,
         pending.id,
         "resend-key",
+        actor_id=ACTOR_ID,
     )
 
     repeated, repeated_token = await invitation_service.resend_invitation(
         pending.team_id,
         pending.id,
         "resend-key",
+        actor_id=ACTOR_ID,
     )
 
     assert resent.token_hash != old_hash
@@ -322,7 +326,9 @@ async def test_resend_replay_preserves_token_and_delivery_state(
     pending = invitation()
     repository = MemoryInvitationRepository(pending)
     invitation_service = service(repository)
-    await invitation_service.resend_invitation(pending.team_id, pending.id, "resend-key")
+    await invitation_service.resend_invitation(
+        pending.team_id, pending.id, "resend-key", actor_id=ACTOR_ID
+    )
     pending.delivery_status = delivery_status
     before = replace(pending)
 
@@ -330,7 +336,7 @@ async def test_resend_replay_preserves_token_and_delivery_state(
         "app.application.services.team_invitation_service.secrets.token_urlsafe"
     ) as generate:
         repeated, token = await invitation_service.resend_invitation(
-            pending.team_id, pending.id, "resend-key"
+            pending.team_id, pending.id, "resend-key", actor_id=ACTOR_ID
         )
 
     assert repeated == before
@@ -427,3 +433,42 @@ async def test_creation_race_returns_winner_without_new_token(conflicting: bool)
             assert replay.invitation is created.invitation
             assert replay.token is None
     assert repository.invitation is created.invitation
+
+
+@pytest.mark.anyio
+async def test_resend_replay_validates_invitation_ancestry_before_key_lookup() -> None:
+    pending = invitation()
+    repository = MemoryInvitationRepository(pending)
+    keys = MemoryResendKeyRepository()
+    invitation_service = service(repository, resend_repository=keys)
+    await invitation_service.resend_invitation(
+        pending.team_id, pending.id, "key", actor_id=ACTOR_ID
+    )
+    with patch.object(keys, "get_by_resend_idempotency_key") as lookup:
+        with pytest.raises(TeamInvitationNotFoundError):
+            await invitation_service.resend_invitation(
+                uuid4(), pending.id, "key", actor_id=ACTOR_ID
+            )
+        lookup.assert_not_called()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("status", [InvitationStatus.REVOKED, InvitationStatus.ACCEPTED])
+async def test_resend_replay_survives_invitation_status_change(status: InvitationStatus) -> None:
+    pending = invitation()
+    repository = MemoryInvitationRepository(pending)
+    invitation_service = service(repository)
+    await invitation_service.resend_invitation(
+        pending.team_id, pending.id, "key", actor_id=ACTOR_ID
+    )
+    pending.status = status
+    before = replace(pending)
+    repeated, token = await invitation_service.resend_invitation(
+        pending.team_id, pending.id, "key", actor_id=ACTOR_ID
+    )
+    assert repeated == before
+    assert token == ""
+    with pytest.raises(InvitationNotPendingError):
+        await invitation_service.resend_invitation(
+            pending.team_id, pending.id, "new-key", actor_id=ACTOR_ID
+        )
