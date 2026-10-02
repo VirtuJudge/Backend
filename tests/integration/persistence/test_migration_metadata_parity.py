@@ -36,6 +36,7 @@ def test_migration_metadata_parity(tmp_path: Path) -> None:
     inspector = inspect(engine)
 
     target_tables = [
+        "invitation_resend_idempotency",
         "invitation_creation_idempotency",
         "team_invitations",
         "project_creation_idempotency",
@@ -77,6 +78,13 @@ def test_migration_metadata_parity(tmp_path: Path) -> None:
         constraint["column_names"] == ["idempotency_key"]
         for constraint in invitation_key_constraints
     )
+
+    resend_constraints = inspector.get_unique_constraints("invitation_resend_idempotency")
+    assert [c["column_names"] for c in resend_constraints] == [
+        ["actor_id", "team_id", "invitation_id", "operation", "key"]
+    ]
+    resend_table = Base.metadata.tables["invitation_resend_idempotency"]
+    assert not resend_table.columns["request_hash"].nullable
 
     # Specific assertions for analysis_attempts
     attempt_table = Base.metadata.tables["analysis_attempts"]

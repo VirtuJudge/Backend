@@ -285,6 +285,11 @@ async def list_team_invitations(
     response_model=InviteMemberResponse,
     status_code=status.HTTP_202_ACCEPTED,
     tags=["teams"],
+    description=(
+        "Resend keys are scoped to actor, team, invitation, operation, and key. "
+        "The empty request is hashed. A replay returns current safe invitation metadata "
+        "without rotating its token or sending email."
+    ),
     responses={
         202: {
             "headers": {
@@ -293,7 +298,11 @@ async def list_team_invitations(
                     "schema": {"type": "string"},
                 }
             }
-        }
+        },
+        403: {"description": "Team Owner authorization required"},
+        404: {"description": "Invitation not found in this Team"},
+        409: {"description": "Invitation not pending or idempotency request hash conflict"},
+        412: {"description": "Invitation changed concurrently; no resend key was stored"},
     },
     dependencies=[
         Depends(
@@ -310,7 +319,7 @@ async def resend_team_invitation(
     id: UUID,
     background_tasks: BackgroundTasks,
     response: Response,
-    _owner: TeamMember = Depends(get_team_owner),
+    owner: TeamMember = Depends(get_team_owner),
     service: TeamInvitationService = Depends(get_team_invitation_service),
     mail_sender: MailSender = Depends(get_mail_sender),
     settings: Settings = Depends(get_settings),
@@ -325,11 +334,16 @@ async def resend_team_invitation(
             team_id,
             id,
             resend_idempotency_key=resend_idempotency_key,
+            actor_id=owner.user_id,
         )
     except TeamInvitationNotFoundError as error:
         raise HTTPException(status_code=404, detail="team_invitation_not_found") from error
     except InvitationNotPendingError as error:
         raise HTTPException(status_code=409, detail="invitation_not_pending") from error
+    except InvitationIdempotencyConflict as error:
+        raise HTTPException(status_code=409, detail="idempotency_conflict") from error
+    except InvitationPreconditionFailed as error:
+        raise HTTPException(status_code=412, detail="version precondition failed") from error
     if token:
         background_tasks.add_task(
             service.send_invitation_email,

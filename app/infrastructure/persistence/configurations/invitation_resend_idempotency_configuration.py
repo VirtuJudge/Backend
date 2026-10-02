@@ -23,8 +23,12 @@ class InvitationResendIdempotencyModel(Base):
     key: Mapped[str] = mapped_column(
         String(255),
         nullable=False,
-        unique=True,
     )
+
+    actor_id: Mapped[UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    team_id: Mapped[UUID] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"))
+    operation: Mapped[str] = mapped_column(String(50))
+    request_hash: Mapped[str] = mapped_column(String(64))
 
     invitation_id: Mapped[UUID] = mapped_column(
         ForeignKey("team_invitations.id"),
@@ -41,7 +45,11 @@ class InvitationResendIdempotencyModel(Base):
 
     __table_args__ = (
         UniqueConstraint(
+            "actor_id",
+            "team_id",
+            "invitation_id",
+            "operation",
             "key",
-            name="uq_invitation_resend_idempotency_key",
+            name="uq_invitation_resend_idempotency_scope",
         ),
     )

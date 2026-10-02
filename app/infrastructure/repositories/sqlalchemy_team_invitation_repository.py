@@ -11,7 +11,6 @@ from app.domain.team_invitation import InvitationStatus, TeamInvitation
 from app.domain.team_member import TeamMember
 from app.infrastructure.persistence.configurations import (
     InvitationCreationIdempotencyModel,
-    InvitationResendIdempotencyModel,
 )
 from app.infrastructure.persistence.configurations.team_configuration import TeamModel
 from app.infrastructure.persistence.configurations.team_invitation_configuration import (
@@ -226,23 +225,3 @@ class SqlAlchemyTeamInvitationRepository(TeamInvitationRepository):
         )
         await self.session.commit()
         return True
-
-    async def get_by_resend_idempotency_key(
-        self,
-        resend_idempotency_key: str,
-    ) -> TeamInvitation | None:
-        stmt = (
-            select(TeamInvitationModel)
-            .join(
-                InvitationResendIdempotencyModel,
-                InvitationResendIdempotencyModel.invitation_id == TeamInvitationModel.id,
-            )
-            .where(InvitationResendIdempotencyModel.key == resend_idempotency_key)
-        )
-
-        model = await self.session.scalar(stmt)
-
-        if model is None:
-            return None
-
-        return self._invitation(model)

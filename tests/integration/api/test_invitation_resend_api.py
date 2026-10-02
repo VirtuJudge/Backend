@@ -1,7 +1,7 @@
 import hashlib
 import re
 from unittest.mock import AsyncMock, Mock
-from uuid import UUID
+from uuid import UUID, uuid4
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -17,6 +17,8 @@ from app.infrastructure.mail import FakeMailSender
 from app.infrastructure.persistence.configurations import (
     InvitationResendIdempotencyModel,
     TeamMemberModel,
+    TeamModel,
+    UserModel,
 )
 from app.infrastructure.repositories.sqlalchemy_team_invitation_repository import (
     SqlAlchemyTeamInvitationRepository,
@@ -114,3 +116,128 @@ async def test_invitation_resend_replay_never_sends_or_mutates_delivery(
         assert after is not None
         assert after.delivery_attempts == 2
         assert after.token_hash != before.token_hash
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("scope", ["invitation", "team", "actor"])
+async def test_resend_key_collision_never_returns_another_invitation(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    seed_db: tuple[UUID, UUID, UUID],
+    scope: str,
+) -> None:
+    user_id, team_id, _ = seed_db
+    async with db_session_factory() as session:
+        await session.execute(
+            update(TeamMemberModel)
+            .where(TeamMemberModel.user_id == user_id, TeamMemberModel.team_id == team_id)
+            .values(role="owner")
+        )
+        await session.commit()
+    other_team_id, other_user_id = uuid4(), uuid4()
+    async with db_session_factory() as session:
+        session.add(TeamModel(id=other_team_id, name="Other Team", created_at=NOW))
+        session.add(
+            UserModel(
+                id=other_user_id,
+                email="other-owner@example.com",
+                issuer="test",
+                subject="other-owner",
+                created_at=NOW,
+            )
+        )
+        await session.flush()
+        session.add_all(
+            [
+                TeamMemberModel(
+                    team_id=other_team_id, user_id=user_id, role="owner", joined_at=NOW
+                ),
+                TeamMemberModel(
+                    team_id=team_id, user_id=other_user_id, role="owner", joined_at=NOW
+                ),
+            ]
+        )
+        await session.commit()
+    app = create_app(Settings(app_env="test", database_url="sqlite+aiosqlite:///:memory:"))
+    app.state.session_factory = db_session_factory
+    app.state.redis = AsyncMock(spec=RateLimiter)
+    user = User(user_id, "Owner", "test", "owner", "owner@example.com", NOW)
+    app.dependency_overrides[get_current_user] = lambda: user
+    sender = Mock(spec=MailSender)
+    sender.send.side_effect = FakeMailSender().send
+    app.state.mail_sender = sender
+    path = f"/api/v1/teams/{team_id}/invitations"
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        invitations = []
+        for index in range(2):
+            created = await client.post(
+                f"/api/v1/teams/{other_team_id}/invitations"
+                if scope == "team" and index == 1
+                else path,
+                json={"email": f"invitee{index}@example.com"},
+                headers={"Idempotency-Key": f"create-{index}"},
+            )
+            assert created.status_code == 201
+            invitations.append(created.json()["id"])
+        if scope == "actor":
+            invitations[1] = invitations[0]
+        sender.reset_mock()
+        for index, invitation_id in enumerate(invitations):
+            if scope == "actor" and index == 1:
+                other = User(
+                    other_user_id, "Other", "test", "other-owner", "other-owner@example.com", NOW
+                )
+                app.dependency_overrides[get_current_user] = lambda other=other: other
+            target_team = other_team_id if scope == "team" and index == 1 else team_id
+            resent = await client.post(
+                f"/api/v1/teams/{target_team}/invitations/{invitation_id}/resend",
+                headers={"Idempotency-Key": "shared-key"},
+            )
+            assert resent.status_code == 202
+            assert resent.json()["id"] == invitation_id
+            replay = await client.post(
+                f"/api/v1/teams/{target_team}/invitations/{invitation_id}/resend",
+                headers={"Idempotency-Key": "shared-key"},
+            )
+            assert replay.status_code == 202
+            assert replay.json()["id"] == invitation_id
+        assert sender.send.call_count == 2
+        async with db_session_factory() as session:
+            count = await session.scalar(
+                select(func.count()).select_from(InvitationResendIdempotencyModel)
+            )
+        assert count == 2
+
+        app.dependency_overrides[get_current_user] = lambda: user
+        for target_team, invitation_id in [(team_id, uuid4()), (other_team_id, invitations[0])]:
+            missing = await client.post(
+                f"/api/v1/teams/{target_team}/invitations/{invitation_id}/resend",
+                headers={"Idempotency-Key": "shared-key"},
+            )
+            assert missing.status_code == 404
+            assert "email" not in missing.json()
+        assert sender.send.call_count == 2
+
+        async with db_session_factory() as session:
+            await session.execute(
+                update(InvitationResendIdempotencyModel)
+                .where(InvitationResendIdempotencyModel.actor_id == user_id)
+                .values(request_hash="different")
+            )
+            await session.commit()
+        conflict = await client.post(
+            f"{path}/{invitations[0]}/resend", headers={"Idempotency-Key": "shared-key"}
+        )
+        assert conflict.status_code == 409
+        assert conflict.json()["detail"] == "idempotency_conflict"
+        assert sender.send.call_count == 2
+
+        outsider = User(
+            other_user_id, "Other", "test", "other-owner", "other-owner@example.com", NOW
+        )
+        app.dependency_overrides[get_current_user] = lambda: outsider
+        forbidden = await client.post(
+            f"/api/v1/teams/{other_team_id}/invitations/{invitations[0]}/resend",
+            headers={"Idempotency-Key": "shared-key"},
+        )
+        assert forbidden.status_code == 403
+        assert sender.send.call_count == 2

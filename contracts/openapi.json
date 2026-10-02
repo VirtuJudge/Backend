@@ -10739,6 +10739,7 @@
     },
     "/api/v1/teams/{team_id}/invitations/{id}/resend": {
       "post": {
+        "description": "Resend keys are scoped to actor, team, invitation, operation, and key. The empty request is hashed. A replay returns current safe invitation metadata without rotating its token or sending email.",
         "operationId": "resend_team_invitation_api_v1_teams__team_id__invitations__id__resend_post",
         "parameters": [
           {
@@ -10791,6 +10792,18 @@
                 }
               }
             }
+          },
+          "403": {
+            "description": "Team Owner authorization required"
+          },
+          "404": {
+            "description": "Invitation not found in this Team"
+          },
+          "409": {
+            "description": "Invitation not pending or idempotency request hash conflict"
+          },
+          "412": {
+            "description": "Invitation changed concurrently; no resend key was stored"
           },
           "422": {
             "content": {
