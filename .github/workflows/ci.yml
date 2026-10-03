@@ -50,5 +50,6 @@ jobs:
 
       - name: Run checks
         env:
+          ASSET_TEST_DATABASE_URL: postgresql+asyncpg://virtujudge_test:virtujudge_test@localhost:5432/virtujudge_test
           PROJECT_TEST_DATABASE_URL: postgresql+asyncpg://virtujudge_test:virtujudge_test@localhost:5432/virtujudge_test
         run: bash scripts/check.sh

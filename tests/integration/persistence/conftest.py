@@ -32,6 +32,8 @@ async def db_session_factory(tmp_path: Path) -> AsyncIterator[async_sessionmaker
 
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.drop_all)
+        if test_pg_url:
+            await conn.exec_driver_sql("DROP TABLE IF EXISTS backend_alembic_version")
     await engine.dispose()
 
 
