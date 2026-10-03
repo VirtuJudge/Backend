@@ -236,6 +236,8 @@ Project deletion requires a confirmation body and `Idempotency-Key`. Keys are sc
 
 Migration `f7a8b9c0d1e2` adds scoped command records and backfills the original keys from existing Erasure Requests. Apply it before deploying this version. The records contain hashes rather than confirmation text and survive target deletion. A downgrade drops only command records; it preserves erasure progress, but loses conflict detection for additional keys, so retain the table and prefer a forward fix while deletion retries are outstanding.
 
+Invitation delivery now reports `accepted_by_provider` for Gmail and Resend. This means provider acceptance, not confirmed recipient delivery. Deploy clients that handle both this value and legacy `accepted_by_gmail` first. Stop existing backend processes and background sends, apply migration `3d4e5f6a7b8c`, then start this backend version. The PostgreSQL enum rename migrates all existing accepted records; old and new backend versions must not run together across this migration. To roll back, stop this version, downgrade to `2c3d4e5f6a7b`, and restart the old backend. The downgrade preserves invitations and restores the legacy status.
+
 ## Database migrations
 
 Backend-owned product tables use one Alembic history. Generate migrations from model changes, inspect the result, and test both directions before merging:

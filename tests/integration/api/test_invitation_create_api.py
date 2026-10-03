@@ -89,7 +89,9 @@ async def test_invitation_create_replay_never_sends_or_mutates_delivery(
             replay = await client.post(path, json=payload, headers=headers)
             assert replay.status_code == 201
             assert replay.json()["id"] == created.json()["id"]
-            assert replay.json()["delivery_status"] == expected_status
+            assert replay.json()["delivery_status"] == (
+                "failed" if delivery_fails else "accepted_by_provider"
+            )
             assert replay.json()["delivery_attempts"] == 1
             assert replay.json()["version"] == before.version
             assert replay.headers["ETag"] == f'"{replay.json()["etag"]}"'
