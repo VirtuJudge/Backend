@@ -132,3 +132,34 @@ async def test_attempt_commit_failure_does_not_send_mail_or_change_persisted_cou
         persisted = await SqlAlchemyTeamInvitationRepository(session).get_by_id(pending.id)
     assert persisted == before
     assert sender.sent_messages == []
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("provider", ["gmail", "resend"])
+async def test_real_mail_adapters_persist_provider_neutral_acceptance(
+    db_session_factory: async_sessionmaker[AsyncSession],
+    seed_db: tuple[UUID, UUID, UUID],
+    provider: str,
+) -> None:
+    from pydantic import SecretStr
+
+    from app.infrastructure.mail import GmailMailSender, ResendMailSender
+
+    _, team_id, _ = seed_db
+    sender = (
+        GmailMailSender("smtp.example.com", 587, "user", SecretStr("test"), "sender@example.com")
+        if provider == "gmail"
+        else ResendMailSender("https://mail.example.com", SecretStr("test"), "sender@example.com")
+    )
+    with patch("app.infrastructure.mail.smtplib.SMTP"), patch("app.infrastructure.mail.httpx.post"):
+        async with db_session_factory() as session:
+            pending = await create_test_invitation(session, team_id)
+            await session.commit()
+            await team_invitation_service_factory(session).send_invitation_email(
+                pending, "token", "https://frontend.example.com", sender
+            )
+    async with db_session_factory() as session:
+        persisted = await SqlAlchemyTeamInvitationRepository(session).get_by_id(pending.id)
+    assert persisted is not None
+    assert persisted.delivery_status.value == "accepted_by_provider"
+    assert persisted.delivery_attempts == 1
