@@ -2,11 +2,12 @@ import hashlib
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from typing import cast
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 from uuid import UUID, uuid4
 
 import pytest
 
+from app.application.mail import MailDeliveryError, MailSender
 from app.application.ports.invitation_resend_key_repository import InvitationResendKeyRepository
 from app.application.ports.team_invitation_repository import TeamInvitationRepository
 from app.application.ports.team_member_repository import TeamMemberRepository
@@ -250,6 +251,58 @@ async def test_send_invitation_builds_text_and_html_message() -> None:
 
 
 @pytest.mark.anyio
+@pytest.mark.parametrize("delivery_fails", [False, True])
+async def test_send_counts_each_attempt_before_calling_mail(delivery_fails: bool) -> None:
+    pending = invitation()
+    repository = MemoryInvitationRepository(pending)
+    invitation_service = service(repository)
+    sender = Mock(spec=MailSender)
+
+    def send(_message: object) -> None:
+        assert repository.invitation is not None
+        assert repository.invitation.delivery_attempts == sender.send.call_count
+        assert repository.invitation.delivery_status == DeliveryStatus.QUEUED
+        if delivery_fails:
+            raise MailDeliveryError("Delivery failed")
+
+    sender.send.side_effect = send
+    assert pending.delivery_attempts == 0
+    await invitation_service.send_invitation_email(
+        pending, "token", "https://frontend.example.com", sender
+    )
+    assert repository.invitation is not None
+    assert repository.invitation.delivery_attempts == 1
+    expected_status = DeliveryStatus.FAILED if delivery_fails else DeliveryStatus.ACCEPTED
+    assert repository.invitation.delivery_status == expected_status
+
+    resent, token = await invitation_service.resend_invitation(
+        pending.team_id, pending.id, "resend-key", actor_id=ACTOR_ID
+    )
+    assert resent.delivery_attempts == 1
+    await invitation_service.send_invitation_email(
+        resent, token, "https://frontend.example.com", sender
+    )
+    assert repository.invitation.delivery_attempts == 2
+    assert repository.invitation.delivery_status == expected_status
+    assert sender.send.call_count == 2
+
+
+@pytest.mark.anyio
+async def test_send_does_not_call_mail_if_attempt_cannot_be_persisted() -> None:
+    pending = invitation()
+    repository = MemoryInvitationRepository(pending)
+    sender = Mock(spec=MailSender)
+    with (
+        patch.object(repository, "update", side_effect=InvitationPreconditionFailed),
+        pytest.raises(InvitationPreconditionFailed),
+    ):
+        await service(repository).send_invitation_email(
+            pending, "token", "https://frontend.example.com", sender
+        )
+    sender.send.assert_not_called()
+
+
+@pytest.mark.anyio
 async def test_preview_uses_aware_time_and_never_leaks_token_in_errors() -> None:
     expired = invitation()
     expired.expires_at = datetime.now(UTC) - timedelta(seconds=1)
@@ -316,7 +369,7 @@ async def test_resend_persists_new_token_hash_and_is_idempotent() -> None:
     assert token
     assert resent.token_hash == hashlib.sha256(token.encode()).hexdigest()
     assert repeated_token == ""
-    assert repeated.delivery_attempts == 1
+    assert repeated.delivery_attempts == 0
     assert repeated.version == 2
 
 
