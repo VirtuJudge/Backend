@@ -236,14 +236,11 @@ class TeamInvitationService:
             raise InvitationNotPendingError("Only pending invitations can be revoked.")
 
         normalized_if_match = if_match.strip('"') if if_match else ""
-        if not normalized_if_match or (
-            normalized_if_match != "*" and normalized_if_match != invitation_etag(invitation)
-        ):
+        if normalized_if_match != invitation_etag(invitation):
             raise InvitationPreconditionFailed(
                 "ETag does not match. The invitation may have been modified by another process."
             )
 
-        # Update the status to revoked
         invitation.status = InvitationStatus.REVOKED
         invitation = await self.repository.update(invitation)
 

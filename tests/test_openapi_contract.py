@@ -67,6 +67,21 @@ def test_project_creation_requires_idempotency_header() -> None:
     assert header["schema"]["maxLength"] == 255
 
 
+def test_invitation_revocation_requires_if_match_header() -> None:
+    spec = generate_openapi_spec()
+    operation = spec["paths"]["/api/v1/teams/{team_id}/invitations/{id}"]["delete"]
+    header = next(
+        parameter
+        for parameter in operation["parameters"]
+        if parameter["in"] == "header" and parameter["name"] == "If-Match"
+    )
+    assert header["required"] is True
+    assert header["schema"]["type"] == "string"
+    assert header["schema"]["minLength"] == 1
+    assert "default" not in header["schema"]
+    assert {"204", "403", "404", "409", "412", "422"} <= operation["responses"].keys()
+
+
 def test_project_deletion_requires_non_nullable_confirmation_body() -> None:
     spec = generate_openapi_spec()
     body = spec["paths"]["/api/v1/projects/{project_id}"]["delete"]["requestBody"]

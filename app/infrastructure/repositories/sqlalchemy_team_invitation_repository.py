@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from app.application.ports.team_invitation_repository import TeamInvitationRepository
+from app.application.services.team_invitation_service import InvitationPreconditionFailed
 from app.domain.idempotency import InvitationCreationIdempotency
 from app.domain.team_invitation import InvitationStatus, TeamInvitation
 from app.domain.team_member import TeamMember
@@ -167,7 +168,7 @@ class SqlAlchemyTeamInvitationRepository(TeamInvitationRepository):
         updated_model = result.scalar_one_or_none()
 
         if updated_model is None:
-            raise ValueError(f"Invitation with ID {invitation.id} not found.")
+            raise InvitationPreconditionFailed
 
         return self._invitation(updated_model)
 

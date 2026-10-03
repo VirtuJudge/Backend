@@ -16,9 +16,11 @@ from app.application.services.team_invitation_service import (
     AlreadyConsumedInvitationError,
     InvitationIdempotencyConflict,
     InvitationNotPendingError,
+    InvitationPreconditionFailed,
     TeamInvitationExpiredError,
     TeamInvitationNotFoundError,
     TeamInvitationService,
+    invitation_etag,
 )
 from app.domain.idempotency import InvitationCreationIdempotency
 from app.domain.invitation_resend_idompotency_key import InvitationResendIdempotency
@@ -472,3 +474,45 @@ async def test_resend_replay_survives_invitation_status_change(status: Invitatio
         await invitation_service.resend_invitation(
             pending.team_id, pending.id, "new-key", actor_id=ACTOR_ID
         )
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("if_match", ["", "*", '"*"', "stale", '"stale"', " "])
+async def test_revoke_rejects_invalid_precondition_without_mutation(if_match: str) -> None:
+    pending = invitation()
+    before = replace(pending)
+    repository = MemoryInvitationRepository(pending)
+    with patch.object(repository, "update") as update:
+        with pytest.raises(InvitationPreconditionFailed):
+            await service(repository).revoke_invitation(pending.team_id, pending.id, if_match)
+        update.assert_not_called()
+    assert pending == before
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("quoted", [False, True])
+async def test_revoke_requires_current_version(quoted: bool) -> None:
+    pending = invitation()
+    repository = MemoryInvitationRepository(pending)
+    stale_etag = invitation_etag(pending)
+    pending.version += 1
+    with pytest.raises(InvitationPreconditionFailed):
+        await service(repository).revoke_invitation(pending.team_id, pending.id, stale_etag)
+    current_etag = invitation_etag(pending)
+    await service(repository).revoke_invitation(
+        pending.team_id, pending.id, f'"{current_etag}"' if quoted else current_etag
+    )
+    assert pending.status == InvitationStatus.REVOKED
+    assert pending.version == 3
+
+
+@pytest.mark.anyio
+async def test_revoke_rejects_weak_current_etag() -> None:
+    pending = invitation()
+    repository = MemoryInvitationRepository(pending)
+    with pytest.raises(InvitationPreconditionFailed):
+        await service(repository).revoke_invitation(
+            pending.team_id, pending.id, f'W/"{invitation_etag(pending)}"'
+        )
+    assert pending.status == InvitationStatus.PENDING
+    assert pending.version == 1

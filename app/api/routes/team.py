@@ -357,17 +357,29 @@ async def resend_team_invitation(
 
 
 @router.delete(
-    "/teams/{team_id}/invitations/{id}", status_code=status.HTTP_204_NO_CONTENT, tags=["teams"]
+    "/teams/{team_id}/invitations/{id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    tags=["teams"],
+    description=(
+        "Revoke a pending invitation using its current ETag. "
+        "If-Match is required; wildcard and weak tags cannot bypass version checking."
+    ),
+    responses={
+        403: {"description": "Team Owner authorization required"},
+        404: {"description": "Invitation not found in this Team"},
+        409: {"description": "Invitation already consumed or not pending"},
+        412: {"description": "Invalid or stale ETag, or invitation changed concurrently"},
+    },
 )
 async def revoke_team_invitation(
     team_id: UUID,
     id: UUID,
     _owner: TeamMember = Depends(get_team_owner),
     service: TeamInvitationService = Depends(get_team_invitation_service),
-    if_match: str | None = Header(default="*", alias="If-Match"),
+    if_match: str = Header(alias="If-Match", min_length=1),
 ) -> Response:
     try:
-        await service.revoke_invitation(team_id, id, if_match or "*")
+        await service.revoke_invitation(team_id, id, if_match)
     except TeamInvitationNotFoundError as error:
         raise HTTPException(status_code=404, detail="team_invitation_not_found") from error
     except AlreadyConsumedInvitationError as error:
