@@ -15,7 +15,7 @@ class InvitationStatus(enum.StrEnum):
 
 class DeliveryStatus(enum.StrEnum):
     QUEUED = "queued"
-    ACCEPTED = "accepted_by_gmail"
+    ACCEPTED = "accepted_by_provider"
     FAILED = "failed"
 
 

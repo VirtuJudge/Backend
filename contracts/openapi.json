@@ -781,7 +781,7 @@
       "DeliveryStatus": {
         "enum": [
           "queued",
-          "accepted_by_gmail",
+          "accepted_by_provider",
           "failed"
         ],
         "title": "DeliveryStatus",
