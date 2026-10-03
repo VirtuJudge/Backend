@@ -4,6 +4,8 @@ from app.domain.user import User
 from tests.support.constants import MEMBER_ID, NOW, OUTSIDER_ID
 from tests.support.database import db_session_factory, seed_db
 
+pytest_plugins = ["tests.support.postgres_gate"]
+
 __all__ = ["db_session_factory", "seed_db", "member_user", "outsider_user"]
 
 

@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.domain.session_workflow.entities.analysis_attempt import AnalysisAttempt
 from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
+from app.domain.session_workflow.enums.session_status import SessionStatus
 from app.domain.session_workflow.exceptions import IdempotencyConflict, StaleEntityVersion
 from app.infrastructure.persistence.configurations import (
     AssetModel,
@@ -122,7 +123,7 @@ async def ensure_attempt_parents(
                 id=session_id,
                 project_id=project_id,
                 created_by=user_id,
-                status="READY",
+                status=SessionStatus.READY,
                 version=1,
                 created_at=now,
                 updated_at=now,

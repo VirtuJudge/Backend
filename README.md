@@ -256,10 +256,18 @@ Run the full repository gate before opening a pull request:
 
 ```bash
 uv sync --locked
+docker run --detach --rm --name virtujudge-test-postgres \
+  -e POSTGRES_USER=virtujudge_test -e POSTGRES_PASSWORD=virtujudge_test \
+  -e POSTGRES_DB=virtujudge_test -p 127.0.0.1:55432:5432 postgres:16-alpine
+until docker exec virtujudge-test-postgres pg_isready -U virtujudge_test; do sleep 1; done
+export ASSET_TEST_DATABASE_URL=postgresql+asyncpg://virtujudge_test:virtujudge_test@localhost:55432/virtujudge_test
 bash scripts/check.sh
+docker stop virtujudge-test-postgres
 ```
 
-It checks required repository files, Ruff linting and formatting, strict mypy, OpenAPI and AI-contract snapshots, and the full pytest suite. The test layout is intentional:
+Use a disposable test database: persistence and migration tests create and drop tables. The gate requires `ASSET_TEST_DATABASE_URL` with the `postgresql+asyncpg` driver and defaults `PROJECT_TEST_DATABASE_URL` to the same URL. CI provisions PostgreSQL 16 for both groups. Missing PostgreSQL configuration or any skipped test under `tests/integration/persistence/` fails the gate, including migration and concurrency checks. Focused `uv run pytest` commands can still use SQLite without PostgreSQL; add `--require-postgres` to enforce the full persistence gate.
+
+It checks required repository files, Ruff linting and formatting, strict mypy, OpenAPI and AI-contract snapshots, and the full pytest suite. The optional cross-repository erasure check requires the sibling AI-ML test environment and may skip in Backend-only CI. The test layout is intentional:
 
 | Test type | Focus |
 | --- | --- |

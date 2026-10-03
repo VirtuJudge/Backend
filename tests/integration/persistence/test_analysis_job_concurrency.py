@@ -4,7 +4,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.domain.session_workflow.entities.analysis_job import AnalysisJob
 from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
@@ -259,13 +259,14 @@ async def test_concurrent_callbacks_atomic_sequence_monotonicity(
 
 
 @pytest.mark.anyio
-async def test_postgres_concurrency_skip_locked_dispatch() -> None:
+async def test_postgres_concurrency_skip_locked_dispatch(
+    db_session_factory: async_sessionmaker[AsyncSession],
+) -> None:
     database_url = os.environ.get("ASSET_TEST_DATABASE_URL")
     if not database_url:
         pytest.skip("ASSET_TEST_DATABASE_URL not configured")
 
-    engine = create_async_engine(database_url)
-    session_factory = async_sessionmaker(engine, expire_on_commit=False)
+    session_factory = db_session_factory
 
     now = datetime.now(UTC)
 
@@ -340,7 +341,6 @@ async def test_postgres_concurrency_skip_locked_dispatch() -> None:
             await s2.commit()
 
     await asyncio.gather(worker_1(), worker_2())
-    await engine.dispose()
 
     # Disjoint sets: no overlap in claimed jobs
     assert set(claimed_worker_1).isdisjoint(set(claimed_worker_2))
