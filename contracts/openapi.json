@@ -10671,6 +10671,7 @@
     },
     "/api/v1/teams/{team_id}/invitations/{id}": {
       "delete": {
+        "description": "Revoke a pending invitation using its current ETag. If-Match is required; wildcard and weak tags cannot bypass version checking.",
         "operationId": "revoke_team_invitation_api_v1_teams__team_id__invitations__id__delete",
         "parameters": [
           {
@@ -10696,24 +10697,29 @@
           {
             "in": "header",
             "name": "If-Match",
-            "required": false,
+            "required": true,
             "schema": {
-              "anyOf": [
-                {
-                  "type": "string"
-                },
-                {
-                  "type": "null"
-                }
-              ],
-              "default": "*",
-              "title": "If-Match"
+              "minLength": 1,
+              "title": "If-Match",
+              "type": "string"
             }
           }
         ],
         "responses": {
           "204": {
             "description": "Successful Response"
+          },
+          "403": {
+            "description": "Team Owner authorization required"
+          },
+          "404": {
+            "description": "Invitation not found in this Team"
+          },
+          "409": {
+            "description": "Invitation already consumed or not pending"
+          },
+          "412": {
+            "description": "Invalid or stale ETag, or invitation changed concurrently"
           },
           "422": {
             "content": {

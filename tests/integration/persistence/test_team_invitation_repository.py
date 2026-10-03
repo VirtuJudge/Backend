@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
 )
 
+from app.application.services.team_invitation_service import InvitationPreconditionFailed
 from app.domain.idempotency import InvitationCreationIdempotency
 from app.domain.team_invitation import (
     DeliveryStatus,
@@ -392,10 +393,13 @@ async def test_update_rejects_stale_version(
 
     invitation.status = InvitationStatus.REVOKED
 
-    with pytest.raises(ValueError) as exc_info:
+    with pytest.raises(InvitationPreconditionFailed):
         await repository.update(invitation)
 
-    assert "Invitation with ID" in str(exc_info.value)
+    persisted = await repository.get_by_id(invitation.id)
+    assert persisted is not None
+    assert persisted.status == InvitationStatus.ACCEPTED
+    assert persisted.version == invitation.version + 1
 
 
 @pytest.mark.anyio
