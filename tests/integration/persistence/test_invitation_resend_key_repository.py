@@ -155,7 +155,7 @@ async def test_interrupted_resend_rolls_back_and_same_key_retry_returns_usable_t
         assert token
         assert resent.token_hash == hashlib.sha256(token.encode()).hexdigest()
         assert resent.token_hash != invitation.token_hash
-        assert resent.delivery_attempts == invitation.delivery_attempts + 1
+        assert resent.delivery_attempts == invitation.delivery_attempts
         assert resent.delivery_status == DeliveryStatus.QUEUED
         assert resent.version == invitation.version + 1
 

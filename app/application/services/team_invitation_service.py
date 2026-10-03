@@ -202,7 +202,6 @@ class TeamInvitationService:
 
         token = secrets.token_urlsafe(32)
         invitation.token_hash = hashlib.sha256(token.encode()).hexdigest()
-        invitation.delivery_attempts += 1
         invitation.delivery_status = DeliveryStatus.QUEUED
         record = InvitationResendIdempotency(
             id=uuid4(),
@@ -335,6 +334,10 @@ class TeamInvitationService:
             invitation.email,
             url,
         )
+
+        invitation.delivery_attempts += 1
+        invitation.delivery_status = DeliveryStatus.QUEUED
+        invitation = await self.repository.update(invitation)
 
         try:
             await asyncio.to_thread(

@@ -77,6 +77,7 @@ async def test_invitation_create_replay_never_sends_or_mutates_delivery(
         assert before is not None
         expected_status = DeliveryStatus.FAILED if delivery_fails else DeliveryStatus.ACCEPTED
         assert before.delivery_status == expected_status
+        assert before.delivery_attempts == 1
         message = sender.send.call_args.args[0]
         link = re.search(r"https://frontend\.example\.com/invitations/([\w-]+)", message.body)
         assert link is not None
@@ -89,6 +90,7 @@ async def test_invitation_create_replay_never_sends_or_mutates_delivery(
             assert replay.status_code == 201
             assert replay.json()["id"] == created.json()["id"]
             assert replay.json()["delivery_status"] == expected_status
+            assert replay.json()["delivery_attempts"] == 1
             assert replay.json()["version"] == before.version
             assert replay.headers["ETag"] == f'"{replay.json()["etag"]}"'
             assert "token" not in replay.json() and "token_hash" not in replay.json()
