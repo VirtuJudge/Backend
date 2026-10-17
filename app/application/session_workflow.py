@@ -160,6 +160,7 @@ class SessionWorkflow:
     async def _authorize_creator_or_owner(
         self, uow: UnitOfWork, session: PracticeSession, actor_id: UUID
     ) -> None:
+        await self._authorize_member(uow, session, actor_id)
         if session.created_by == actor_id:
             return
         if not await uow.projects.is_owner(session.project_id, actor_id):
