@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 import pytest
 from httpx import ASGITransport, AsyncClient
 from pydantic import SecretStr
-from sqlalchemy import event
+from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.application.ai_job_contracts import (
@@ -22,6 +22,7 @@ from app.application.session_workflow import SessionWorkflow
 from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
 from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
 from app.domain.session_workflow.enums.session_status import SessionStatus
+from app.domain.user import User
 from app.infrastructure.database import Base
 from app.infrastructure.persistence.configurations.asset_configuration import (
     AssetModel,
@@ -32,6 +33,7 @@ from app.infrastructure.persistence.configurations.session_workflow import (
     AnalysisAttemptModel,
     AnalysisJobModel,
     PracticeSessionModel,
+    SessionCommandIdempotencyModel,
     SessionManifestModel,
 )
 from app.infrastructure.persistence.configurations.team_configuration import TeamModel
@@ -44,6 +46,9 @@ from app.infrastructure.repositories.session_workflow.sqlalchemy_unit_of_work im
 )
 from app.main import create_app
 from app.settings import Settings
+from tests.support.fake_ai_job_queue import FakeAIJobQueue
+from tests.support.fake_session_notifications import FakeSessionNotifications
+from tests.support.fakes import FakeTokenVerifier
 
 SHARED_WORKER_SECRET = "test-worker-auth-secret-key-12345"
 
@@ -640,3 +645,120 @@ async def test_authenticated_callback_cancelled_and_superseded_ignored(
         assert db_attempt_2 is not None
         assert db_attempt_2.status == AnalysisAttemptStatus.QUEUED
         assert db_attempt_2.completed_at is None
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("command", ["cancel", "retries"])
+@pytest.mark.parametrize("actor", ["creator", "owner", "member", "removed", "removed_replay"])
+async def test_session_commands_require_current_creator_or_owner_membership(
+    test_env: tuple[async_sessionmaker[AsyncSession], AsyncClient, Settings],
+    command: str,
+    actor: str,
+) -> None:
+    session_maker, _, settings = test_env
+    retry = command == "retries"
+    session_id, _, _, creator_id = await _seed_session_and_job(
+        session_maker,
+        session_status=SessionStatus.FAILED if retry else SessionStatus.ANALYZING,
+        job_status=AnalysisJobStatus.FAILED if retry else AnalysisJobStatus.RUNNING,
+        attempt_status=AnalysisAttemptStatus.FAILED if retry else AnalysisAttemptStatus.RUNNING,
+    )
+    now = datetime.now(UTC)
+    owner_id, member_id = uuid4(), uuid4()
+    async with session_maker() as db:
+        creator_membership = await db.scalar(
+            select(TeamMemberModel).where(TeamMemberModel.user_id == creator_id)
+        )
+        assert creator_membership is not None
+        creator_membership.role = "member"
+        team_id = creator_membership.team_id
+        for user_id, role in [(owner_id, "owner"), (member_id, "member")]:
+            db.add(UserModel(id=user_id, issuer="test", subject=f"sub-{user_id}", created_at=now))
+            await db.flush()
+            db.add(TeamMemberModel(team_id=team_id, user_id=user_id, role=role, joined_at=now))
+        await db.commit()
+
+    user = User(
+        id=creator_id,
+        issuer="test",
+        subject=f"sub-{creator_id}",
+        email=None,
+        display_name="Creator",
+        created_at=now,
+    )
+    verifier = FakeTokenVerifier(user)
+    queue = FakeAIJobQueue()
+    app = create_app(settings)
+    app.state.token_verifier = verifier
+    app.state.ai_job_queue = queue
+    app.state.session_notifications = FakeSessionNotifications()
+    path = f"/api/v1/practice-sessions/{session_id}/{command}"
+    key = "session-command-82"
+
+    async with (
+        app.router.lifespan_context(app),
+        AsyncClient(
+            transport=ASGITransport(app=app),
+            base_url="http://test",
+            headers={"Authorization": "Bearer test-identity-token"},
+        ) as client,
+    ):
+        unauthenticated = await client.post(path, headers={"Authorization": ""})
+        assert unauthenticated.status_code == 401
+        if actor == "removed_replay":
+            accepted = await client.post(path, headers={"Idempotency-Key": key})
+            assert accepted.status_code == 202, accepted.text
+            replay = await client.post(path, headers={"Idempotency-Key": key})
+            assert replay.status_code == 202
+            assert replay.json()["id"] == accepted.json()["id"]
+
+        if actor.startswith("removed"):
+            verifier.user = User(
+                id=owner_id,
+                issuer="test",
+                subject=f"sub-{owner_id}",
+                email=None,
+                display_name="Owner",
+                created_at=now,
+            )
+            removed = await client.delete(f"/api/v1/teams/{team_id}/members/{creator_id}")
+            assert removed.status_code == 204, removed.text
+            verifier.user = user
+            read = await client.get(f"/api/v1/practice-sessions/{session_id}")
+            assert read.status_code == 403
+        elif actor in {"owner", "member"}:
+            actor_id = owner_id if actor == "owner" else member_id
+            verifier.user = User(
+                id=actor_id,
+                issuer="test",
+                subject=f"sub-{actor_id}",
+                email=None,
+                display_name=actor,
+                created_at=now,
+            )
+
+        tables = [
+            PracticeSessionModel.__table__,
+            AnalysisAttemptModel.__table__,
+            AnalysisJobModel.__table__,
+            SessionCommandIdempotencyModel.__table__,
+        ]
+        async with session_maker() as db:
+            before = [(await db.execute(select(table))).mappings().all() for table in tables]
+        enqueued_before = queue.count
+
+        for request_key in [key, "new-session-command-82"]:
+            response = await client.post(path, headers={"Idempotency-Key": request_key})
+            expected_status = 202 if actor in {"creator", "owner"} else 403
+            assert response.status_code == expected_status, response.text
+            if expected_status == 403:
+                assert response.headers["content-type"] == "application/problem+json"
+                assert response.json()["code"] == "forbidden"
+            else:
+                break
+
+        if actor not in {"creator", "owner"}:
+            async with session_maker() as db:
+                after = [(await db.execute(select(table))).mappings().all() for table in tables]
+            assert after == before
+            assert queue.count == enqueued_before
