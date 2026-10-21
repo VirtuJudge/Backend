@@ -1097,6 +1097,10 @@ class AIJobs:
         is_older_attempt = (
             current_attempt_num is not None and job.analysis_attempt < current_attempt_num
         )
+        is_failed_attempt = ancestry is not None and (
+            ancestry.attempt.status == AnalysisAttemptStatus.FAILED
+            or ancestry.session.status == SessionStatus.FAILED
+        )
 
         if is_cancelled and update.status in {
             AIWorkerUpdateStatus.PROGRESS,
@@ -1114,7 +1118,7 @@ class AIJobs:
             await self._uow.commit()
             return job
 
-        if is_older_attempt:
+        if is_older_attempt or is_failed_attempt:
             job.last_update_sequence = update.sequence
             job.updated_at = effective_now
             if job.status not in {
@@ -1150,6 +1154,9 @@ class AIJobs:
         tracks_attempt = job.job_type in (
             AIJobType.ANALYZE_SESSION.value,
             AIJobType.GENERATE_REPORT.value,
+        ) or (
+            job.job_type == AIJobType.ANALYZE_ANSWER.value
+            and update.status == AIWorkerUpdateStatus.FAILED
         )
         initial_attempt_version = 0
         attempts_repo = getattr(self._uow, "attempts", None)
@@ -1265,6 +1272,11 @@ class AIJobs:
                     attempt.failure_message = safe_msg
                     attempt.failed_at = occurred_at
                     attempt.completed_at = occurred_at
+                if ancestry is not None:
+                    session_to_update = ancestry.session
+                    initial_session_version = session_to_update.version
+                    session_to_update.transition_to(SessionStatus.FAILED)
+                    session_to_update.updated_at = occurred_at
 
             elif update.status == AIWorkerUpdateStatus.CANCELLED:
                 job.status = AnalysisJobStatus.CANCELLED
@@ -1400,6 +1412,18 @@ class AIJobs:
             raise
 
         await self._publish(progress_notification)
+        if update.status == AIWorkerUpdateStatus.FAILED and session_to_update is not None:
+            completion_notification = PendingSessionNotification(
+                event_name=NotificationEventName.PRACTICE_SESSION_UPDATED,
+                practice_session_id=str(session_to_update.id),
+                occurred_at=occurred_at,
+                trace_id=update.trace_id,
+                payload={
+                    "state": session_to_update.status.value,
+                    "current_attempt": job.analysis_attempt,
+                    "version": session_to_update.version,
+                },
+            )
         await self._publish(completion_notification)
 
         return job

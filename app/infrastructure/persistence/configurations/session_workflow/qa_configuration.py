@@ -18,7 +18,7 @@ class QARoundModel(Base):
 
     id: Mapped[UUID] = mapped_column(primary_key=True)
     practice_session_id: Mapped[UUID] = mapped_column(
-        ForeignKey("practice_sessions.id", ondelete="CASCADE"), unique=True, nullable=False
+        ForeignKey("practice_sessions.id", ondelete="CASCADE"), index=True, nullable=False
     )
     analysis_attempt_id: Mapped[UUID] = mapped_column(
         ForeignKey("analysis_attempts.id", ondelete="CASCADE"), unique=True, nullable=False
