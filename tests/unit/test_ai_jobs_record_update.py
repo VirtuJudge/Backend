@@ -1,6 +1,7 @@
 import hashlib
 import json
-from datetime import UTC, datetime
+from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from typing import Any, Literal, cast
 from unittest.mock import AsyncMock, MagicMock
 from uuid import NAMESPACE_URL, UUID, uuid4, uuid5
@@ -1001,8 +1002,10 @@ async def test_completed_invalid_artifact_object_key_scope_mismatch() -> None:
 
 
 @pytest.mark.asyncio
-async def test_completed_stale_attempt_acknowledged_and_ignored() -> None:
+@pytest.mark.parametrize("job_type", ["analyze_session", "analyze_answer"])
+async def test_completed_stale_attempt_acknowledged_and_ignored(job_type: str) -> None:
     job, attempt, uow, service = _build_attempt_and_job(
+        job_type=job_type,
         job_status=AnalysisJobStatus.RUNNING,
         attempt_status=AnalysisAttemptStatus.RUNNING,
         last_update_sequence=1,
@@ -1026,7 +1029,18 @@ async def test_completed_stale_attempt_acknowledged_and_ignored() -> None:
     )
     await uow.attempts.create(newer_attempt)
 
-    update = _make_update(AIWorkerUpdateStatus.COMPLETED, sequence=2)
+    job.answer_id = uuid4() if job_type == "analyze_answer" else None
+    uow.qa.update_answer = AsyncMock()
+    payload = (
+        AnswerAnalysisCompletedPayload(
+            answer_id=str(job.answer_id),
+            transcript_artifact_id="ignored-transcript",
+            assessment_artifact_id="ignored-assessment",
+        )
+        if job_type == "analyze_answer"
+        else _valid_completed_session_payload()
+    )
+    update = _make_update(AIWorkerUpdateStatus.COMPLETED, sequence=2, payload=payload)
 
     result = await service.record_update(job.id, update)
     assert result is not None
@@ -1035,11 +1049,14 @@ async def test_completed_stale_attempt_acknowledged_and_ignored() -> None:
     assert newer_attempt.completed_at is None
     assert result.completed_result is None
     assert uow.commit_count == 1
+    uow.qa.update_answer.assert_not_awaited()
 
 
 @pytest.mark.asyncio
-async def test_completed_cancelled_attempt_acknowledged_and_ignored() -> None:
+@pytest.mark.parametrize("job_type", ["analyze_session", "analyze_answer"])
+async def test_completed_cancelled_attempt_acknowledged_and_ignored(job_type: str) -> None:
     job, attempt, uow, service = _build_attempt_and_job(
+        job_type=job_type,
         job_status=AnalysisJobStatus.RUNNING,
         attempt_status=AnalysisAttemptStatus.CANCELLED,
         last_update_sequence=1,
@@ -1072,7 +1089,18 @@ async def test_completed_cancelled_attempt_acknowledged_and_ignored() -> None:
     assert isinstance(uow.jobs, FakeAnalysisJobRepository)
     uow.jobs.set_ancestry_context(job.id, updated_ancestry)
 
-    update = _make_update(AIWorkerUpdateStatus.COMPLETED, sequence=2)
+    job.answer_id = uuid4() if job_type == "analyze_answer" else None
+    uow.qa.update_answer = AsyncMock()
+    payload = (
+        AnswerAnalysisCompletedPayload(
+            answer_id=str(job.answer_id),
+            transcript_artifact_id="ignored-transcript",
+            assessment_artifact_id="ignored-assessment",
+        )
+        if job_type == "analyze_answer"
+        else _valid_completed_session_payload()
+    )
+    update = _make_update(AIWorkerUpdateStatus.COMPLETED, sequence=2, payload=payload)
 
     result = await service.record_update(job.id, update)
     assert result is not None
@@ -1081,6 +1109,7 @@ async def test_completed_cancelled_attempt_acknowledged_and_ignored() -> None:
     assert result.last_update_sequence == 2
     assert result.completed_result is None
     assert uow.commit_count == 1
+    uow.qa.update_answer.assert_not_awaited()
 
 
 @pytest.mark.asyncio
@@ -1362,31 +1391,96 @@ async def test_current_answer_result_adds_grounded_follow_up() -> None:
 
 
 @pytest.mark.asyncio
-async def test_stale_answer_result_does_not_add_follow_up() -> None:
+@pytest.mark.parametrize(
+    ("newer_status", "complete_newer_first"),
+    [
+        pytest.param(AnswerStatus.SUBMITTED, False, id="delayed-after-newer-submit"),
+        pytest.param(AnswerStatus.SUBMITTED, True, id="newer-completes-first"),
+        pytest.param(AnswerStatus.SKIPPED, False, id="delayed-after-newer-skip"),
+    ],
+)
+async def test_older_answer_result_saves_artifacts_without_adding_follow_up(
+    newer_status: AnswerStatus, complete_newer_first: bool
+) -> None:
     job, attempt, uow, service = _build_attempt_and_job(
         job_status=AnalysisJobStatus.RUNNING,
-        attempt_status=AnalysisAttemptStatus.COMPLETED,
+        attempt_status=AnalysisAttemptStatus.RUNNING,
         last_update_sequence=1,
         job_type="analyze_answer",
     )
-    answer_id = uuid4()
-    job.answer_id = answer_id
-    older = MagicMock(id=answer_id, submitted_at=job.created_at)
-    newer = MagicMock(id=uuid4(), submitted_at=job.updated_at.replace(minute=1))
-    round_ = MagicMock(
-        id=uuid4(), analysis_attempt_id=attempt.id, current_question_id=uuid4(), version=2
+    round_ = QARound(
+        id=uuid4(),
+        practice_session_id=job.practice_session_id,
+        analysis_attempt_id=attempt.id,
+        state=QARoundState.IN_PROGRESS,
+        current_question_id=uuid4(),
+        follow_up_count=0,
+        version=4,
+        created_at=job.created_at,
+        updated_at=job.updated_at,
     )
-    question = MagicMock(position=1)
+    question = Question(
+        id=uuid4(),
+        qa_round_id=round_.id,
+        practice_session_id=job.practice_session_id,
+        kind=QuestionKind.PRIMARY,
+        position=1,
+        text="What evidence supports adoption?",
+        reason="The claim is unsupported.",
+        rubric_dimension="business_reasoning",
+        evidence_ids=["ev-old"],
+        parent_answer_id=None,
+        state=QuestionState.ANSWERED,
+        created_at=job.created_at,
+    )
+    older = Answer(
+        id=uuid4(),
+        qa_round_id=round_.id,
+        question_id=question.id,
+        answered_by=uuid4(),
+        status=AnswerStatus.SUBMITTED,
+        audio_asset_version_id=uuid4(),
+        duration_ms=10_000,
+        transcript_artifact_id=None,
+        assessment_artifact_id=None,
+        submitted_at=job.created_at,
+        created_at=job.created_at,
+        updated_at=job.created_at,
+    )
+    newer = replace(
+        older,
+        id=uuid4(),
+        question_id=uuid4(),
+        status=newer_status,
+        audio_asset_version_id=None if newer_status is AnswerStatus.SKIPPED else uuid4(),
+        submitted_at=job.created_at + timedelta(minutes=1),
+        updated_at=job.created_at + timedelta(minutes=1),
+    )
+    job.answer_id = older.id
+    newer_job = replace(job, id=uuid4(), answer_id=newer.id, payload=dict(job.payload or {}))
+    if newer_status is AnswerStatus.SUBMITTED:
+        await uow.jobs.create(newer_job)
+    answers = {answer.id: answer for answer in [older, newer]}
+    newer_question = replace(
+        question,
+        id=newer.question_id,
+        position=2,
+        state=QuestionState.SKIPPED
+        if newer_status is AnswerStatus.SKIPPED
+        else QuestionState.ANSWERED,
+    )
+    questions = {item.id: item for item in [question, newer_question]}
     uow.qa = MagicMock()
-    uow.qa.get_answer = AsyncMock(return_value=older)
-    uow.qa.get_question = AsyncMock(return_value=question)
+    uow.qa.get_answer = AsyncMock(side_effect=lambda answer_id: answers[answer_id])
+    uow.qa.get_question = AsyncMock(side_effect=lambda question_id: questions[question_id])
     uow.qa.get_round_for_update = AsyncMock(return_value=round_)
     uow.qa.list_answers = AsyncMock(return_value=[older, newer])
+    uow.qa.list_questions = AsyncMock(return_value=list(questions.values()))
     uow.qa.update_answer = AsyncMock()
     uow.qa.create_questions = AsyncMock()
     uow.qa.update_round = AsyncMock()
-    payload = AnswerAnalysisCompletedPayload(
-        answer_id=str(answer_id),
+    older_payload = AnswerAnalysisCompletedPayload(
+        answer_id=str(older.id),
         transcript_artifact_id="transcript-old",
         assessment_artifact_id="assessment-old",
         follow_up=FollowUpQuestion(
@@ -1396,16 +1490,53 @@ async def test_stale_answer_result_does_not_add_follow_up() -> None:
             evidence_ids=["ev-old"],
         ),
     )
-
-    await service.record_update(
-        job.id,
-        _make_update(AIWorkerUpdateStatus.COMPLETED, sequence=2, payload=payload),
+    newer_payload = AnswerAnalysisCompletedPayload(
+        answer_id=str(newer.id),
+        transcript_artifact_id="transcript-new",
+        assessment_artifact_id="assessment-new",
     )
+    completions = [(job, older_payload)]
+    if newer_status is AnswerStatus.SUBMITTED:
+        completions.append((newer_job, newer_payload))
+    if complete_newer_first:
+        completions.reverse()
 
+    for completed_job, payload in completions:
+        await service.record_update(
+            completed_job.id,
+            _make_update(AIWorkerUpdateStatus.COMPLETED, sequence=2, payload=payload),
+        )
+        assert completed_job.answer_id is not None
+        answer = answers[completed_job.answer_id]
+        uow.qa.update_answer.assert_any_await(answer)
+        assert answer.transcript_artifact_id == payload.transcript_artifact_id
+        assert answer.assessment_artifact_id == payload.assessment_artifact_id
+        assert answer.updated_at == datetime(2026, 9, 14, 12, 5, tzinfo=UTC)
+        assert completed_job.status is AnalysisJobStatus.COMPLETED
+
+    for sequence in (1, 2):
+        await service.record_update(
+            job.id,
+            _make_update(
+                AIWorkerUpdateStatus.COMPLETED,
+                sequence=sequence,
+                payload=older_payload.model_copy(update={"transcript_artifact_id": "duplicate"}),
+            ),
+        )
+
+    assert older.transcript_artifact_id == "transcript-old"
+    assert older.assessment_artifact_id == "assessment-old"
+    if newer_status is AnswerStatus.SKIPPED:
+        assert newer.transcript_artifact_id is None
+        assert newer.assessment_artifact_id is None
+    else:
+        assert newer.transcript_artifact_id == "transcript-new"
+        assert newer.assessment_artifact_id == "assessment-new"
+    assert uow.qa.update_answer.await_count == len(completions)
     uow.qa.create_questions.assert_not_awaited()
     uow.qa.update_round.assert_not_awaited()
-    uow.qa.update_answer.assert_not_awaited()
-    assert job.status is AnalysisJobStatus.COMPLETED
+    assert round_.version == 4
+    assert round_.follow_up_count == 0
 
 
 @pytest.mark.asyncio

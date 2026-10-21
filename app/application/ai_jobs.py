@@ -823,15 +823,6 @@ class AIJobs:
         round_ = await repository.get_round_for_update(answer.qa_round_id)
         if round_ is None or round_.analysis_attempt_id != job.attempt_id:
             return None
-        finalized = [item for item in await repository.list_answers(round_.id) if item.is_final]
-        latest = max(
-            finalized,
-            key=lambda item: item.submitted_at or item.updated_at,
-            default=None,
-        )
-        if latest is None or latest.id != answer.id:
-            return None
-
         parent_question = await repository.get_question(answer.question_id)
         if parent_question is None:
             return None
@@ -846,6 +837,15 @@ class AIJobs:
         answer.assessment_artifact_id = payload.assessment_artifact_id
         answer.updated_at = occurred_at
         await repository.update_answer(answer)
+
+        finalized = [item for item in await repository.list_answers(round_.id) if item.is_final]
+        latest = max(
+            finalized,
+            key=lambda item: item.submitted_at or item.updated_at,
+            default=None,
+        )
+        if latest is None or latest.id != answer.id:
+            return None
 
         expected_version = round_.version
         if follow_up is None or round_.follow_up_count >= 2:
