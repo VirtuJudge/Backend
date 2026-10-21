@@ -38,6 +38,9 @@ from app.infrastructure.auth.provider import create_token_verifier
 from app.infrastructure.auth.worker_auth import create_worker_auth_verifier
 from app.infrastructure.database import create_database_engine
 from app.infrastructure.database import get_session as infrastructure_get_session
+from app.infrastructure.diarization.default_diarization_reader import (
+    DefaultDiarizationResultReader,
+)
 from app.infrastructure.documents.document_verifier import DocumentVerifier
 from app.infrastructure.mail import create_mail_sender
 from app.infrastructure.media.ffmpeg_verifier import FFmpegMediaVerifier
@@ -261,6 +264,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     application.state.get_job_repository_factory = get_job_repository_factory
     application.state.get_project_repository_factory = get_project_repository_factory
     application.state.get_unit_of_work_repository_factory = get_unit_of_work_repository_factory
+    application.state.diarization_reader_factory = lambda session: DefaultDiarizationResultReader(
+        session
+    )
     redis = Redis.from_url(
         resolved_settings.redis_url,
         decode_responses=True,

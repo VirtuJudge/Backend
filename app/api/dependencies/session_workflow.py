@@ -2,15 +2,19 @@ from fastapi import Depends, Request
 
 from app.application.ports.ai_job_queue import AIJobQueuePort
 from app.application.ports.session_notification import SessionNotificationPort
+from app.application.ports.session_practice.diarization_result_reader import (
+    DiarizationResultReader,
+)
 from app.application.ports.session_practice.unit_of_work_repository import UnitOfWork
 from app.application.session_workflow import SessionWorkflow
 
-from .services import get_unit_of_work_repository
+from .services import get_diarization_reader, get_unit_of_work_repository
 
 
 def get_session_workflow(
     request: Request,
     uow: UnitOfWork = Depends(get_unit_of_work_repository),
+    diarization_reader: DiarizationResultReader = Depends(get_diarization_reader),
 ) -> SessionWorkflow:
     queue: AIJobQueuePort | None = getattr(request.app.state, "ai_job_queue", None)
     notifications: SessionNotificationPort | None = getattr(
@@ -25,4 +29,5 @@ def get_session_workflow(
         storage=storage,
         trace_id=getattr(request.state, "correlation_id", "unknown"),
         pdf_generator=pdf_generator,
+        diarization_reader=diarization_reader,
     )

@@ -75,6 +75,7 @@ class SqlAlchemySpeakerMappingRepository(SpeakerMappingRepository):
         except IntegrityError as exc:
             await self._session.rollback()
             raise IdempotencyConflict("Speaker mapping already exists or conflict.") from exc
+        await self._session.refresh(model, ["member"])
         return to_domain(model)
 
     async def update(
