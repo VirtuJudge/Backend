@@ -12,6 +12,9 @@ from app.application.ports.session_practice.analysis_attempt_repository import (
 from app.application.ports.session_practice.analysis_job_repository import (
     AnalysisJobRepository,
 )
+from app.application.ports.session_practice.diarization_result_reader import (
+    DiarizationResultReader,
+)
 from app.application.ports.session_practice.session_manifest_repository import (
     SessionManifestRepository,
 )
@@ -123,6 +126,13 @@ def get_unit_of_work_repository(
     session: Any = Depends(get_session),
 ) -> Any:
     return cast(Any, request.app.state.get_unit_of_work_repository_factory(session))
+
+
+def get_diarization_reader(
+    request: Request,
+    session: Any = Depends(get_session),
+) -> DiarizationResultReader:
+    return cast(DiarizationResultReader, request.app.state.diarization_reader_factory(session))
 
 
 def get_ai_jobs(
