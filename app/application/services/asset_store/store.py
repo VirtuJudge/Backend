@@ -1,4 +1,3 @@
-import contextlib
 import logging
 import tempfile
 from datetime import UTC, datetime, timedelta
@@ -75,6 +74,9 @@ class AssetStore:
         if asset is None or asset.state in ("deleting", "deleted"):
             raise AssetNotFound
         await self._authorize_project(asset.project_id, user_id)
+        asset = await self.repository.get_asset(asset_id)
+        if asset is None or asset.state in ("deleting", "deleted"):
+            raise AssetNotFound
         return asset
 
     async def _reject_version(
@@ -335,7 +337,7 @@ class AssetStore:
             version,
             current_ver,
         ) = await self.repository.get_asset_and_version_for_completion(asset_id, version_id)
-        if locked_asset is None or version is None:
+        if locked_asset is None or version is None or locked_asset.state in ("deleting", "deleted"):
             raise AssetNotFound
 
         if version.state == "verified":
@@ -487,17 +489,6 @@ class AssetStore:
 
     async def get_asset(self, asset_id: UUID, user_id: UUID) -> Asset:
         return await self._authorize_asset(asset_id, user_id)
-
-    async def delete_asset(self, asset_id: UUID, user_id: UUID) -> None:
-        await self._authorize_asset(asset_id, user_id)
-        versions, _ = await self.repository.list_versions(asset_id, cursor=None, limit=100)
-        for version in versions:
-            if version.storage_key:
-                with contextlib.suppress(Exception):
-                    await self.storage.delete_object(version.storage_key)
-        deleted = await self.repository.delete_asset(asset_id)
-        if not deleted:
-            raise AssetNotFound
 
     async def list_assets(
         self,

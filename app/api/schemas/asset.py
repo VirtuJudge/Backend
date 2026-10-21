@@ -85,3 +85,9 @@ class DownloadIntentResponse(BaseModel):
     media_type: str
     size_bytes: int
     file_name: str
+
+
+class AssetDeleteRequest(BaseModel):
+    confirmation: str = Field(
+        min_length=1, description="Must exactly match the current asset file_name."
+    )

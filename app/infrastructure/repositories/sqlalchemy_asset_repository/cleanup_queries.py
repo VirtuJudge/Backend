@@ -21,7 +21,9 @@ async def find_cleanup_candidate_versions(
 ) -> list[tuple[UUID, UUID]]:
     stmt = (
         select(AssetVersionModel.asset_id, AssetVersionModel.id)
+        .join(AssetModel, AssetModel.id == AssetVersionModel.asset_id)
         .where(
+            AssetModel.state != "deleting",
             AssetVersionModel.state.in_(["pending_upload", "rejected", "deleting", "deleted"]),
             AssetVersionModel.upload_expires_at <= cutoff_expires_at,
             AssetVersionModel.created_at <= cutoff_created_at,
@@ -60,7 +62,7 @@ async def claim_version_for_cleanup(
         .execution_options(populate_existing=True)
     )
     asset_model = await session.scalar(asset_stmt)
-    if asset_model is None:
+    if asset_model is None or asset_model.state == "deleting":
         return None
 
     ver_stmt = (
@@ -111,7 +113,7 @@ async def record_cleanup_failure(
         .execution_options(populate_existing=True)
     )
     asset_model = await session.scalar(asset_stmt)
-    if asset_model is None:
+    if asset_model is None or asset_model.state == "deleting":
         return
 
     ver_stmt = (
@@ -146,7 +148,7 @@ async def finalize_version_cleanup(
         .execution_options(populate_existing=True)
     )
     asset_model = await session.scalar(asset_stmt)
-    if asset_model is None:
+    if asset_model is None or asset_model.state == "deleting":
         return
 
     ver_stmt = (

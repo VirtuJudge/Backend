@@ -19,7 +19,9 @@ from app.settings import Settings
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("scope", ["project", "team_project", "practice_session"])
+@pytest.mark.parametrize(
+    "scope", ["project", "team_project", "practice_session", "asset", "project_asset"]
+)
 async def test_deletion_returns_erasure_and_location(scope: str) -> None:
     app = create_app(Settings(app_env="test", database_url="sqlite+aiosqlite:///:memory:"))
     now = datetime.now(UTC)
@@ -33,7 +35,10 @@ async def test_deletion_returns_erasure_and_location(scope: str) -> None:
     )
     target = uuid4()
     team_id = uuid4()
-    erasure_scope = "project" if scope == "team_project" else scope
+    project_id = uuid4()
+    erasure_scope = (
+        "project" if scope == "team_project" else ("asset" if scope == "project_asset" else scope)
+    )
     erasure = Erasure(
         uuid4(), team_id, erasure_scope, target, user.id, now, now + timedelta(hours=24)
     )
@@ -49,33 +54,42 @@ async def test_deletion_returns_erasure_and_location(scope: str) -> None:
         if scope == "team_project"
         else f"/api/v1/projects/{target}"
         if scope == "project"
+        else f"/api/v1/projects/{project_id}/assets/{target}"
+        if scope == "project_asset"
+        else f"/api/v1/assets/{target}"
+        if scope == "asset"
         else f"/api/v1/practice-sessions/{target}"
+    )
+    confirmation_value = (
+        "Synthetic project"
+        if erasure_scope == "project"
+        else ("synthetic.pdf" if erasure_scope == "asset" else None)
     )
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.request(
             "DELETE",
             path,
             headers={"Idempotency-Key": "key"},
-            json={"confirmation": "Synthetic project"} if erasure_scope == "project" else None,
+            json={"confirmation": confirmation_value} if confirmation_value is not None else None,
         )
     assert response.status_code == 202
     assert response.json()["id"] == str(erasure.id)
     assert response.headers["Location"] == f"/api/v1/erasure-requests/{erasure.id}"
     expected = (
-        (erasure_scope, target, user.id, "key", "Synthetic project")
-        if erasure_scope == "project"
+        (erasure_scope, target, user.id, "key", confirmation_value)
+        if confirmation_value is not None
         else (scope, target, user.id, "key")
     )
-    parent = (
-        {"expected_team_id": team_id if scope == "team_project" else None}
-        if erasure_scope == "project"
-        else {}
-    )
+    parent: dict[str, object] = {}
+    if erasure_scope == "project":
+        parent = {"expected_team_id": team_id if scope == "team_project" else None}
+    elif scope == "project_asset":
+        parent = {"expected_project_id": project_id}
     workflow.request.assert_awaited_once_with(*expected, **parent)
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("scope", ["project", "practice_session"])
+@pytest.mark.parametrize("scope", ["project", "practice_session", "asset"])
 @pytest.mark.parametrize(
     "error, code",
     [
@@ -105,10 +119,16 @@ async def test_deletion_errors_are_safe(scope: str, error: Exception, code: int)
     path = (
         f"/api/v1/projects/{target}"
         if scope == "project"
+        else f"/api/v1/assets/{target}"
+        if scope == "asset"
         else f"/api/v1/practice-sessions/{target}"
     )
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        body = {"confirmation": "Synthetic project"} if scope == "project" else None
+        body = (
+            {"confirmation": "Synthetic project"}
+            if scope == "project"
+            else ({"confirmation": "synthetic.pdf"} if scope == "asset" else None)
+        )
         response = await client.request(
             "DELETE", path, headers={"Idempotency-Key": "key"}, json=body
         )
@@ -119,13 +139,13 @@ async def test_deletion_errors_are_safe(scope: str, error: Exception, code: int)
 
 
 @pytest.mark.anyio
-@pytest.mark.parametrize("team_scoped", [False, True])
+@pytest.mark.parametrize("endpoint", ["project", "team_project", "asset", "project_asset"])
 @pytest.mark.parametrize(
     "body",
     [None, {}, {"confirmation": None}, {"confirmation": ""}, {"confirmation": 123}],
 )
 async def test_project_deletion_requires_confirmation_body(
-    team_scoped: bool, body: dict[str, object] | None
+    endpoint: str, body: dict[str, object] | None
 ) -> None:
     app = create_app(Settings(app_env="test", database_url="sqlite+aiosqlite:///:memory:"))
     user = User(
@@ -142,11 +162,15 @@ async def test_project_deletion_requires_confirmation_body(
     app.dependency_overrides[get_project_service] = lambda: ProjectService(
         AsyncMock(spec=ProjectRepository), AsyncMock(spec=TeamRepository), workflow
     )
-    target, team_id = uuid4(), uuid4()
+    target, team_id, project_id = uuid4(), uuid4(), uuid4()
     path = (
         f"/api/v1/teams/{team_id}/projects/{target}"
-        if team_scoped
+        if endpoint == "team_project"
         else f"/api/v1/projects/{target}"
+        if endpoint == "project"
+        else f"/api/v1/projects/{project_id}/assets/{target}"
+        if endpoint == "project_asset"
+        else f"/api/v1/assets/{target}"
     )
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
         response = await client.request(

@@ -99,7 +99,7 @@ class FakeAssetRepository(AssetRepository):
         idempotency: AssetUploadIdempotency,
     ) -> tuple[Asset, AssetVersion]:
         asset = self.assets.get(asset_id)
-        if asset is None:
+        if asset is None or asset.state in ("deleting", "deleted"):
             raise AssetNotFound
         existing_idempotency = self.idempotency.get(
             (idempotency.user_id, idempotency.project_id, idempotency.operation, idempotency.key)
@@ -171,8 +171,9 @@ class FakeAssetRepository(AssetRepository):
             a
             for a in self.assets.values()
             if a.project_id == project_id
+            and a.state not in ("deleting", "deleted")
             and (kind is None or a.kind == kind)
-            and (a.state == state if state is not None else a.state != "deleted")
+            and (state is None or a.state == state)
         ]
         items.sort(key=lambda x: str(x.id))
         if cursor is not None:
