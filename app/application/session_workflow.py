@@ -351,7 +351,8 @@ class SessionWorkflow:
             await self._authorize_member(uow, session, actor_id)
             round_ = await uow.qa.get_round_for_update(question.qa_round_id)
             if (
-                round_ is None
+                session.status != SessionStatus.QUESTIONS_IN_PROGRESS
+                or round_ is None
                 or round_.current_question_id != question.id
                 or question.state is not QuestionState.ACTIVE
             ):
@@ -432,7 +433,10 @@ class SessionWorkflow:
                 ):
                     return answer
                 raise AnswerAlreadyFinalized("A submitted or skipped Answer is immutable.")
-            if round_.current_question_id != question.id:
+            if (
+                session.status != SessionStatus.QUESTIONS_IN_PROGRESS
+                or round_.current_question_id != question.id
+            ):
                 raise QuestionNotActive("Only the active question accepts an Answer.")
             if answer.audio_asset_version_id is None:
                 raise UnverifiedAsset("Answer audio has not been uploaded.")
@@ -545,7 +549,10 @@ class SessionWorkflow:
                 ):
                     return existing
                 raise AnswerAlreadyFinalized("A submitted or skipped Answer is immutable.")
-            if round_.current_question_id != question.id:
+            if (
+                session.status != SessionStatus.QUESTIONS_IN_PROGRESS
+                or round_.current_question_id != question.id
+            ):
                 raise QuestionNotActive("Only the active question can be skipped.")
             questions = await uow.qa.list_questions(round_.id)
             next_question = next(

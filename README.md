@@ -240,6 +240,8 @@ Invitation delivery now reports `accepted_by_provider` for Gmail and Resend. Thi
 
 ## Database migrations
 
+Migration `4e5f6a7b8c9d` enables a Q&A Round per Analysis Attempt and repairs active sessions whose latest attempt is already failed. Apply it before deploying worker-failure recovery. Failed session, answer, and report jobs now fail the current session and attempt atomically. A creator or Team Owner can retry with a new idempotency key, starting analysis and Q&A again from the frozen manifest while keeping earlier history. Roll back application code only before multiple rounds exist for a session; afterward, preserve the schema and prefer a forward fix. The migration refuses a downgrade that would require deleting Q&A history. Repaired failure states are retained on downgrade.
+
 Backend-owned product tables use one Alembic history. Generate migrations from model changes, inspect the result, and test both directions before merging:
 
 ```bash

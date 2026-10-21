@@ -8,6 +8,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.application.ports.session_practice.qa_repository import QARepository
 from app.domain.session_workflow.entities.qa_round import Answer, QARound, Question
 from app.domain.session_workflow.exceptions import StaleEntityVersion
+from app.infrastructure.persistence.configurations.session_workflow import AnalysisAttemptModel
 from app.infrastructure.persistence.configurations.session_workflow.qa_configuration import (
     AnswerModel,
     QARoundModel,
@@ -70,8 +71,18 @@ class SqlAlchemyQARepository(QARepository):
         self._session = session
 
     async def get_round_by_session(self, session_id: UUID) -> QARound | None:
+        latest_attempt = (
+            select(AnalysisAttemptModel.id)
+            .where(AnalysisAttemptModel.session_id == session_id)
+            .order_by(AnalysisAttemptModel.attempt_number.desc())
+            .limit(1)
+            .scalar_subquery()
+        )
         model = await self._session.scalar(
-            select(QARoundModel).where(QARoundModel.practice_session_id == session_id)
+            select(QARoundModel).where(
+                QARoundModel.practice_session_id == session_id,
+                QARoundModel.analysis_attempt_id == latest_attempt,
+            )
         )
         return _round(model) if model is not None else None
 
@@ -79,7 +90,10 @@ class SqlAlchemyQARepository(QARepository):
         model = await self._session.scalar(
             select(QARoundModel).where(QARoundModel.id == round_id).with_for_update()
         )
-        return _round(model) if model is not None else None
+        if model is None:
+            return None
+        current = await self.get_round_by_session(model.practice_session_id)
+        return current if current is not None and current.id == model.id else None
 
     async def get_question(self, question_id: UUID) -> Question | None:
         model = await self._session.get(QuestionModel, question_id)

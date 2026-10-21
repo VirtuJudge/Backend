@@ -342,7 +342,7 @@ async def test_skipping_final_question_transitions_session_to_report_generating(
         idempotency_key="skip-2",
     )
     # Skip final Q3
-    await workflow.skip_answer(
+    final_answer = await workflow.skip_answer(
         question_id=questions[2].id,
         actor_id=session.created_by,
         reason="Skip 3",
@@ -353,3 +353,11 @@ async def test_skipping_final_question_transitions_session_to_report_generating(
     assert session.status is SessionStatus.REPORT_GENERATING
     uow.sessions.update.assert_awaited()
     uow.jobs.create.assert_awaited()
+    uow.qa.get_answer_by_question.return_value = final_answer
+    replay = await workflow.skip_answer(
+        question_id=questions[2].id,
+        actor_id=session.created_by,
+        reason="Skip 3",
+        idempotency_key="skip-3",
+    )
+    assert replay.id == final_answer.id

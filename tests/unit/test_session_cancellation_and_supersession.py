@@ -10,6 +10,7 @@ from app.application.ai_job_contracts import (
     AIWorkerUpdate,
     AIWorkerUpdateStatus,
     ArtifactRef,
+    FailedPayload,
     PrimaryQuestion,
     ProgressPayload,
     SessionAnalysisCompletedPayload,
@@ -33,6 +34,7 @@ from app.domain.session_workflow.exceptions import InvalidJobStatusTransition
 from tests.support.fake_ai_job_queue import FakeAIJobQueue
 from tests.support.fake_analysis_attempt_repository import FakeAnalysisAttemptRepository
 from tests.support.fake_analysis_job_repository import FakeAnalysisJobRepository
+from tests.support.fake_session_notifications import FakeSessionNotifications
 
 
 class FakePracticeSessionRepository:
@@ -607,3 +609,46 @@ async def test_terminal_jobs_cannot_be_revived() -> None:
 
     with pytest.raises(InvalidJobStatusTransition):
         await ai_jobs.record_update(job.id, update_started)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("protection", ["cancelled", "superseded", "failed"])
+@pytest.mark.parametrize("callback", [AIWorkerUpdateStatus.FAILED, AIWorkerUpdateStatus.COMPLETED])
+async def test_terminal_or_superseded_attempt_ignores_late_callback(
+    protection: str,
+    callback: AIWorkerUpdateStatus,
+) -> None:
+    uow, session, _, attempt, job, workflow, _, actor_id = _setup_environment()
+    if protection == "cancelled":
+        await workflow.cancel(session.id, actor_id, "Cancelled", "cancel-key")
+    else:
+        session.status = SessionStatus.FAILED
+        attempt.status = AnalysisAttemptStatus.FAILED
+        if protection == "superseded":
+            await workflow.retry(session.id, actor_id, "new-attempt")
+    before_session = replace(session)
+    before_attempt = replace(attempt)
+    notifications = FakeSessionNotifications()
+    ai_jobs = AIJobs(uow, notifications=notifications)
+    payload = (
+        FailedPayload(
+            stage="speech", code="timeout", retryable=True, attempts=3, message="Deadline exceeded."
+        )
+        if callback == AIWorkerUpdateStatus.FAILED
+        else _valid_completed_payload()
+    )
+    await ai_jobs.record_update(
+        job.id,
+        AIWorkerUpdate(
+            schema_version=1,
+            sequence=2,
+            status=callback,
+            occurred_at=datetime.now(UTC),
+            trace_id="trc_test_race",
+            payload=payload,
+        ),
+    )
+    assert session == before_session
+    assert attempt == before_attempt
+    assert job.completed_result is None
+    assert (await notifications.replay(str(session.id), 0)).events == ()

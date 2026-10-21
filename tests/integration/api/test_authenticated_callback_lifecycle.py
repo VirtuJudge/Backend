@@ -13,6 +13,7 @@ from app.application.ai_job_contracts import (
     AIWorkerUpdate,
     AIWorkerUpdateStatus,
     ArtifactRef,
+    FailedPayload,
     PrimaryQuestion,
     ProgressPayload,
     SessionAnalysisCompletedPayload,
@@ -21,7 +22,9 @@ from app.application.ai_job_contracts import (
 from app.application.session_workflow import SessionWorkflow
 from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
 from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
+from app.domain.session_workflow.enums.qa import QARoundState, QuestionKind, QuestionState
 from app.domain.session_workflow.enums.session_status import SessionStatus
+from app.domain.session_workflow.exceptions import QuestionNotActive, QuestionsNotReady
 from app.domain.user import User
 from app.infrastructure.database import Base
 from app.infrastructure.persistence.configurations.asset_configuration import (
@@ -35,6 +38,10 @@ from app.infrastructure.persistence.configurations.session_workflow import (
     PracticeSessionModel,
     SessionCommandIdempotencyModel,
     SessionManifestModel,
+)
+from app.infrastructure.persistence.configurations.session_workflow.qa_configuration import (
+    QARoundModel,
+    QuestionModel,
 )
 from app.infrastructure.persistence.configurations.team_configuration import TeamModel
 from app.infrastructure.persistence.configurations.team_member_configuration import (
@@ -51,6 +58,171 @@ from tests.support.fake_session_notifications import FakeSessionNotifications
 from tests.support.fakes import FakeTokenVerifier
 
 SHARED_WORKER_SECRET = "test-worker-auth-secret-key-12345"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize("job_type", ["analyze_session", "analyze_answer", "generate_report"])
+async def test_failed_callback_allows_new_analysis_attempt(
+    test_env: tuple[async_sessionmaker[AsyncSession], AsyncClient, Settings],
+    job_type: str,
+) -> None:
+    session_maker, client, _ = test_env
+    session_id, attempt_id, job_id, user_id = await _seed_session_and_job(
+        session_maker,
+        session_status=(
+            SessionStatus.REPORT_GENERATING
+            if job_type == "generate_report"
+            else SessionStatus.QUESTIONS_IN_PROGRESS
+            if job_type == "analyze_answer"
+            else SessionStatus.ANALYZING
+        ),
+    )
+    async with session_maker() as db:
+        job = await db.get(AnalysisJobModel, job_id)
+        assert job is not None
+        job.job_type = job_type
+        old_round_id, old_question_id = uuid4(), uuid4()
+        if job_type != "analyze_session":
+            db.add(
+                QARoundModel(
+                    id=old_round_id,
+                    practice_session_id=session_id,
+                    analysis_attempt_id=attempt_id,
+                    state=QARoundState.IN_PROGRESS,
+                    current_question_id=old_question_id,
+                    follow_up_count=0,
+                    version=1,
+                    created_at=datetime.now(UTC),
+                    updated_at=datetime.now(UTC),
+                )
+            )
+            await db.flush()
+            db.add(
+                QuestionModel(
+                    id=old_question_id,
+                    qa_round_id=old_round_id,
+                    practice_session_id=session_id,
+                    kind=QuestionKind.PRIMARY,
+                    position=1,
+                    text="Old question?",
+                    reason="Grounded reason",
+                    rubric_dimension="business_reasoning",
+                    evidence_ids=["ev-old"],
+                    state=QuestionState.ACTIVE,
+                    created_at=datetime.now(UTC),
+                )
+            )
+        await db.commit()
+    update = AIWorkerUpdate(
+        schema_version=1,
+        sequence=1,
+        status=AIWorkerUpdateStatus.FAILED,
+        occurred_at=datetime.now(UTC),
+        trace_id="trc_auth_lifecycle_1",
+        payload=FailedPayload(
+            stage="speech",
+            code="provider_timeout",
+            retryable=True,
+            attempts=3,
+            message="Processing deadline exceeded.",
+        ),
+    ).model_dump(mode="json")
+    for _ in range(2):
+        response = await client.post(
+            f"/internal/v1/ai-jobs/{job_id}/updates",
+            headers={"Authorization": f"Bearer {SHARED_WORKER_SECRET}"},
+            json=update,
+        )
+        assert response.status_code == 200, response.text
+    async with session_maker() as db:
+        session = await db.get(PracticeSessionModel, session_id)
+        attempt = await db.get(AnalysisAttemptModel, attempt_id)
+        job = await db.get(AnalysisJobModel, job_id)
+        assert session is not None and session.status == SessionStatus.FAILED
+        assert session.version == 2
+        assert attempt is not None and attempt.status == AnalysisAttemptStatus.FAILED
+        assert attempt.failure_code == "provider_timeout"
+        assert job is not None and job.status == AnalysisJobStatus.FAILED
+        workflow = SessionWorkflow(SqlAlchemyUnitOfWork(db), queue=FakeAIJobQueue())
+        retried = await workflow.retry(session_id, user_id, "retry-after-provider-failure")
+        assert retried.attempt_number == 2
+        assert retried.manifest_id == attempt.manifest_id
+        replay = await workflow.retry(session_id, user_id, "retry-after-provider-failure")
+        assert replay.id == retried.id
+        with pytest.raises(QuestionsNotReady):
+            await workflow.get_qa_round(session_id, user_id)
+        new_job = await db.scalar(
+            select(AnalysisJobModel).where(
+                AnalysisJobModel.attempt_id == retried.id,
+                AnalysisJobModel.job_type == "analyze_session",
+            )
+        )
+        assert new_job is not None
+        assert new_job.payload is not None
+        new_job_id = new_job.id
+        new_trace_id = new_job.payload["trace_id"]
+
+    started = AIWorkerUpdate(
+        schema_version=1,
+        sequence=1,
+        status=AIWorkerUpdateStatus.STARTED,
+        occurred_at=datetime.now(UTC),
+        trace_id=new_trace_id,
+        payload=StartedPayload(pipeline_version="1.0.0"),
+    ).model_dump(mode="json")
+    response = await client.post(
+        f"/internal/v1/ai-jobs/{new_job_id}/updates",
+        headers={"Authorization": f"Bearer {SHARED_WORKER_SECRET}"},
+        json=started,
+    )
+    assert response.status_code == 200, response.text
+    completed = AIWorkerUpdate(
+        schema_version=1,
+        sequence=2,
+        status=AIWorkerUpdateStatus.COMPLETED,
+        occurred_at=datetime.now(UTC),
+        trace_id=new_trace_id,
+        payload=SessionAnalysisCompletedPayload(
+            analysis_artifact=ArtifactRef(
+                artifact_id="new-analysis",
+                object_key="artifacts/session_analysis.json",
+                checksum="sha256:" + "a" * 64,
+                schema_version=1,
+            ),
+            primary_questions=[
+                PrimaryQuestion(
+                    candidate_id=f"q-{i}",
+                    text=f"New question {i}?",
+                    reason="Grounded reason",
+                    rubric_dimension="business_reasoning",
+                    evidence_ids=[f"ev-{i}"],
+                )
+                for i in range(3)
+            ],
+            speaker_labels=["SPEAKER_00"],
+            limitations=[],
+        ),
+    ).model_dump(mode="json")
+    response = await client.post(
+        f"/internal/v1/ai-jobs/{new_job_id}/updates",
+        headers={"Authorization": f"Bearer {SHARED_WORKER_SECRET}"},
+        json=completed,
+    )
+    assert response.status_code == 200, response.text
+    async with session_maker() as db:
+        workflow = SessionWorkflow(SqlAlchemyUnitOfWork(db))
+        round_, questions, answers = await workflow.get_qa_round(session_id, user_id)
+        assert round_.analysis_attempt_id == retried.id
+        assert len(questions) == 3 and answers == []
+        if job_type != "analyze_session":
+            assert await db.get(QARoundModel, old_round_id) is not None
+            with pytest.raises(QuestionNotActive):
+                await workflow.skip_answer(
+                    question_id=old_question_id,
+                    actor_id=user_id,
+                    reason=None,
+                    idempotency_key="obsolete-round",
+                )
 
 
 @pytest.fixture

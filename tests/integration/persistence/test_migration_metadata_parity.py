@@ -50,6 +50,7 @@ def test_migration_metadata_parity(tmp_path: Path) -> None:
         "ai_jobs",
         "analysis_stages",
         "speaker_mappings",
+        "qa_rounds",
     ]
 
     for table_name in target_tables:
@@ -66,6 +67,9 @@ def test_migration_metadata_parity(tmp_path: Path) -> None:
             )
 
     invitation_table = Base.metadata.tables["invitation_creation_idempotency"]
+    round_constraints = inspector.get_unique_constraints("qa_rounds")
+    assert any(c["column_names"] == ["analysis_attempt_id"] for c in round_constraints)
+    assert not any(c["column_names"] == ["practice_session_id"] for c in round_constraints)
     assert set(invitation_table.primary_key.columns.keys()) == {
         "actor_id",
         "team_id",
