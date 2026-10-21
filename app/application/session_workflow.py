@@ -590,7 +590,6 @@ class SessionWorkflow:
             if next_question is not None:
                 await uow.qa.update_question(next_question)
             await uow.qa.update_round(round_, expected_version)
-            report_job = None
             if (
                 round_.state is QARoundState.COMPLETED
                 and session.status == SessionStatus.QUESTIONS_IN_PROGRESS
@@ -598,18 +597,9 @@ class SessionWorkflow:
                 session.transition_to(SessionStatus.REPORT_GENERATING)
                 session.updated_at = now
                 await uow.sessions.update(session, expected_version=session.version)
-                attempt = await uow.attempts.get_by_id(round_.analysis_attempt_id)
-                if attempt is not None:
-                    report_job = await self._ai_jobs.create_report_job(
-                        session=session,
-                        round_=round_,
-                        attempt=attempt,
-                        now=now,
-                    )
             await uow.commit()
-            if report_job is not None:
-                with contextlib.suppress(Exception):
-                    await self._ai_jobs.dispatch(report_job, now=now)
+            if round_.state is QARoundState.COMPLETED:
+                await self._ai_jobs.resume_report(session.id, now=now)
             await self._publish_qa_event(
                 event_name=NotificationEventName.QA_ANSWER_UPDATED,
                 session_id=session.id,

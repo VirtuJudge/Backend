@@ -19,6 +19,7 @@ from app.domain.session_workflow.entities.report import (
     ScoreComponent,
 )
 from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
+from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
 from app.domain.session_workflow.enums.qa import QARoundState, QuestionKind, QuestionState
 from app.domain.session_workflow.enums.report import (
     FindingKind,
@@ -38,6 +39,7 @@ from app.infrastructure.persistence.configurations import (
 )
 from app.infrastructure.persistence.configurations.session_workflow import (
     AnalysisAttemptModel,
+    AnalysisJobModel,
     PracticeSessionModel,
     QARoundModel,
     QuestionModel,
@@ -195,6 +197,32 @@ async def test_completing_qa_round_uploads_artifact_before_report_job_is_queued(
     practice_session.status = SessionStatus.QUESTIONS_IN_PROGRESS
     qa_round.state = QARoundState.IN_PROGRESS
     qa_round.current_question_id = question_id
+    await async_db_session.flush()
+
+    async_db_session.add(
+        AnalysisJobModel(
+            id=uuid4(),
+            practice_session_id=practice_session.id,
+            attempt_id=attempt.id,
+            analysis_attempt=1,
+            job_type="analyze_session",
+            status=AnalysisJobStatus.COMPLETED,
+            correlation_id=uuid4(),
+            created_at=now,
+            updated_at=now,
+            completed_result={
+                "analysis_artifact": {
+                    "artifact_id": "analysis-1",
+                    "object_key": (
+                        f"projects/{practice_session.project_id}/sessions/{practice_session.id}/"
+                        "attempts/1/analysis.json"
+                    ),
+                    "checksum": "sha256:" + "b" * 64,
+                    "schema_version": 1,
+                }
+            },
+        )
+    )
     await async_db_session.flush()
 
     storage = FakeObjectStorage()

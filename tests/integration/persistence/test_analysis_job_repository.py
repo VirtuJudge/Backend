@@ -205,12 +205,31 @@ async def test_create_and_get_by_id_and_attempt_id(
 async def test_cancel_nonterminal_by_session_id_cancels_report_jobs(
     async_db_session: AsyncSession,
 ) -> None:
-    _, _, _, session_id, _, attempt_id = await _create_test_context_entities(async_db_session)
+    _, _, _, session_id, manifest_id, attempt_id = await _create_test_context_entities(
+        async_db_session
+    )
     repo = SqlAlchemyAnalysisJobRepository(async_db_session)
     now = datetime(2026, 9, 16, 0, 0, tzinfo=UTC)
+    current_attempt_id = uuid4()
+    async_db_session.add(
+        AnalysisAttemptModel(
+            id=current_attempt_id,
+            session_id=session_id,
+            manifest_id=manifest_id,
+            attempt_number=2,
+            status=AnalysisAttemptStatus.RUNNING,
+            version=1,
+            created_at=now,
+        )
+    )
+    await async_db_session.flush()
 
-    analysis_job = _make_job(session_id, attempt_id, status=AnalysisJobStatus.RUNNING, now=now)
-    report_job = _make_job(session_id, attempt_id, status=AnalysisJobStatus.QUEUED, now=now)
+    analysis_job = _make_job(
+        session_id, current_attempt_id, attempt_number=2, status=AnalysisJobStatus.RUNNING, now=now
+    )
+    report_job = _make_job(
+        session_id, current_attempt_id, attempt_number=2, status=AnalysisJobStatus.QUEUED, now=now
+    )
     report_job.job_type = "generate_report"
     completed_job = _make_job(session_id, attempt_id, status=AnalysisJobStatus.COMPLETED, now=now)
     completed_job.completed_at = now

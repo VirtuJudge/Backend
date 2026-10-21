@@ -75,6 +75,7 @@ class SqlAlchemyPracticeSessionRepository(PracticeSessionRepository):
             .where(PracticeSessionModel.id == session_id)
             .where(PracticeSessionModel.access_revoked_at.is_(None))
             .with_for_update()
+            .execution_options(populate_existing=True)
         )
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()

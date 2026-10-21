@@ -2,9 +2,10 @@ from datetime import datetime
 from typing import Any, cast
 from uuid import UUID
 
-from sqlalchemy import CursorResult, func, select, update
+from sqlalchemy import CursorResult, func, or_, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import aliased
 
 from app.application.ports.session_practice.analysis_job_repository import (
     AnalysisJobRepository,
@@ -13,13 +14,18 @@ from app.domain.session_workflow.entities.analysis_job import (
     AIJobAncestryContext,
     AnalysisJob,
 )
+from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
 from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
+from app.domain.session_workflow.enums.qa import AnswerStatus, QARoundState
+from app.domain.session_workflow.enums.session_status import SessionStatus
 from app.domain.session_workflow.exceptions import IdempotencyConflict
 from app.infrastructure.persistence.configurations import ProjectModel
 from app.infrastructure.persistence.configurations.session_workflow import (
     AnalysisAttemptModel,
     AnalysisJobModel,
+    AnswerModel,
     PracticeSessionModel,
+    QARoundModel,
     SessionManifestModel,
 )
 from app.infrastructure.persistence.mappers.session_practice.analysis_attempt_mapper import (
@@ -77,6 +83,85 @@ class SqlAlchemyAnalysisJobRepository(AnalysisJobRepository):
             select(AnalysisJobModel).where(AnalysisJobModel.answer_id == answer_id)
         )
         return None if model is None else to_domain(model)
+
+    async def get_report_by_attempt_id(self, attempt_id: UUID) -> AnalysisJob | None:
+        model = await self._session.scalar(
+            select(AnalysisJobModel).where(
+                AnalysisJobModel.attempt_id == attempt_id,
+                AnalysisJobModel.job_type == "generate_report",
+            )
+        )
+        return None if model is None else to_domain(model)
+
+    async def get_report_preparation_candidates(self, limit: int = 10) -> list[UUID]:
+        newer = aliased(AnalysisAttemptModel)
+        answer_completed = (
+            select(AnalysisJobModel.id)
+            .where(
+                AnalysisJobModel.answer_id == AnswerModel.id,
+                AnalysisJobModel.attempt_id == QARoundModel.analysis_attempt_id,
+                AnalysisJobModel.job_type == "analyze_answer",
+                AnalysisJobModel.status == AnalysisJobStatus.COMPLETED,
+                AnalysisJobModel.cancel_requested.is_(False),
+            )
+            .correlate(AnswerModel, QARoundModel)
+            .exists()
+        )
+        incomplete_answer = (
+            select(AnswerModel.id)
+            .where(
+                AnswerModel.qa_round_id == QARoundModel.id,
+                AnswerModel.status != AnswerStatus.SKIPPED,
+                or_(
+                    AnswerModel.status != AnswerStatus.SUBMITTED,
+                    AnswerModel.transcript_artifact_id.is_(None),
+                    AnswerModel.assessment_artifact_id.is_(None),
+                    ~answer_completed,
+                ),
+            )
+            .exists()
+        )
+        statement = (
+            select(PracticeSessionModel.id)
+            .join(ProjectModel, ProjectModel.id == PracticeSessionModel.project_id)
+            .join(QARoundModel, QARoundModel.practice_session_id == PracticeSessionModel.id)
+            .join(AnalysisAttemptModel, AnalysisAttemptModel.id == QARoundModel.analysis_attempt_id)
+            .where(
+                PracticeSessionModel.status == SessionStatus.REPORT_GENERATING,
+                PracticeSessionModel.access_revoked_at.is_(None),
+                ProjectModel.access_revoked_at.is_(None),
+                QARoundModel.state == QARoundState.COMPLETED,
+                QARoundModel.current_question_id.is_(None),
+                AnalysisAttemptModel.status.not_in(
+                    [AnalysisAttemptStatus.FAILED, AnalysisAttemptStatus.CANCELLED]
+                ),
+                ~select(newer.id)
+                .where(
+                    newer.session_id == PracticeSessionModel.id,
+                    newer.attempt_number > AnalysisAttemptModel.attempt_number,
+                )
+                .exists(),
+                ~select(AnalysisJobModel.id)
+                .where(
+                    AnalysisJobModel.attempt_id == AnalysisAttemptModel.id,
+                    AnalysisJobModel.job_type == "generate_report",
+                )
+                .exists(),
+                select(AnalysisJobModel.id)
+                .where(
+                    AnalysisJobModel.attempt_id == AnalysisAttemptModel.id,
+                    AnalysisJobModel.job_type == "analyze_session",
+                    AnalysisJobModel.status == AnalysisJobStatus.COMPLETED,
+                    AnalysisJobModel.cancel_requested.is_(False),
+                    AnalysisJobModel.completed_result["analysis_artifact"].as_string().is_not(None),
+                )
+                .exists(),
+                ~incomplete_answer,
+            )
+            .order_by(QARoundModel.updated_at, PracticeSessionModel.id)
+            .limit(limit)
+        )
+        return list((await self._session.scalars(statement)).all())
 
     async def get_completed_report_by_session_id(
         self,

@@ -24,6 +24,10 @@ class AnalysisJobRepository(Protocol):
 
     async def get_by_answer_id(self, answer_id: UUID) -> AnalysisJob | None: ...
 
+    async def get_report_by_attempt_id(self, attempt_id: UUID) -> AnalysisJob | None: ...
+
+    async def get_report_preparation_candidates(self, limit: int = 10) -> list[UUID]: ...
+
     async def get_completed_report_by_session_id(
         self,
         session_id: UUID,
