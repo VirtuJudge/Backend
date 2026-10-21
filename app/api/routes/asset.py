@@ -2,11 +2,15 @@ from typing import Any
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, Header, Query, Request, Response, status
+from fastapi.responses import JSONResponse
 
 from app.api.dependencies.auth import get_current_user
+from app.api.dependencies.erasure import get_erasure_workflow
 from app.api.dependencies.services import get_asset_store
-from app.api.errors import handle_asset_error
+from app.api.errors import handle_asset_error, problem_response
+from app.api.routes.erasure import erasure_error
 from app.api.schemas.asset import (
+    AssetDeleteRequest,
     AssetPage,
     AssetResponse,
     AssetVersionPage,
@@ -17,12 +21,15 @@ from app.api.schemas.asset import (
     UploadIntentResponse,
     VersionUploadIntentRequest,
 )
+from app.api.schemas.erasure import ErasureResponse
+from app.application.erasure_workflow import ErasureWorkflow
 from app.application.services.asset_store import AssetStore
 from app.domain.asset import (
     Asset,
     AssetDomainError,
     AssetVersion,
 )
+from app.domain.erasure import ErasureConflict, ErasureForbidden, ErasureNotFound
 from app.domain.user import User
 
 router = APIRouter(prefix="/api/v1")
@@ -226,32 +233,68 @@ async def get_asset(
 
 @router.delete(
     "/assets/{asset_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=ErasureResponse,
     tags=["assets"],
-    responses={
-        204: {"description": "Asset removed"},
-        404: {"description": "Asset not found"},
-    },
 )
 @router.delete(
     "/projects/{project_id}/assets/{asset_id}",
-    status_code=status.HTTP_204_NO_CONTENT,
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=ErasureResponse,
     tags=["assets"],
     include_in_schema=False,
 )
 async def delete_asset(
     asset_id: UUID,
+    payload: AssetDeleteRequest,
     request: Request,
+    response: Response,
     project_id: UUID | None = None,
     current_user: User = Depends(get_current_user),
-    service: AssetStore = Depends(get_asset_store),
-) -> Response:
+    workflow: ErasureWorkflow = Depends(get_erasure_workflow),
+    idempotency_key: str = Header(
+        ...,
+        alias="Idempotency-Key",
+        min_length=1,
+        max_length=255,
+        description=(
+            "Scoped to actor, asset, and delete operation. Reusing a key with a different "
+            "confirmation returns 409; replay returns the existing Erasure Request and Location, "
+            "including after asset deletion."
+        ),
+    ),
+) -> ErasureResponse | JSONResponse:
+    if not idempotency_key.strip():
+        return problem_response(
+            status.HTTP_422_UNPROCESSABLE_CONTENT,
+            "validation_failed",
+            "Validation failed",
+            "The request parameters failed validation.",
+            request.url.path,
+        )
     try:
-        await service.delete_asset(asset_id, current_user.id)
-    except AssetDomainError as err:
-        return handle_asset_error(err, request.url.path)
+        if project_id is not None:
+            erasure = await workflow.request(
+                "asset",
+                asset_id,
+                current_user.id,
+                idempotency_key,
+                payload.confirmation,
+                expected_project_id=project_id,
+            )
+        else:
+            erasure = await workflow.request(
+                "asset",
+                asset_id,
+                current_user.id,
+                idempotency_key,
+                payload.confirmation,
+            )
+    except (ErasureNotFound, ErasureForbidden, ErasureConflict) as error:
+        return erasure_error(error, request)
 
-    return Response(status_code=status.HTTP_204_NO_CONTENT)
+    response.headers["Location"] = f"/api/v1/erasure-requests/{erasure.id}"
+    return ErasureResponse.model_validate(erasure)
 
 
 @router.get(

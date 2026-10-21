@@ -179,7 +179,7 @@ class SqlAlchemyAssetRepository(AssetRepository):
         return asset, version
 
     async def get_asset(self, asset_id: UUID) -> Asset | None:
-        model = await self.session.get(AssetModel, asset_id)
+        model = await self.session.get(AssetModel, asset_id, populate_existing=True)
         return to_asset(model) if model is not None else None
 
     async def get_version(self, version_id: UUID) -> AssetVersion | None:
@@ -209,7 +209,7 @@ class SqlAlchemyAssetRepository(AssetRepository):
             .execution_options(populate_existing=True)
         )
         asset_model = await self.session.scalar(stmt)
-        if asset_model is None or asset_model.state == "deleted":
+        if asset_model is None or asset_model.state in ("deleting", "deleted"):
             raise AssetNotFound
 
         existing = await self.get_upload_idempotency(
@@ -374,6 +374,14 @@ class SqlAlchemyAssetRepository(AssetRepository):
         return [to_version(row) for row in rows], next_cursor
 
     async def save_version_completion(self, version: AssetVersion, asset: Asset) -> None:
+        asset_model = await self.session.scalar(
+            select(AssetModel)
+            .where(AssetModel.id == asset.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if asset_model is None or asset_model.state in ("deleting", "deleted"):
+            raise AssetNotFound
         await self.session.execute(
             update(AssetVersionModel)
             .where(AssetVersionModel.id == version.id)
@@ -404,6 +412,14 @@ class SqlAlchemyAssetRepository(AssetRepository):
         await self.session.commit()
 
     async def save_version_rejection(self, version: AssetVersion, asset: Asset) -> None:
+        asset_model = await self.session.scalar(
+            select(AssetModel)
+            .where(AssetModel.id == asset.id)
+            .with_for_update()
+            .execution_options(populate_existing=True)
+        )
+        if asset_model is None or asset_model.state in ("deleting", "deleted"):
+            raise AssetNotFound
         await self.session.execute(
             update(AssetVersionModel)
             .where(AssetVersionModel.id == version.id)
@@ -432,7 +448,10 @@ class SqlAlchemyAssetRepository(AssetRepository):
     ) -> tuple[list[Asset], UUID | None]:
         stmt = (
             select(AssetModel)
-            .where(AssetModel.project_id == project_id)
+            .where(
+                AssetModel.project_id == project_id,
+                AssetModel.state.not_in(["deleting", "deleted"]),
+            )
             .order_by(AssetModel.id)
             .limit(limit + 1)
         )
@@ -442,8 +461,6 @@ class SqlAlchemyAssetRepository(AssetRepository):
             stmt = stmt.where(AssetModel.kind == kind)
         if state is not None:
             stmt = stmt.where(AssetModel.state == state)
-        else:
-            stmt = stmt.where(AssetModel.state != "deleted")
 
         rows = list((await self.session.scalars(stmt)).all())
         has_more = len(rows) > limit

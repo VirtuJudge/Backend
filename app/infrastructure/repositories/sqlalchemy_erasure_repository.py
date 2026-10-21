@@ -23,6 +23,7 @@ from app.domain.erasure import (
     ErasureStep,
 )
 from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
+from app.domain.session_workflow.enums.session_status import SessionStatus
 from app.infrastructure.persistence.cascade_deletion import (
     delete_asset_records,
     delete_practice_sessions,
@@ -147,6 +148,8 @@ class SqlAlchemyErasureRepository:
             and request.request_hash != digest
         ):
             raise ErasureConflict("idempotency_conflict")
+        if scope == "asset" and request.request_hash != digest:
+            raise ErasureConflict("confirmation_required")
         self.session.add(
             ErasureCommandIdempotencyModel(
                 actor_id=actor_id,
@@ -191,6 +194,8 @@ class SqlAlchemyErasureRepository:
                 and await self._membership(previous.team_id, actor_id) != "owner"
             ):
                 raise ErasureForbidden
+            if previous.origin == "retention" and not retention:
+                raise ErasureConflict("retention_erasure_exists")
             await self._record_command(previous, scope, scope_id, actor_id, key, digest)
             await self.session.commit()
             return await self._domain(previous)
@@ -204,7 +209,7 @@ class SqlAlchemyErasureRepository:
                     PracticeSessionModel.id == scope_id,
                 )
             )
-        elif scope == "asset" and retention:
+        elif scope == "asset":
             project_id = await self.session.scalar(
                 select(AssetModel.project_id).where(
                     AssetModel.id == scope_id,
@@ -228,11 +233,25 @@ class SqlAlchemyErasureRepository:
             expected_project_id is not None and project.id != expected_project_id
         ):
             raise ErasureNotFound
+        asset: AssetModel | None = None
+        if scope == "asset":
+            asset = await self.session.scalar(
+                select(AssetModel)
+                .where(AssetModel.id == scope_id)
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+            if asset is None:
+                raise ErasureNotFound
         if actor_id is not None:
             if await self._membership(project.team_id, actor_id) != "owner":
                 raise ErasureForbidden
             if scope == "project" and confirmation != project.name:
                 raise ErasureConflict("confirmation_required")
+            if scope == "asset" and not retention:
+                assert asset is not None
+                if confirmation != asset.file_name:
+                    raise ErasureConflict("confirmation_required")
 
         previous = await self.session.scalar(
             select(ErasureRequestModel)
@@ -244,6 +263,8 @@ class SqlAlchemyErasureRepository:
             .execution_options(populate_existing=True)
         )
         if previous is not None:
+            if previous.origin == "retention" and not retention:
+                raise ErasureConflict("retention_erasure_exists")
             await self._record_command(previous, scope, scope_id, actor_id, key, digest)
             await self.session.commit()
             return await self._domain(previous)
@@ -281,8 +302,7 @@ class SqlAlchemyErasureRepository:
                 raise ErasureNotFound
             sessions = [scope_id]
             assets = await self._session_assets(scope_id, project.id)
-        else:
-            asset = await self.session.get(AssetModel, scope_id)
+        elif scope == "asset" and retention:
             if (
                 asset is None
                 or asset.kind not in ("presentation_video", "answer_audio")
@@ -309,6 +329,105 @@ class SqlAlchemyErasureRepository:
                 )
             ).all()
             sessions = list(set(sessions) | set(answer_sessions))
+        else:
+            assets = [scope_id]
+            versions = select(AssetVersionModel.id).where(AssetVersionModel.asset_id == scope_id)
+            doc_manifests = select(SessionManifestDocumentModel.manifest_id).where(
+                SessionManifestDocumentModel.document_version_id.in_(versions)
+            )
+            immutable_manifest_ref = await self.session.scalar(
+                select(SessionManifestModel.id)
+                .join(
+                    PracticeSessionModel,
+                    PracticeSessionModel.id == SessionManifestModel.session_id,
+                )
+                .where(
+                    (
+                        SessionManifestModel.frozen_at.is_not(None)
+                        | (PracticeSessionModel.status != SessionStatus.DRAFT)
+                    ),
+                    (
+                        SessionManifestModel.presentation_version_id.in_(versions)
+                        | SessionManifestModel.document_version_id.in_(versions)
+                        | SessionManifestModel.id.in_(doc_manifests)
+                    ),
+                )
+                .limit(1)
+            )
+            answer_ref = await self.session.scalar(
+                select(AnswerModel.id)
+                .where(AnswerModel.audio_asset_version_id.in_(versions))
+                .limit(1)
+            )
+            export_ref = await self.session.scalar(
+                select(ReportExportModel.id)
+                .where(ReportExportModel.asset_version_id.in_(versions))
+                .limit(1)
+            )
+            if (
+                immutable_manifest_ref is not None
+                or answer_ref is not None
+                or export_ref is not None
+            ):
+                raise ErasureConflict("immutable_manifest_requires_asset")
+
+            unfrozen_draft_manifests = (
+                select(SessionManifestModel.id)
+                .join(
+                    PracticeSessionModel,
+                    PracticeSessionModel.id == SessionManifestModel.session_id,
+                )
+                .where(
+                    PracticeSessionModel.status == SessionStatus.DRAFT,
+                    SessionManifestModel.frozen_at.is_(None),
+                )
+            )
+            await self.session.execute(
+                delete(SessionManifestDocumentModel).where(
+                    SessionManifestDocumentModel.manifest_id.in_(unfrozen_draft_manifests),
+                    SessionManifestDocumentModel.document_version_id.in_(versions),
+                )
+            )
+            await self.session.execute(
+                update(SessionManifestModel)
+                .where(
+                    SessionManifestModel.id.in_(unfrozen_draft_manifests),
+                    SessionManifestModel.document_version_id.in_(versions),
+                )
+                .values(document_version_id=None)
+            )
+            sessions = list(
+                (
+                    await self.session.scalars(
+                        select(PracticeSessionModel.id)
+                        .join(
+                            SessionManifestModel,
+                            SessionManifestModel.session_id == PracticeSessionModel.id,
+                        )
+                        .where(
+                            PracticeSessionModel.status == SessionStatus.DRAFT,
+                            SessionManifestModel.frozen_at.is_(None),
+                            SessionManifestModel.presentation_version_id.in_(versions),
+                        )
+                    )
+                ).all()
+            )
+            for draft_session_id in sessions:
+                candidates = await self._session_assets(draft_session_id, project.id)
+                owned_assets = await self.session.scalars(
+                    select(AssetModel.id).where(
+                        AssetModel.id.in_(candidates),
+                        AssetModel.kind.in_(("answer_audio", "report_pdf")),
+                    )
+                )
+                for extra_asset_id in owned_assets:
+                    if extra_asset_id not in assets:
+                        assets.append(extra_asset_id)
+
+        if assets:
+            await self.session.scalars(
+                select(AssetModel.id).where(AssetModel.id.in_(assets)).with_for_update()
+            )
 
         versions_rows = (
             await self.session.execute(
@@ -364,7 +483,13 @@ class SqlAlchemyErasureRepository:
                         f"projects/{project.id}/assets/{asset_id}/",
                     )
                 ]
-                + ([] if retention else [f"projects/{project.id}/sessions/{scope_id}/"])
+                + (
+                    []
+                    if retention
+                    else [
+                        f"projects/{project.id}/sessions/{session_id}/" for session_id in sessions
+                    ]
+                )
             ),
         }
         request = ErasureRequestModel(
@@ -851,7 +976,9 @@ class SqlAlchemyErasureRepository:
             await delete_project_records(self.session, request.scope_id)
         else:
             count = await self._record_count(request)
-            await delete_practice_sessions(self.session, [request.scope_id])
+            session_ids = [UUID(s) for s in request.inventory["session_ids"]]
+            if session_ids:
+                await delete_practice_sessions(self.session, session_ids)
             for asset_id in request.inventory["asset_ids"]:
                 await delete_asset_records(self.session, UUID(asset_id))
         await self.session.flush()
