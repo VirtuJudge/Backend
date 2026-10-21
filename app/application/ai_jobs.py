@@ -62,7 +62,12 @@ from app.domain.session_workflow.entities.session_manifest import SessionManifes
 from app.domain.session_workflow.entities.session_practice import PracticeSession
 from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
 from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
-from app.domain.session_workflow.enums.qa import QARoundState, QuestionKind, QuestionState
+from app.domain.session_workflow.enums.qa import (
+    AnswerStatus,
+    QARoundState,
+    QuestionKind,
+    QuestionState,
+)
 from app.domain.session_workflow.enums.report import (
     FindingKind,
     ScoreLabel,
@@ -71,6 +76,7 @@ from app.domain.session_workflow.enums.report import (
 from app.domain.session_workflow.enums.session_status import SessionStatus
 from app.domain.session_workflow.exceptions import (
     CompletedResultValidationError,
+    IdempotencyConflict,
     InvalidAttemptState,
     InvalidJobStatusTransition,
     ReportValidationError,
@@ -708,6 +714,85 @@ class AIJobs:
         await self._uow.jobs.create(job)
         return job
 
+    async def resume_report(
+        self, session_id: UUID, *, now: datetime | None = None, dispatch: bool = True
+    ) -> None:
+        if self._storage is None:
+            return
+        effective_now = now or datetime.now(UTC)
+        try:
+            job = await self._prepare_report(session_id, effective_now)
+        except (StorageUnavailable, StaleEntityVersion, IdempotencyConflict) as exc:
+            await self._uow.rollback()
+            logger.warning(
+                "Report preparation deferred for session %s: %s",
+                session_id,
+                type(exc).__name__,
+            )
+            return
+        if dispatch and job is not None:
+            with contextlib.suppress(Exception):
+                await self.dispatch(job.id, now=effective_now)
+
+    async def _prepare_report(self, session_id: UUID, now: datetime) -> AnalysisJob | None:
+        session = await self._uow.sessions.get_by_id_for_update(session_id)
+        if session is None or session.status != SessionStatus.REPORT_GENERATING:
+            await self._uow.rollback()
+            return None
+        round_ = await self._uow.qa.get_round_by_session(session_id)
+        attempt = await self._uow.attempts.get_latest(session_id)
+        if (
+            round_ is None
+            or round_.state is not QARoundState.COMPLETED
+            or round_.current_question_id is not None
+            or attempt is None
+            or attempt.id != round_.analysis_attempt_id
+            or attempt.status in {AnalysisAttemptStatus.FAILED, AnalysisAttemptStatus.CANCELLED}
+            or await self._uow.jobs.get_report_by_attempt_id(attempt.id) is not None
+        ):
+            await self._uow.rollback()
+            return None
+        session_job = await self._uow.jobs.get_by_attempt_id(attempt.id)
+        if (
+            session_job is None
+            or session_job.status is not AnalysisJobStatus.COMPLETED
+            or session_job.cancel_requested
+            or not isinstance(session_job.completed_result, dict)
+            or not isinstance(session_job.completed_result.get("analysis_artifact"), dict)
+        ):
+            await self._uow.rollback()
+            return None
+        questions = await self._uow.qa.list_questions(round_.id)
+        answers = await self._uow.qa.list_answers(round_.id)
+        finalized = {answer.question_id: answer for answer in answers if answer.is_final}
+        if not questions or any(
+            question.state not in {QuestionState.ANSWERED, QuestionState.SKIPPED}
+            or question.id not in finalized
+            for question in questions
+        ):
+            await self._uow.rollback()
+            return None
+        for answer in answers:
+            if answer.status is AnswerStatus.SKIPPED:
+                continue
+            answer_job = await self._uow.jobs.get_by_answer_id(answer.id)
+            if (
+                answer.status is not AnswerStatus.SUBMITTED
+                or not answer.transcript_artifact_id
+                or not answer.assessment_artifact_id
+                or answer_job is None
+                or answer_job.attempt_id != attempt.id
+                or answer_job.job_type != AIJobType.ANALYZE_ANSWER.value
+                or answer_job.status is not AnalysisJobStatus.COMPLETED
+                or answer_job.cancel_requested
+            ):
+                await self._uow.rollback()
+                return None
+        job = await self.create_report_job(session=session, round_=round_, attempt=attempt, now=now)
+        await self._uow.sessions.update(session, expected_version=session.version)
+        await self._uow.commit()
+        return job
+
     async def get_job(self, job_id: UUID) -> AnalysisJob | None:
         return await self._uow.jobs.get_by_id(job_id)
 
@@ -861,16 +946,6 @@ class AIJobs:
                     session.transition_to(SessionStatus.REPORT_GENERATING)
                     session.updated_at = occurred_at
                     await self._uow.sessions.update(session, expected_version=session.version)
-                    attempt = await self._uow.attempts.get_by_id(round_.analysis_attempt_id)
-                    if attempt is not None:
-                        report_job = await self.create_report_job(
-                            session=session,
-                            round_=round_,
-                            attempt=attempt,
-                            now=occurred_at,
-                        )
-                        with contextlib.suppress(Exception):
-                            await self.dispatch(report_job, now=occurred_at)
             return None
 
         questions = await repository.list_questions(round_.id)
@@ -1425,6 +1500,11 @@ class AIJobs:
                 },
             )
         await self._publish(completion_notification)
+        if (
+            job.job_type == AIJobType.ANALYZE_ANSWER.value
+            and update.status == AIWorkerUpdateStatus.COMPLETED
+        ):
+            await self.resume_report(job.practice_session_id, now=effective_now)
 
         return job
 
@@ -1568,6 +1648,10 @@ class AIJobs:
 
         if self._queue is None:
             return RedispatchResult(0, 0, 0)
+
+        candidates = await self._uow.jobs.get_report_preparation_candidates(bounded_limit)
+        for session_id in candidates:
+            await self.resume_report(session_id, now=now_time, dispatch=False)
 
         recover_stale = getattr(self._uow.jobs, "recover_stale_inflight_jobs", None)
         if callable(recover_stale):

@@ -10,6 +10,7 @@ from app.domain.session_workflow.entities.analysis_attempt import AnalysisAttemp
 from app.domain.session_workflow.entities.qa_round import Answer, QARound, Question
 from app.domain.session_workflow.entities.session_practice import PracticeSession
 from app.domain.session_workflow.enums.attempt_status import AnalysisAttemptStatus
+from app.domain.session_workflow.enums.job_status import AnalysisJobStatus
 from app.domain.session_workflow.enums.qa import (
     AnswerStatus,
     QARoundState,
@@ -79,6 +80,7 @@ def _setup() -> tuple[SessionWorkflow, MagicMock, QARound, list[Question], Pract
     uow.__aenter__ = AsyncMock(return_value=uow)
     uow.__aexit__ = AsyncMock(return_value=None)
     uow.sessions.get_by_id = AsyncMock(return_value=session)
+    uow.sessions.get_by_id_for_update = AsyncMock(return_value=session)
     uow.projects.is_member = AsyncMock(return_value=True)
     uow.qa.get_question = AsyncMock(
         side_effect=lambda question_id: next(
@@ -86,15 +88,23 @@ def _setup() -> tuple[SessionWorkflow, MagicMock, QARound, list[Question], Pract
         )
     )
     uow.qa.get_round_for_update = AsyncMock(return_value=round_)
+    uow.qa.get_round_by_session = AsyncMock(return_value=round_)
     uow.qa.get_answer_for_update = AsyncMock(return_value=None)
     uow.qa.get_answer_by_question = AsyncMock(return_value=None)
     uow.qa.list_questions = AsyncMock(return_value=questions)
     uow.qa.list_answers = AsyncMock(return_value=[])
-    uow.qa.create_answer = AsyncMock()
+
+    async def remember_answer(answer: Answer) -> None:
+        uow.qa.list_answers.return_value.append(answer)
+
+    uow.qa.create_answer = AsyncMock(side_effect=remember_answer)
     uow.qa.update_answer = AsyncMock()
     uow.qa.update_question = AsyncMock()
     uow.qa.update_round = AsyncMock()
     uow.commit = AsyncMock()
+    uow.rollback = AsyncMock()
+    uow.attempts.get_latest = AsyncMock(return_value=None)
+    uow.jobs.get_report_by_attempt_id = AsyncMock(return_value=None)
     uow.jobs.get_by_answer_id = AsyncMock(return_value=None)
     uow.jobs.create = AsyncMock()
     uow.jobs.change_pending_to_queued = AsyncMock(
@@ -326,6 +336,19 @@ async def test_skipping_final_question_transitions_session_to_report_generating(
             cancelled_at=None,
             version=1,
         )
+    )
+    uow.attempts.get_latest = uow.attempts.get_by_id
+    uow.jobs.get_by_attempt_id.return_value = MagicMock(
+        status=AnalysisJobStatus.COMPLETED,
+        cancel_requested=False,
+        completed_result={
+            "analysis_artifact": {
+                "artifact_id": "analysis",
+                "object_key": "analysis.json",
+                "checksum": "sha256:" + "b" * 64,
+                "schema_version": 1,
+            }
+        },
     )
     # Fast forward: skip Q1
     await workflow.skip_answer(

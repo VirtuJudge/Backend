@@ -43,6 +43,7 @@ class SqlAlchemyAnalysisAttemptRepository(AnalysisAttemptRepository):
             .where(AnalysisAttemptModel.session_id == session_id)
             .order_by(AnalysisAttemptModel.attempt_number.desc())
             .limit(1)
+            .execution_options(populate_existing=True)
         )
         result = await self._session.execute(stmt)
         model = result.scalar_one_or_none()

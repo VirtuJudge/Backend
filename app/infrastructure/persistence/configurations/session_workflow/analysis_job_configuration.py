@@ -179,6 +179,13 @@ class AnalysisJobModel(Base):
             sqlite_where=text("job_type = 'analyze_session'"),
         ),
         Index(
+            "uq_ai_jobs_report_attempt",
+            "attempt_id",
+            unique=True,
+            postgresql_where=text("job_type = 'generate_report'"),
+            sqlite_where=text("job_type = 'generate_report'"),
+        ),
+        Index(
             "ix_ai_jobs_pending_dispatch",
             "status",
             "next_dispatch_at",

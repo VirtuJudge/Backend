@@ -52,6 +52,19 @@ class FakeAnalysisJobRepository(AnalysisJobRepository):
                 return job
         return None
 
+    async def get_report_by_attempt_id(self, attempt_id: UUID) -> AnalysisJob | None:
+        return next(
+            (
+                job
+                for job in self.jobs.values()
+                if job.attempt_id == attempt_id and job.job_type == "generate_report"
+            ),
+            None,
+        )
+
+    async def get_report_preparation_candidates(self, limit: int = 10) -> list[UUID]:
+        return []
+
     async def get_completed_report_by_session_id(self, session_id: UUID) -> AnalysisJob | None:
         completed = [
             job

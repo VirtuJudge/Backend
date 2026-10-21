@@ -79,10 +79,12 @@ class SqlAlchemyQARepository(QARepository):
             .scalar_subquery()
         )
         model = await self._session.scalar(
-            select(QARoundModel).where(
+            select(QARoundModel)
+            .where(
                 QARoundModel.practice_session_id == session_id,
                 QARoundModel.analysis_attempt_id == latest_attempt,
             )
+            .execution_options(populate_existing=True)
         )
         return _round(model) if model is not None else None
 
