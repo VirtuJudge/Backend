@@ -398,3 +398,20 @@ async def test_document_verifier_accepts_large_pptx_with_large_embedded_media(
 def test_document_verifier_default_timeout() -> None:
     verifier = DocumentVerifier()
     assert verifier.timeout_seconds == 60.0
+
+
+def test_pdf_validation_does_not_require_text_extraction(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    from pypdf import PageObject
+
+    from app.infrastructure.documents.document_worker import EXIT_OK, validate_pdf
+
+    def unsupported_font(*args: object, **kwargs: object) -> str:
+        raise TypeError("unsupported operand type(s) for +: 'float' and 'IndirectObject'")
+
+    monkeypatch.setattr(PageObject, "extract_text", unsupported_font)
+    pdf_path = tmp_path / "readable.pdf"
+    pdf_path.write_bytes(create_synthetic_pdf())
+
+    assert validate_pdf(pdf_path) == EXIT_OK
