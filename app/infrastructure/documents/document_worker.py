@@ -82,7 +82,6 @@ def validate_pdf(target: Path) -> int:
                     for obj in contents:
                         if hasattr(obj, "get_data"):
                             _ = obj.get_data()
-            _ = page.extract_text()
         return EXIT_OK
     except (
         pypdf.errors.PdfReadError,

@@ -136,3 +136,5 @@ authentication, R2 connectivity, or mail delivery.
   background worker or another worker host is required after that consumer is implemented.
 - Free Render Key Value can lose all data on restart. Use persistent Redis before AI jobs depend
   on it.
+
+PDF upload verification checks strict PDF structure, pages, encryption and content streams. Text extraction runs in the analysis pipeline; unsupported font extraction must not reject an otherwise readable document.
