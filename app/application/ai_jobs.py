@@ -3,6 +3,7 @@ import hashlib
 import inspect
 import json
 import logging
+import re
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
@@ -286,6 +287,36 @@ def _build_asset_input(
 
 
 _QA_SOURCE_ARTIFACT_MAX_BYTES = 1024 * 1024
+_SAFE_ARTIFACT_SEGMENT_RE = re.compile(r"[A-Za-z0-9][A-Za-z0-9_-]{0,127}")
+_ATTEMPT_SEGMENT_RE = re.compile(r"(?:^|/)attempts/(\d+)/")
+
+
+def _artifact_path_segment(artifact_id: str) -> str:
+    if _SAFE_ARTIFACT_SEGMENT_RE.fullmatch(artifact_id):
+        return artifact_id
+    digest = hashlib.sha256(artifact_id.encode("utf-8")).hexdigest()[:16]
+    return f"art-{digest}"
+
+
+def _attempt_number_from_key(key: str, answer_prefix: str) -> int:
+    relative = key[len(answer_prefix) :] if key.startswith(answer_prefix) else key
+    match = _ATTEMPT_SEGMENT_RE.search(relative)
+    return int(match.group(1)) if match else -1
+
+
+def _resolve_answer_artifact_key(
+    keys: list[str],
+    answer_prefix: str,
+    artifact_id: str | None,
+    filename: str,
+) -> str:
+    if artifact_id:
+        segment = _artifact_path_segment(artifact_id)
+        suffix = f"/{segment}/{filename}"
+        matches = [key for key in keys if key.startswith(answer_prefix) and key.endswith(suffix)]
+        if matches:
+            return max(matches, key=lambda key: (_attempt_number_from_key(key, answer_prefix), key))
+    return f"{answer_prefix}{filename}"
 
 
 async def _load_answer_evidence(
@@ -296,14 +327,21 @@ async def _load_answer_evidence(
     if answer.status.value == "skipped":
         return None, {}
 
-    artifact_prefix = f"ai/session/{session_id}/answers/{answer.id}"
+    answer_prefix = f"ai/session/{session_id}/answers/{answer.id}/"
     try:
-        transcript_raw = await storage.get_object(
-            f"{artifact_prefix}/transcript.json", _QA_SOURCE_ARTIFACT_MAX_BYTES
+        keys = (
+            await storage.list_objects(answer_prefix)
+            if answer.transcript_artifact_id or answer.assessment_artifact_id
+            else []
         )
-        assessment_raw = await storage.get_object(
-            f"{artifact_prefix}/assessment.json", _QA_SOURCE_ARTIFACT_MAX_BYTES
+        transcript_key = _resolve_answer_artifact_key(
+            keys, answer_prefix, answer.transcript_artifact_id, "transcript.json"
         )
+        assessment_key = _resolve_answer_artifact_key(
+            keys, answer_prefix, answer.assessment_artifact_id, "assessment.json"
+        )
+        transcript_raw = await storage.get_object(transcript_key, _QA_SOURCE_ARTIFACT_MAX_BYTES)
+        assessment_raw = await storage.get_object(assessment_key, _QA_SOURCE_ARTIFACT_MAX_BYTES)
         transcript_payload = json.loads(transcript_raw)
         assessment_payload = json.loads(assessment_raw)
     except (
