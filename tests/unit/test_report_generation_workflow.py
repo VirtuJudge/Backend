@@ -12,7 +12,7 @@ from app.application.ai_job_contracts import (
     ArtifactRef,
     ReportCompletedPayload,
 )
-from app.application.ai_jobs import AIJobs
+from app.application.ai_jobs import _QA_SOURCE_ARTIFACT_MAX_BYTES, AIJobs, _load_answer_evidence
 from app.domain.asset import StorageUnavailable
 from app.domain.session_workflow.entities.analysis_attempt import AnalysisAttempt
 from app.domain.session_workflow.entities.analysis_job import (
@@ -611,3 +611,222 @@ async def test_record_update_rejects_invalid_artifact_checksum() -> None:
             checksum="invalid_checksum_format",
             schema_version=1,
         )
+
+
+def _make_answer(
+    *,
+    transcript_artifact_id: str | None = "11111111-1111-1111-1111-111111111111",
+    assessment_artifact_id: str | None = "22222222-2222-2222-2222-222222222222",
+) -> Answer:
+    return Answer(
+        id=uuid4(),
+        qa_round_id=uuid4(),
+        question_id=uuid4(),
+        answered_by=uuid4(),
+        status=AnswerStatus.SUBMITTED,
+        audio_asset_version_id=uuid4(),
+        duration_ms=10_000,
+        transcript_artifact_id=transcript_artifact_id,
+        assessment_artifact_id=assessment_artifact_id,
+        submitted_at=NOW,
+        created_at=NOW,
+        updated_at=NOW,
+    )
+
+
+def _transcript_bytes(text: str) -> bytes:
+    return json.dumps({"transcript": {"text": text}}).encode()
+
+
+def _assessment_bytes(text: str, evidence_ids: list[str] | None = None) -> bytes:
+    return json.dumps(
+        {"assessment": {"text": text, "evidence_ids": evidence_ids or ["ev_01"]}}
+    ).encode()
+
+
+@pytest.mark.asyncio
+async def test_load_answer_evidence_resolves_attempt_scoped_layout_by_artifact_id() -> None:
+    storage = FakeObjectStorage()
+    session_id = uuid4()
+    answer = _make_answer()
+    base = f"ai/session/{session_id}/answers/{answer.id}/attempts/1/jobs/job-01"
+    storage.objects[f"{base}/{answer.transcript_artifact_id}/transcript.json"] = _transcript_bytes(
+        "Attempt-scoped transcript."
+    )
+    storage.objects[f"{base}/{answer.assessment_artifact_id}/assessment.json"] = _assessment_bytes(
+        "Attempt-scoped assessment."
+    )
+
+    transcript, assessment = await _load_answer_evidence(storage, session_id, answer)
+
+    assert transcript == "Attempt-scoped transcript."
+    assert assessment == {"text": "Attempt-scoped assessment.", "evidence_ids": ["ev_01"]}
+
+
+@pytest.mark.asyncio
+async def test_load_answer_evidence_prefers_highest_attempt_number() -> None:
+    storage = FakeObjectStorage()
+    session_id = uuid4()
+    answer = _make_answer()
+    answer_prefix = f"ai/session/{session_id}/answers/{answer.id}"
+
+    storage.objects[
+        f"{answer_prefix}/attempts/2/jobs/job-2/{answer.transcript_artifact_id}/transcript.json"
+    ] = _transcript_bytes("Attempt 2 transcript.")
+    storage.objects[
+        f"{answer_prefix}/attempts/10/jobs/job-10/{answer.transcript_artifact_id}/transcript.json"
+    ] = _transcript_bytes("Attempt 10 transcript.")
+    storage.objects[
+        f"{answer_prefix}/attempts/2/jobs/job-2/{answer.assessment_artifact_id}/assessment.json"
+    ] = _assessment_bytes("Attempt 2 assessment.")
+    storage.objects[
+        f"{answer_prefix}/attempts/10/jobs/job-10/{answer.assessment_artifact_id}/assessment.json"
+    ] = _assessment_bytes("Attempt 10 assessment.")
+
+    transcript, assessment = await _load_answer_evidence(storage, session_id, answer)
+
+    assert transcript == "Attempt 10 transcript."
+    assert assessment["text"] == "Attempt 10 assessment."
+
+
+@pytest.mark.asyncio
+async def test_load_answer_evidence_ignores_stale_artifact_with_different_id() -> None:
+    storage = FakeObjectStorage()
+    session_id = uuid4()
+    answer = _make_answer(
+        transcript_artifact_id="current-transcript-id",
+        assessment_artifact_id="current-assessment-id",
+    )
+    answer_prefix = f"ai/session/{session_id}/answers/{answer.id}"
+
+    # Higher attempt number but wrong artifact IDs must be ignored.
+    storage.objects[
+        f"{answer_prefix}/attempts/99/jobs/stale/stale-transcript-id/transcript.json"
+    ] = _transcript_bytes("Stale transcript.")
+    storage.objects[
+        f"{answer_prefix}/attempts/99/jobs/stale/stale-assessment-id/assessment.json"
+    ] = _assessment_bytes("Stale assessment.")
+
+    # Current artifact IDs on attempt 1 should be selected.
+    storage.objects[
+        f"{answer_prefix}/attempts/1/jobs/cur/current-transcript-id/transcript.json"
+    ] = _transcript_bytes("Current transcript.")
+    storage.objects[
+        f"{answer_prefix}/attempts/1/jobs/cur/current-assessment-id/assessment.json"
+    ] = _assessment_bytes("Current assessment.")
+
+    transcript, assessment = await _load_answer_evidence(storage, session_id, answer)
+
+    assert transcript == "Current transcript."
+    assert assessment["text"] == "Current assessment."
+
+
+@pytest.mark.asyncio
+async def test_load_answer_evidence_rejects_when_only_stale_artifact_id_exists() -> None:
+    storage = FakeObjectStorage()
+    session_id = uuid4()
+    answer = _make_answer(
+        transcript_artifact_id="expected-transcript-id",
+        assessment_artifact_id="expected-assessment-id",
+    )
+    answer_prefix = f"ai/session/{session_id}/answers/{answer.id}"
+    storage.objects[
+        f"{answer_prefix}/attempts/1/jobs/old/different-transcript-id/transcript.json"
+    ] = _transcript_bytes("Stale transcript.")
+    storage.objects[
+        f"{answer_prefix}/attempts/1/jobs/old/different-assessment-id/assessment.json"
+    ] = _assessment_bytes("Stale assessment.")
+
+    with pytest.raises(
+        StorageUnavailable, match="Answer artifacts are unavailable for Q&A creation"
+    ):
+        await _load_answer_evidence(storage, session_id, answer)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("transcript_id", "assessment_id"),
+    [
+        ("legacy-transcript-id", "legacy-assessment-id"),
+        (None, None),
+    ],
+)
+async def test_load_answer_evidence_falls_back_to_legacy_fixed_paths(
+    transcript_id: str | None,
+    assessment_id: str | None,
+) -> None:
+    storage = FakeObjectStorage()
+    session_id = uuid4()
+    answer = _make_answer(
+        transcript_artifact_id=transcript_id,
+        assessment_artifact_id=assessment_id,
+    )
+    answer_prefix = f"ai/session/{session_id}/answers/{answer.id}"
+    storage.objects[f"{answer_prefix}/transcript.json"] = _transcript_bytes("Legacy transcript.")
+    storage.objects[f"{answer_prefix}/assessment.json"] = _assessment_bytes("Legacy assessment.")
+
+    transcript, assessment = await _load_answer_evidence(storage, session_id, answer)
+
+    assert transcript == "Legacy transcript."
+    assert assessment["text"] == "Legacy assessment."
+
+
+@pytest.mark.asyncio
+async def test_load_answer_evidence_hashes_unsafe_artifact_id_segment() -> None:
+    storage = FakeObjectStorage()
+    session_id = uuid4()
+    unsafe_transcript_id = "unsafe/transcript:id"
+    unsafe_assessment_id = "-leading-dash-assessment"
+    answer = _make_answer(
+        transcript_artifact_id=unsafe_transcript_id,
+        assessment_artifact_id=unsafe_assessment_id,
+    )
+    transcript_segment = (
+        f"art-{hashlib.sha256(unsafe_transcript_id.encode('utf-8')).hexdigest()[:16]}"
+    )
+    assessment_segment = (
+        f"art-{hashlib.sha256(unsafe_assessment_id.encode('utf-8')).hexdigest()[:16]}"
+    )
+    base = f"ai/session/{session_id}/answers/{answer.id}/attempts/1/jobs/job-01"
+    storage.objects[f"{base}/{transcript_segment}/transcript.json"] = _transcript_bytes(
+        "Hashed transcript."
+    )
+    storage.objects[f"{base}/{assessment_segment}/assessment.json"] = _assessment_bytes(
+        "Hashed assessment."
+    )
+
+    transcript, assessment = await _load_answer_evidence(storage, session_id, answer)
+
+    assert transcript == "Hashed transcript."
+    assert assessment["text"] == "Hashed assessment."
+
+
+@pytest.mark.asyncio
+async def test_load_answer_evidence_raises_storage_unavailable_when_missing() -> None:
+    storage = FakeObjectStorage()
+    session_id = uuid4()
+    answer = _make_answer()
+
+    with pytest.raises(
+        StorageUnavailable, match="Answer artifacts are unavailable for Q&A creation"
+    ):
+        await _load_answer_evidence(storage, session_id, answer)
+
+
+@pytest.mark.asyncio
+async def test_load_answer_evidence_enforces_max_bytes_on_attempt_scoped_artifact() -> None:
+    storage = FakeObjectStorage()
+    session_id = uuid4()
+    answer = _make_answer()
+    base = f"ai/session/{session_id}/answers/{answer.id}/attempts/1/jobs/job-01"
+    storage.objects[f"{base}/{answer.transcript_artifact_id}/transcript.json"] = b"x" * (
+        _QA_SOURCE_ARTIFACT_MAX_BYTES + 1
+    )
+    storage.objects[f"{base}/{answer.assessment_artifact_id}/assessment.json"] = _assessment_bytes(
+        "Assessment."
+    )
+
+    with pytest.raises(
+        StorageUnavailable, match="Answer artifacts are unavailable for Q&A creation"
+    ):
+        await _load_answer_evidence(storage, session_id, answer)
