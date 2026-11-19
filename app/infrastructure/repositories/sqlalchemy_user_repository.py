@@ -1,6 +1,8 @@
 from uuid import UUID
 
-from sqlalchemy import insert, select, update
+from sqlalchemy import select, update
+from sqlalchemy.dialects.postgresql import insert as pg_insert
+from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.ports.user_repository import UserRepository
@@ -37,18 +39,26 @@ class SqlAlchemyUserRepository(UserRepository):
         )
 
     async def create(self, user: User) -> User:
-        stmt = insert(UserModel).values(
-            id=user.id,
-            issuer=user.issuer,
-            subject=user.subject,
-            email=user.email,
-            display_name=user.display_name,
-            created_at=user.created_at,
+        insert = sqlite_insert if self.session.get_bind().dialect.name == "sqlite" else pg_insert
+        result = await self.session.execute(
+            insert(UserModel)
+            .values(
+                id=user.id,
+                issuer=user.issuer,
+                subject=user.subject,
+                email=user.email,
+                display_name=user.display_name,
+                created_at=user.created_at,
+            )
+            .on_conflict_do_nothing(index_elements=["issuer", "subject"])
+            .returning(UserModel.id)
         )
-
-        await self.session.execute(stmt)
-
-        return user
+        if result.scalar_one_or_none() is not None:
+            return user
+        # A concurrent request created this identity first.
+        existing = await self.get_by_identity(user.issuer, user.subject)
+        assert existing is not None
+        return existing
 
     async def update_profile(self, user: User) -> User:
         stmt = (
