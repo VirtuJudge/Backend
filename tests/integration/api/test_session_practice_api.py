@@ -1065,3 +1065,46 @@ async def test_delete_practice_session_forbidden_for_outsider(
     assert response.headers["content-type"] == "application/problem+json"
     data = response.json()
     assert data["code"] == "forbidden"
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("path", "method"),
+    [
+        ("/api/v1/projects/{id}/practice-sessions", "list_sessions"),
+        ("/api/v1/practice-sessions/{id}/analysis-attempts", "get_analysis_attempts"),
+    ],
+)
+async def test_list_rejects_malformed_cursor(
+    client: AsyncClient, workflow_mock: MagicMock, path: str, method: str
+) -> None:
+    async with client:
+        response = await client.get(path.format(id=uuid4()), params={"cursor": "invalid-cursor"})
+
+    assert response.status_code == 422
+    assert response.headers["content-type"] == "application/problem+json"
+    assert response.json()["code"] == "validation_failed"
+    getattr(workflow_mock, method).assert_not_awaited()
+
+
+@pytest.mark.anyio
+@pytest.mark.parametrize(
+    ("path", "method"),
+    [
+        ("/api/v1/projects/{id}/practice-sessions", "list_sessions"),
+        ("/api/v1/practice-sessions/{id}/analysis-attempts", "get_analysis_attempts"),
+    ],
+)
+async def test_list_passes_valid_cursor(
+    client: AsyncClient, workflow_mock: MagicMock, path: str, method: str
+) -> None:
+    cursor = uuid4()
+    next_cursor = str(uuid4())
+    getattr(workflow_mock, method).return_value = ([], next_cursor)
+
+    async with client:
+        response = await client.get(path.format(id=uuid4()), params={"cursor": str(cursor)})
+
+    assert response.status_code == 200
+    assert response.json()["next_cursor"] == next_cursor
+    assert getattr(workflow_mock, method).await_args.kwargs["cursor"] == str(cursor)

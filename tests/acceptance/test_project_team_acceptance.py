@@ -275,6 +275,10 @@ class FakeUserRepository(UserRepository):
         self.user = user
         return user
 
+    async def update_profile(self, user: User) -> User:
+        self.user = user
+        return user
+
 
 def run(coroutine: Coroutine[Any, Any, Result]) -> Result:
     return asyncio.run(coroutine)

@@ -725,3 +725,71 @@ async def test_endpoint_speaker_mappings_retry_rejects_old_attempt_labels(
     )
     assert res_put2.status_code == 200
     assert res_put2.json()[0]["speaker_label"] == "SPEAKER_00"
+
+
+@pytest.mark.anyio
+async def test_endpoint_speaker_mappings_put_replaces_collection(
+    acceptance_env: tuple[
+        async_sessionmaker[AsyncSession],
+        AsyncClient,
+        Settings,
+        dict[str, Any],
+    ],
+) -> None:
+    session_maker, client, _, ctx = acceptance_env
+    session_id = ctx["session_id"]
+    attempt_id = ctx["attempt_id"]
+    alice_id = ctx["alice_id"]
+    bob_id = ctx["bob_id"]
+    res_cb = await client.post(
+        f"/internal/v1/ai-jobs/{ctx['job_id']}/updates",
+        headers={"Authorization": f"Bearer {SHARED_WORKER_SECRET}"},
+        json=_valid_analysis_completed_payload(),
+    )
+    assert res_cb.status_code == 200
+
+    async def put(mappings: list[dict[str, str]]) -> Any:
+        async with session_maker() as db:
+            session_row = await db.get(PracticeSessionModel, session_id)
+            assert session_row is not None
+            version = session_row.version
+        return await client.put(
+            f"/api/v1/practice-sessions/{session_id}/speaker-mappings",
+            headers={"Authorization": "Bearer token-alice", "If-Match": f'"{version}"'},
+            json={"mappings": mappings},
+        )
+
+    async def stored() -> dict[str, str]:
+        async with session_maker() as db:
+            rows = await SqlAlchemyUnitOfWork(db).speaker_mappings.get_by_attempt_id(attempt_id)
+            return {m.speaker_label: str(m.user_id) for m in rows}
+
+    both = await put(
+        [
+            {"speaker_label": "SPEAKER_00", "user_id": str(alice_id)},
+            {"speaker_label": "SPEAKER_01", "user_id": str(bob_id)},
+        ]
+    )
+    assert both.status_code == 200
+
+    swapped = await put([{"speaker_label": "SPEAKER_01", "user_id": str(alice_id)}])
+    assert swapped.status_code == 200
+    assert [(m["speaker_label"], m["user_id"]) for m in swapped.json()] == [
+        ("SPEAKER_01", str(alice_id))
+    ]
+    assert await stored() == {"SPEAKER_01": str(alice_id)}
+
+    duplicate = await put(
+        [
+            {"speaker_label": "SPEAKER_00", "user_id": str(alice_id)},
+            {"speaker_label": "SPEAKER_00", "user_id": str(bob_id)},
+        ]
+    )
+    assert duplicate.status_code == 422
+    assert duplicate.json()["code"] == "invalid_label"
+    assert await stored() == {"SPEAKER_01": str(alice_id)}
+
+    cleared = await put([])
+    assert cleared.status_code == 200
+    assert cleared.json() == []
+    assert await stored() == {}

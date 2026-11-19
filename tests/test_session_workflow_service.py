@@ -107,6 +107,7 @@ def uow() -> MagicMock:
     uow.speaker_mappings.get_by_speaker_label = AsyncMock(return_value=None)
     uow.speaker_mappings.create = AsyncMock()
     uow.speaker_mappings.update = AsyncMock()
+    uow.speaker_mappings.delete = AsyncMock()
 
     uow.idempotency = MagicMock()
     uow.idempotency.get = AsyncMock(return_value=None)

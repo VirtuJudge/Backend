@@ -1051,6 +1051,11 @@ class SessionWorkflow:
                 raise InvalidSpeakerLabel(
                     "Each team member may appear at most once in speaker mappings."
                 )
+            labels = [m.speaker_label for m in mappings]
+            if len(labels) != len(set(labels)):
+                raise InvalidSpeakerLabel(
+                    "Each speaker label may appear at most once in speaker mappings."
+                )
 
             resolved_member_ids: dict[UUID, UUID] = {}
             for m in mappings:
@@ -1068,6 +1073,11 @@ class SessionWorkflow:
                 resolved_member_ids[m.user_id] = member_id
 
             now = datetime.now(UTC)
+            # PUT replaces the collection: omitted labels become unmapped.
+            for stored in await uow.speaker_mappings.get_by_attempt_id(attempt.id):
+                if stored.speaker_label not in labels:
+                    await uow.speaker_mappings.delete(stored.id)
+
             persisted_mappings: list[SpeakerMapping] = []
             for m in mappings:
                 assert m.user_id is not None
@@ -1098,7 +1108,7 @@ class SessionWorkflow:
             session.updated_at = now
             await uow.sessions.update(session, expected_version=session.version)
             await uow.commit()
-            return persisted_mappings
+            return sorted(persisted_mappings, key=lambda mapping: mapping.speaker_label)
 
     async def get_evaluation(self, session_id: UUID, actor_id: UUID) -> Evaluation:
         async with self._uow as uow:
@@ -1153,7 +1163,10 @@ class SessionWorkflow:
                         raise IdempotencyConflict(
                             "Idempotency key has already been used with different parameters."
                         )
-                    existing_export = await uow.reports.get_report_export_by_session(session_id)
+                    # The command record shares its ID with the export it created.
+                    existing_export = await uow.reports.get_report_export(
+                        existing_cmd.id
+                    ) or await uow.reports.get_report_export_by_session(session_id)
                     if existing_export is not None:
                         return existing_export
 
@@ -1187,7 +1200,7 @@ class SessionWorkflow:
             if idempotency_key:
                 await uow.idempotency.create(
                     SessionCommandIdempotency(
-                        id=uuid4(),
+                        id=export.id,
                         session_id=session.id,
                         actor_id=actor_id,
                         operation="export_report_pdf",
