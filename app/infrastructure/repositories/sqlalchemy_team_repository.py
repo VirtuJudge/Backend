@@ -11,6 +11,9 @@ from app.application.ports.team_repository import TeamRepository
 from app.domain.idempotency import TeamCreationIdempotency
 from app.domain.team import Team
 from app.domain.team_member import TeamMember
+from app.infrastructure.persistence.configurations.session_workflow.speaker_mapping_configuration import (  # noqa: E501
+    SpeakerMappingModel,
+)
 from app.infrastructure.persistence.configurations.team_configuration import TeamModel
 from app.infrastructure.persistence.configurations.team_creation_idempotency import (
     TeamCreationIdempotencyModel,
@@ -174,15 +177,20 @@ class SqlAlchemyTeamRepository(TeamRepository):
         return [self._member(row) for row in rows], next_cursor
 
     async def delete_member(self, team_id: UUID, user_id: UUID) -> bool:
+        removable = (
+            TeamMemberModel.team_id == team_id,
+            TeamMemberModel.user_id == user_id,
+            TeamMemberModel.role != "owner",
+        )
+        # Speaker labels stay mapped as anonymous presenters after removal.
+        await self.session.execute(
+            update(SpeakerMappingModel)
+            .where(SpeakerMappingModel.member_id.in_(select(TeamMemberModel.id).where(*removable)))
+            .values(member_id=None)
+        )
         result = cast(
             CursorResult[Any],
-            await self.session.execute(
-                delete(TeamMemberModel).where(
-                    TeamMemberModel.team_id == team_id,
-                    TeamMemberModel.user_id == user_id,
-                    TeamMemberModel.role != "owner",
-                )
-            ),
+            await self.session.execute(delete(TeamMemberModel).where(*removable)),
         )
         return bool(result.rowcount and result.rowcount > 0)
 
