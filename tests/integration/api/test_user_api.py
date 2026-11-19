@@ -103,6 +103,10 @@ async def test_get_me_extracts_display_name_from_token_claims() -> None:
             self.user = user
             return user
 
+        async def update_profile(self, user: User) -> User:
+            self.user = user
+            return user
+
     fake_repo = FakeUserRepository()
     user_service = UserService(fake_repo)
 

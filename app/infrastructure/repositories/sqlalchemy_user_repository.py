@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import insert, select
+from sqlalchemy import insert, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.application.ports.user_repository import UserRepository
@@ -44,6 +44,17 @@ class SqlAlchemyUserRepository(UserRepository):
             email=user.email,
             display_name=user.display_name,
             created_at=user.created_at,
+        )
+
+        await self.session.execute(stmt)
+
+        return user
+
+    async def update_profile(self, user: User) -> User:
+        stmt = (
+            update(UserModel)
+            .where(UserModel.id == user.id)
+            .values(email=user.email, display_name=user.display_name)
         )
 
         await self.session.execute(stmt)
