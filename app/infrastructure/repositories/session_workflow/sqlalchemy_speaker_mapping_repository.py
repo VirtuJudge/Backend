@@ -1,6 +1,6 @@
 from uuid import UUID
 
-from sqlalchemy import select, update
+from sqlalchemy import delete, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -98,3 +98,12 @@ class SqlAlchemySpeakerMappingRepository(SpeakerMappingRepository):
             await self._session.rollback()
             raise IdempotencyConflict("Integrity conflict on speaker mapping update.") from exc
         return mapping
+
+    async def delete(
+        self,
+        mapping_id: UUID,
+    ) -> None:
+        await self._session.execute(
+            delete(SpeakerMappingModel).where(SpeakerMappingModel.id == mapping_id)
+        )
+        await self._session.flush()

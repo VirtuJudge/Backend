@@ -32,3 +32,8 @@ class SpeakerMappingRepository(Protocol):
         self,
         mapping: SpeakerMapping,
     ) -> SpeakerMapping: ...
+
+    async def delete(
+        self,
+        mapping_id: UUID,
+    ) -> None: ...
