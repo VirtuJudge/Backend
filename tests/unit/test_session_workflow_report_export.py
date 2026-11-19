@@ -158,13 +158,13 @@ def _create_sample_data() -> tuple[PracticeSession, Evaluation, Report, UUID, UU
     return session, evaluation, report, actor_id, project_id
 
 
-@pytest.mark.asyncio
-async def test_export_report_pdf_creates_verified_asset_and_ready_export() -> None:
+def _export_setup() -> tuple[
+    SessionWorkflow, AssetStore, FakeAssetRepository, FakeObjectStorage, PracticeSession, UUID
+]:
     session, evaluation, report, actor_id, project_id = _create_sample_data()
-
     reports_repo = FakeReportRepository()
-    await reports_repo.save_evaluation(evaluation)
-    await reports_repo.save_report(report)
+    reports_repo.evaluations[evaluation.id] = evaluation
+    reports_repo.reports[report.id] = report
 
     uow = FakeUnitOfWork(reports=reports_repo)
     uow.sessions = _FakeSessionsRepo(session)
@@ -196,6 +196,12 @@ async def test_export_report_pdf_creates_verified_asset_and_ready_export() -> No
         uow=uow,
         pdf_generator=PyPdfReportGenerator(),
     )
+    return workflow, asset_store, asset_repo, storage, session, actor_id
+
+
+@pytest.mark.asyncio
+async def test_export_report_pdf_creates_verified_asset_and_ready_export() -> None:
+    workflow, asset_store, asset_repo, storage, session, actor_id = _export_setup()
 
     export = await workflow.export_report_pdf(
         session_id=session.id,
@@ -330,3 +336,21 @@ async def test_create_export_download_intent_not_ready_raises() -> None:
             actor_id=actor_id,
             asset_store=asset_store,
         )
+
+
+@pytest.mark.asyncio
+async def test_export_report_pdf_replays_original_export_after_other_key() -> None:
+    workflow, asset_store, _, _, session, actor_id = _export_setup()
+
+    async def export(key: str) -> ReportExport:
+        return await workflow.export_report_pdf(
+            session_id=session.id, actor_id=actor_id, asset_store=asset_store, idempotency_key=key
+        )
+
+    first = await export("key-a")
+    second = await export("key-b")
+    replay = await export("key-a")
+
+    assert second.id != first.id
+    assert replay.id == first.id
+    assert replay.asset_version_id == first.asset_version_id

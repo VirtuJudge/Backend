@@ -1153,7 +1153,10 @@ class SessionWorkflow:
                         raise IdempotencyConflict(
                             "Idempotency key has already been used with different parameters."
                         )
-                    existing_export = await uow.reports.get_report_export_by_session(session_id)
+                    # The command record shares its ID with the export it created.
+                    existing_export = await uow.reports.get_report_export(
+                        existing_cmd.id
+                    ) or await uow.reports.get_report_export_by_session(session_id)
                     if existing_export is not None:
                         return existing_export
 
@@ -1187,7 +1190,7 @@ class SessionWorkflow:
             if idempotency_key:
                 await uow.idempotency.create(
                     SessionCommandIdempotency(
-                        id=uuid4(),
+                        id=export.id,
                         session_id=session.id,
                         actor_id=actor_id,
                         operation="export_report_pdf",
