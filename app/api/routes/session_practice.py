@@ -376,14 +376,14 @@ async def list_practice_sessions(
     current_user: User = Depends(get_current_user),
     workflow: SessionWorkflow = Depends(get_session_workflow),
     search: str | None = Query(None, alias="search"),
-    cursor: str | None = Query(None, alias="cursor"),
+    cursor: UUID | None = Query(None, alias="cursor"),
     limit: int = Query(20, ge=1, le=100),
 ) -> Any:
     try:
         sessions, next_cursor = await workflow.list_sessions(
             actor_id=current_user.id,
             project_id=project_id,
-            cursor=cursor,
+            cursor=str(cursor) if cursor else None,
             search=search,
             limit=limit,
         )
@@ -710,14 +710,14 @@ async def get_analysis_attempts(
     raw_request: Request,
     current_user: User = Depends(get_current_user),
     workflow: SessionWorkflow = Depends(get_session_workflow),
-    cursor: str | None = Query(None, alias="cursor"),
+    cursor: UUID | None = Query(None, alias="cursor"),
     limit: int = Query(20, ge=1, le=100),
 ) -> Any:
     try:
         attempts, next_cursor = await workflow.get_analysis_attempts(
             session_id=session_id,
             actor_id=current_user.id,
-            cursor=cursor,
+            cursor=str(cursor) if cursor else None,
             limit=limit,
         )
     except SessionNotFoundError as error:
